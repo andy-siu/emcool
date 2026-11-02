@@ -180,7 +180,7 @@ This runs through cool-eva's own `src/db.ts`, so it needs a cool-eva checkout wi
 
 ## Phone dashboard (Bluetooth)
 
-emcool ships its own phone dashboard in [`dashboard/`](dashboard/) — a static site copied from cool-eva's and rebranded, paired with emcool's wire protocol (the handshake salts and the request header were renamed from cool-eva's, so it talks to this firmware, not cool-eva's). Host it over HTTPS and open it in Bluefy on iOS or Chrome on Android; see [`dashboard/README.md`](dashboard/README.md) and [`docs/ble.md`](docs/ble.md).
+emcool ships its own phone dashboard in [`dashboard/`](dashboard/) — a static site copied from cool-eva's and rebranded, paired with emcool's wire protocol (the handshake salts and the request header were renamed from cool-eva's, so it talks to this firmware, not cool-eva's). Host it over HTTPS and open it in Bluefy on iOS or Chrome on Android. A [GitHub Pages workflow](.github/workflows/pages.yml) publishes it — see [`docs/github-pages.md`](docs/github-pages.md), [`dashboard/README.md`](dashboard/README.md) and [`docs/ble.md`](docs/ble.md).
 
 1. Set `BLE_SECRET` from the serial console (see [Settings](#settings)) and `restart`.
 2. Enter the same secret in the dashboard's menu under *Bluetooth*.

@@ -1,0 +1,44 @@
+# Publishes the phone dashboard (dashboard/) to GitHub Pages.
+#
+# The dashboard is a static, build-free site, so there is nothing to compile — the workflow just
+# uploads the dashboard/ folder as the Pages artifact and deploys it. It runs on a push to the
+# default branch that touched dashboard/, and can be run by hand from any branch (Actions tab →
+# "Deploy dashboard to Pages" → Run workflow) so you can preview a branch before merging.
+#
+# Turn Pages on once, in the repo: Settings → Pages → Build and deployment → Source =
+# "GitHub Actions". See docs/github-pages.md.
+
+name: Deploy dashboard to Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["dashboard/**", ".github/workflows/pages.yml"]
+  workflow_dispatch: {}
+
+# Let the deploy read the repo and mint a Pages deployment token; nothing else.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One live deployment at a time; a newer push supersedes an in-flight one rather than queueing.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Upload the dashboard as the Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard
+      - id: deployment
+        uses: actions/deploy-pages@v4

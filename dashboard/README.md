@@ -6,7 +6,7 @@ The phone dashboard for emcool — a static, build-free web app (VanJS, no bundl
 
 It is plain static files — host them anywhere that serves a directory over HTTPS (Web Bluetooth needs a secure context):
 
-- **GitHub Pages:** point Pages at this `dashboard/` directory (or copy it to a `docs/`/`gh-pages` root). Open the URL in **Bluefy** on iOS or **Chrome** on Android.
+- **GitHub Pages:** this repo ships a workflow that publishes `dashboard/` to Pages — turn it on with **Settings → Pages → Source → GitHub Actions**. Full steps in [`../docs/github-pages.md`](../docs/github-pages.md). Open the resulting URL in **Bluefy** on iOS or **Chrome** on Android.
 - **Locally:** any static server over HTTPS (or `http://localhost`, which counts as secure). For example `python3 -m http.server` then browse `http://localhost:8000`, though some browsers want real HTTPS for Bluetooth.
 
 There is no server component here and the ESP32 serves nothing over HTTP — the bike link is Bluetooth only. The pages fetch the bike's endpoints (`/status`, `/vcu-read`, `/vcu-write`, `/charge-auto`, …) by tunnelling HTTP-shaped requests over the BLE link, which the firmware answers.
