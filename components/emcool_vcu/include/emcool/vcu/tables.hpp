@@ -1,0 +1,65 @@
+#pragma once
+
+// The VCU's calibration parameters, as cool-eva names them: every parameter table its catalogue
+// carries (one per TABLE_TYPE the manufacturer's service tool can select), and the A8 rows only
+// the A8's own firmware table describes. Generated from cool-eva by tools/generate-vcu-tables.mts.
+//
+// A table names, types and signs bank-1 indices; the record widths and the routing are the same
+// across all of them, so a wrong table still reads cleanly — which is why the bike's own
+// TABLE_TYPE (indices 276 and 277) is checked against the one in use.
+
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <string_view>
+
+namespace emcool::vcu {
+
+enum class StorageType : std::uint8_t { kBool, kByte, kWord, kDword };
+enum class Micro : std::uint8_t { kA8, kA9 };
+
+inline constexpr int kCalibrationBank = 1;
+inline constexpr int kBaseTableType = 16406;
+inline constexpr int kDefaultTableType = 0x4017;
+
+const char* parameterName(std::uint16_t nameId);
+const char* parameterSection(std::uint8_t sectionId);
+
+struct VcuParameter {
+  std::uint16_t index;
+  std::uint16_t nameId;
+  std::uint8_t sectionId;
+  StorageType type;
+  Micro micro;
+  bool isSigned;
+  bool hasOtherBikeValue;
+  // The value in the other bike's params.ecf, for comparison.
+  std::int32_t otherBikeValue;
+
+  std::string_view name() const { return parameterName(nameId); }
+  // Null where a table renamed the index away from params.ecf's.
+  const char* section() const { return parameterSection(sectionId); }
+  std::uint16_t identifier() const { return static_cast<std::uint16_t>((kCalibrationBank << 12) | index); }
+};
+
+struct VcuParameterTable {
+  std::uint16_t tableType;
+  const char* exportStamp;
+  const char* fingerprint;
+  std::span<const VcuParameter> parameters;  // by index
+
+  const VcuParameter* atIndex(int index) const;
+};
+
+// In cool-eva's KNOWN_TABLE_TYPES order (ascending).
+std::span<const VcuParameterTable> parameterTables();
+const VcuParameterTable* parameterTableFor(int tableType);
+
+struct A8FirmwareRow {
+  std::uint16_t index;
+  StorageType type;
+  const char* known;  // what has been traced about it, or null
+};
+std::span<const A8FirmwareRow> a8FirmwareRows();
+
+}  // namespace emcool::vcu

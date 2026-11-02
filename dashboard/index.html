@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>emcool</title>
+    <!-- Added to the home screen this opens without Safari's chrome, which on the
+         phone this is used from is roughly one tile's worth of screen back. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- Still needed alongside the standard name above: iOS reads only this one,
+         and iOS is the only platform this is ever opened on. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="emcool" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="style.css" />
+    <!-- Inline so the browser's automatic /favicon.ico request never happens: on the
+         bike that is a round trip to a Pi Zero over hotspot wifi for a 404. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🧊</text></svg>"
+    />
+  </head>
+  <body>
+    <!-- The dashboard is a set of ES modules with no build step: what is in the repo
+         is what the browser runs, so it can be edited over ssh in a garage with no
+         toolchain. `npm run typecheck` still covers it — the modules carry JSDoc
+         types that import the server's own wire format from src/ws.ts, which is
+         what stops the two drifting apart. -->
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

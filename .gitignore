@@ -1,0 +1,8 @@
+/build/
+/host/build/
+/managed_components/
+sdkconfig
+sdkconfig.old
+.DS_Store
+*.swp
+/host/build-asan/
