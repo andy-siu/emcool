@@ -1,0 +1,335 @@
+// emcool: listen to the bike's CAN bus, decode every frame with the port of cool-eva's
+// decoders into live state, log what changes to the microSD card, keep the clock on GPS
+// time, serve cool-eva's phone dashboard over Bluetooth, and report over the serial console
+// every 10 s. With OBD_ENABLED, also poll OBD-II as cool-eva does; otherwise it never sends.
+//
+// Tasks: decode (core 1) owns the CAN queue, the clock and the ride log's segment buffers, and
+// writes live state; diagnostics (core 1) owns everything that transmits — the OBD poller and
+// service mode — fed the diagnostic replies by decode; ride-log (core 0) owns the card;
+// ble-link (core 1) runs the phone link and reads live state; NimBLE's own host and controller
+// run on core 0. Live state is shared under storeMutex.
+
+#include <algorithm>
+#include <array>
+#include <cinttypes>
+#include <mutex>
+#include <new>
+#include <optional>
+#include <span>
+#include <string_view>
+#include <utility>
+
+#include "ble_link.hpp"
+#include "bootloader_random.h"
+#include "can_bus.hpp"
+#include "emcool/ble/crypto.hpp"
+#include "emcool/ble/session.hpp"
+#include "emcool/ble_server/endpoints.hpp"
+#include "emcool/ble_server/server.hpp"
+#include "emcool/can/frame_decoder.hpp"
+#include "emcool/can/pack_temperature.hpp"
+#include "emcool/clock/system_clock_sync.hpp"
+#include "emcool/log.hpp"
+#include "diagnostics_task.hpp"
+#include "emcool/obd/hub_diagnostics.hpp"
+#include "emcool/obd/obd_stack.hpp"
+#include "emcool/ride_log/log_writer.hpp"
+#include "emcool/ride_log/ride_log.hpp"
+#include "emcool/settings/settings.hpp"
+#include "emcool/signals/signal_store.hpp"
+#include "esp_app_desc.h"
+#include "esp_random.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "nvs_flash.h"
+#include "ride_log_task.hpp"
+#include "sd_card.hpp"
+#include "sdkconfig.h"
+#include "settings_console.hpp"
+#include "status_report.hpp"
+#include "system_time.hpp"
+
+namespace {
+
+constexpr const char* kTag = "emcool";
+constexpr std::uint32_t kDecodeTaskStackBytes = 8192;
+constexpr UBaseType_t kDecodeTaskPriority = 5;
+// Core 1, leaving core 0 to the ride-log task and the Bluetooth stack.
+constexpr BaseType_t kDecodeTaskCore = 1;
+
+// The hub's fault list records into live state, stamped with its frame's arrival; the decode task
+// holds no lock while it runs, so this takes storeMutex for each record.
+class ArrivalRecorder final : public emcool::obd::SignalRecorder {
+ public:
+  ArrivalRecorder(emcool::signals::SignalStore& store, std::mutex& storeMutex)
+      : store_(store), storeMutex_(storeMutex) {}
+  void at(std::int64_t wallClockMs, std::int64_t monotonicMs) {
+    wallClockMs_ = wallClockMs;
+    monotonicMs_ = monotonicMs;
+  }
+  void record(std::string_view key, double value) override {
+    const std::lock_guard<std::mutex> lock(storeMutex_);
+    store_.record(key, value, wallClockMs_, monotonicMs_);
+  }
+
+ private:
+  emcool::signals::SignalStore& store_;
+  std::mutex& storeMutex_;
+  std::int64_t wallClockMs_ = 0;
+  std::int64_t monotonicMs_ = 0;
+};
+
+struct DecodeContext {
+  emcool::CanBus& bus;
+  emcool::can::FrameDecoder& decoder;
+  emcool::can::PackTemperatureRouter& packTemperature;
+  emcool::signals::SignalStore& store;
+  std::mutex& storeMutex;
+  emcool::ride_log::RideLog& rideLog;
+  emcool::clock::SystemClockSync& clock;
+  emcool::StatusReport& status;
+  emcool::DiagnosticsTask& diagnostics;
+};
+
+void decodeTask(void* argument);
+void offerGpsTime(emcool::clock::SystemClockSync& clock, double gpsEpochSeconds);
+emcool::ride_log::SessionId newSessionId();
+bool initNvs();
+template <typename Type, typename... Arguments>
+Type* allocate(const char* what, Arguments&&... arguments);
+bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
+                    std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
+                    emcool::DiagnosticsTask& diagnostics, emcool::BleLinkCounters& counters);
+void logSettings(const emcool::settings::Settings& settings);
+
+}  // namespace
+
+extern "C" void app_main() {
+  const esp_app_desc_t* app = esp_app_get_description();
+  emcool::logInfo(kTag, "emcool %s, ESP-IDF %s", app->version, app->idf_ver);
+  const bool nvsReady = initNvs();
+  // cool-eva's /etc/default/cool-eva, from NVS; defaults wherever nothing has been saved.
+  static emcool::NvsSettingsStorage settingsStorage;
+  static emcool::settings::RuntimeSettings runtimeSettings(emcool::settings::Settings::load(settingsStorage));
+  const emcool::settings::Settings& settings = runtimeSettings.boot();
+  logSettings(settings);
+
+  if (CONFIG_EMCOOL_CAN_TX_GPIO < 0 || CONFIG_EMCOOL_CAN_RX_GPIO < 0) {
+    emcool::logError(kTag, "CAN pins are set to -1 (idf.py menuconfig → emcool), so the CAN bus stays off");
+    return;
+  }
+  static emcool::CanBus bus;
+  // Off the bus entirely (listen-only) unless something is meant to transmit.
+  if (!bus.start(CONFIG_EMCOOL_CAN_TX_GPIO, CONFIG_EMCOOL_CAN_RX_GPIO, settings.obdEnabled)) {
+    emcool::logError(kTag, "CAN bus did not start; nothing will be decoded");
+    return;
+  }
+
+  // The big buffers come from the heap, once: with Bluetooth on, the controller's reservation
+  // leaves the static-data region too small for them, and the heap spans more of the RAM.
+  static const emcool::ride_log::SessionId session = newSessionId();
+  static emcool::clock::SystemClockSync clock;
+  auto* segmentBuffers = new (std::nothrow) emcool::ride_log::SegmentBuffer[2];
+  auto* writerScratch = new (std::nothrow) std::uint8_t[emcool::ride_log::kRecordCapacityBytes];
+  if (segmentBuffers == nullptr || writerScratch == nullptr) {
+    emcool::logError(kTag, "no memory for the ride log's buffers");
+    return;
+  }
+  static emcool::FreeRtosSegmentQueue segmentQueue;
+  if (!segmentQueue.create(2)) {
+    emcool::logError(kTag, "no memory for the segment queue");
+    return;
+  }
+  static emcool::FatCardSpace cardSpace;
+  static emcool::ride_log::LogWriter writer({std::string(emcool::kSdMountPoint) + "/RIDES"}, session,
+                                            std::span<std::uint8_t>(writerScratch, emcool::ride_log::kRecordCapacityBytes),
+                                            cardSpace);
+  static emcool::ride_log::RideLog rideLog(session, std::span<emcool::ride_log::SegmentBuffer>(segmentBuffers, 2),
+                                           segmentQueue, clock);
+  static emcool::SdCard card;
+  static emcool::RideLogTaskCounters rideLogTaskCounters;
+  static emcool::RideLogTaskContext rideLogTaskContext{segmentQueue, writer, card, rideLogTaskCounters};
+  emcool::startRideLogTask(rideLogTaskContext);
+
+  auto* storeAllocation = allocate<emcool::signals::SignalStore>("live state", rideLog);
+  if (storeAllocation == nullptr) return;
+  emcool::signals::SignalStore& store = *storeAllocation;
+  static std::mutex storeMutex;
+  static emcool::can::FrameDecoder decoder;
+  static emcool::can::PackTemperatureRouter packTemperature(settings.customBmsConfig);
+  static emcool::BleLinkCounters bleLinkCounters;
+  static emcool::RideLogStorageReport storageReport(writer, rideLogTaskCounters);
+  // Everything that transmits, and service mode's snapshots on the card.
+  auto* diagnostics = allocate<emcool::DiagnosticsTask>("the diagnostics task", bus, store, storeMutex, settings,
+                                                        std::string(emcool::kSdMountPoint) + "/vcu-params");
+  if (diagnostics == nullptr || !diagnostics->start()) return;
+  // NimBLE keeps PHY calibration in NVS; without it the radio can't start.
+  const bool bluetooth =
+      nvsReady && startBluetooth(settings, store, storeMutex, storageReport, *diagnostics, bleLinkCounters);
+  static emcool::StatusReport status({bus, store, storeMutex, rideLog, writer, rideLogTaskCounters, clock,
+                                      bleLinkCounters, bluetooth, runtimeSettings, diagnostics});
+  static DecodeContext context{bus, decoder, packTemperature, store, storeMutex, rideLog, clock, status, *diagnostics};
+  if (xTaskCreatePinnedToCore(decodeTask, "decode", kDecodeTaskStackBytes, &context, kDecodeTaskPriority, nullptr,
+                              kDecodeTaskCore) != pdPASS) {
+    emcool::logError(kTag, "could not create the decode task (%" PRIu32 " bytes of stack)", kDecodeTaskStackBytes);
+  }
+  emcool::startSettingsConsole(settingsStorage, runtimeSettings);
+}
+
+namespace {
+
+void decodeTask(void* argument) {
+  DecodeContext& context = *static_cast<DecodeContext*>(argument);
+  emcool::can::DecodedValues decoded;
+  // cool-eva's handleHubMirrorFrame(): the active fault list off 0x410, beside its decoding.
+  static emcool::obd::HubDiagnostics hubDiagnostics;
+  static ArrivalRecorder hubRecorder(context.store, context.storeMutex);
+
+  while (true) {
+    emcool::ReceivedFrame frame;
+    if (context.bus.receive(frame, pdMS_TO_TICKS(1000))) {
+      // The diagnostic replies are the diagnostics task's, and never decoded, as on the Pi.
+      if (emcool::obd::isDiagnosticReply(frame.id)) {
+        context.diagnostics.forward(frame);
+        continue;
+      }
+      decoded.clear();
+      const emcool::can::FrameBytes data(frame.data, frame.length);
+      if (frame.id == 0x410) {
+        hubRecorder.at(emcool::wallClockMs(), emcool::monotonicMs());
+        hubDiagnostics.handle(std::span<const std::uint8_t>(frame.data, frame.length), hubRecorder);
+      }
+      context.decoder.decode(frame.id, data, decoded);
+      const std::int64_t arrivedMonotonicMs = emcool::monotonicMs();
+      // cool-eva resolvePackTemperatures(), between decoding and recording, as on the Pi.
+      context.packTemperature.resolve(frame.id, data, decoded, arrivedMonotonicMs);
+      context.status.noteFrame(decoded.size(), decoded.overflowed());
+      const std::int64_t arrivedWallClockMs = emcool::wallClockMs();
+      std::optional<double> gpsEpochSeconds;
+      {
+        const std::lock_guard<std::mutex> lock(context.storeMutex);
+        for (const emcool::can::DecodedValue& value : decoded) {
+          context.store.record(value.key, value.value, arrivedWallClockMs, arrivedMonotonicMs);
+          if (std::string_view(value.key) == "gps_epoch_s") {
+            gpsEpochSeconds = value.value;
+          }
+        }
+      }
+      if (gpsEpochSeconds) {
+        offerGpsTime(context.clock, *gpsEpochSeconds);
+      }
+      // The charge-current ack-watch and the automatic controller see these as cool-eva's onChange
+      // does. Outside storeMutex: observeChargeSignal takes the diagnostics task's own lock.
+      for (const emcool::can::DecodedValue& value : decoded) {
+        const std::string_view key(value.key);
+        if (key == "fast_dc_target_a" || key == "charge_limit_a" || key == "charge_manager_state" ||
+            key == "batt_temp_hi" || key == "soc" || key == "dc_charge_limit_selected_a") {
+          context.diagnostics.observeChargeSignal(key, value.value, arrivedMonotonicMs);
+        }
+      }
+    }
+    const std::int64_t nowMs = emcool::monotonicMs();
+    context.bus.recoverIfBusOff(nowMs);
+    context.rideLog.tick(nowMs);
+    context.status.reportIfDue(nowMs);
+  }
+}
+
+
+// cool-eva syncSystemClockFromGps(), with settimeofday where it ran `date -u -s`.
+void offerGpsTime(emcool::clock::SystemClockSync& clock, double gpsEpochSeconds) {
+  const double monotonicMs = static_cast<double>(esp_timer_get_time()) / 1000.0;
+  const double systemEpochSeconds = static_cast<double>(emcool::wallClockMs()) / 1000.0;
+  const std::optional<emcool::clock::ClockVerdict> step = clock.offer(gpsEpochSeconds, systemEpochSeconds, monotonicMs);
+  if (step) {
+    clock.noteStepResult(emcool::stepWallClock(step->epochSeconds), step->offsetSeconds, step->reason);
+  }
+}
+
+bool initNvs() {
+  esp_err_t result = nvs_flash_init();
+  if (result == ESP_ERR_NVS_NO_FREE_PAGES || result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    // An NVS partition this firmware can't read is no use to it either way: erasing it puts
+    // every setting back to its default (and Bluetooth off, with no secret), loudly.
+    emcool::logWarning(kTag, "NVS needs erasing (%s); erasing it, so every setting is back to its default",
+                       esp_err_to_name(result));
+    result = nvs_flash_erase();
+    if (result == ESP_OK) result = nvs_flash_init();
+  }
+  if (result != ESP_OK) {
+    emcool::logError(kTag, "NVS did not initialise (%s); Bluetooth stays off", esp_err_to_name(result));
+    return false;
+  }
+  return true;
+}
+
+// The phone link, if it has a usable secret and the crypto passes its known-answer tests.
+bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
+                    std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
+                    emcool::DiagnosticsTask& diagnostics, emcool::BleLinkCounters& counters) {
+  if (!emcool::ble::BleSession::secretIsUsable(settings.bleSecret)) {
+    emcool::logWarning(kTag,
+                       "Bluetooth is off: no link secret. On the serial console: set BLE_SECRET \"a phrase of "
+                       "%zu-%zu characters\", then restart",
+                       emcool::ble::BleSession::kMinSecretLength, emcool::ble::BleSession::kMaxSecretLength);
+    return false;
+  }
+  if (!emcool::ble::initCrypto() || !emcool::ble::cryptoSelfTest()) {
+    emcool::logError(kTag, "Bluetooth is off: the crypto failed its self-test");
+    return false;
+  }
+  auto* endpoints = allocate<emcool::ble_server::DashboardEndpoints>("the dashboard endpoints", store, storeMutex,
+                                                                     storage, diagnostics, &diagnostics);
+  auto* server = endpoints == nullptr ? nullptr
+                                      : allocate<emcool::ble_server::BleServer>("the Bluetooth server",
+                                                                                 settings.bleSecret, store, storeMutex,
+                                                                                 *endpoints);
+  return server != nullptr && emcool::startBleLink(*server, settings.bleName.c_str(), counters);
+}
+
+// What this boot runs with — the secret only by its length — and cool-eva's BMS line.
+void logSettings(const emcool::settings::Settings& settings) {
+  emcool::logInfo(kTag,
+                  "settings: BLE_SECRET %s, BLE_NAME %s, CUSTOM_BMS_CONFIG %d, OBD_ENABLED %d, ELOCK_ENABLED %d, "
+                  "SERVICE_MODE_ENABLED %d, status report %s (serial console: show)",
+                  settings.bleSecret.empty() ? "not set" : ("set (" + std::to_string(settings.bleSecret.size()) +
+                                                             " characters)").c_str(),
+                  settings.bleName.c_str(), settings.customBmsConfig ? 1 : 0, settings.obdEnabled ? 1 : 0,
+                  settings.elockEnabled ? 1 : 0, settings.serviceModeEnabled ? 1 : 0,
+                  settings.statusReport ? ("every " + std::to_string(settings.statusIntervalSeconds) + " s").c_str()
+                                        : "off");
+  if (!settings.obdEnabled) {
+    emcool::logInfo("obd", "disabled (OBD_ENABLED=0) — passive decode only, listen-only on the bus");
+    if (settings.elockEnabled) emcool::logWarning("elock", "ELOCK_ENABLED is 1 but needs OBD_ENABLED too; not reading");
+  } else if (!settings.elockEnabled) {
+    emcool::logInfo("elock", "disabled (ELOCK_ENABLED=0)");
+  }
+  emcool::logInfo("bms", "%s",
+                  settings.customBmsConfig
+                      ? "custom config expected — true pack temps from 0x660, 0x200 logged as batt_temp_*_vcu"
+                      : "stock config assumed — pack temps from 0x200 once no 0x660 has been seen (set "
+                        "CUSTOM_BMS_CONFIG 1 if flashed)");
+}
+
+// For the objects that live as long as the firmware and are too big for static data.
+template <typename Type, typename... Arguments>
+Type* allocate(const char* what, Arguments&&... arguments) {
+  Type* object = new (std::nothrow) Type(std::forward<Arguments>(arguments)...);
+  if (object == nullptr) {
+    emcool::logError(kTag, "no memory for %s (%zu bytes)", what, sizeof(Type));
+  }
+  return object;
+}
+
+// Before the radio is up, esp_random has no RF noise to draw on; the bootloader's entropy
+// source fills in for the eight bytes a session id needs.
+emcool::ride_log::SessionId newSessionId() {
+  std::array<std::uint8_t, 8> bytes = {};
+  bootloader_random_enable();
+  esp_fill_random(bytes.data(), bytes.size());
+  bootloader_random_disable();
+  return emcool::ride_log::SessionId::fromBytes(bytes);
+}
+
+}  // namespace

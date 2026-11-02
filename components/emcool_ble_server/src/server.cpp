@@ -1,0 +1,380 @@
+#include "emcool/ble_server/server.hpp"
+
+#include <cctype>
+
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+
+#include "emcool/ble/json_reader.hpp"
+#include "emcool/log.hpp"
+#include "emcool/text/text_buffer.hpp"
+
+namespace emcool::ble_server {
+
+namespace {
+
+using text::TextBuffer;
+
+constexpr std::string_view kBadPath = "path must start with /";
+
+constexpr const char* kTag = "ble-server";
+constexpr std::uint16_t kNotificationOverheadBytes = 3;
+
+bool equalsIgnoringCase(std::string_view left, std::string_view right) {
+  if (left.size() != right.size()) return false;
+  for (std::size_t at = 0; at < left.size(); at++) {
+    if (std::tolower(static_cast<unsigned char>(left[at])) != std::tolower(static_cast<unsigned char>(right[at]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void copyTruncated(std::string_view from, char* to, std::size_t capacity) {
+  const std::size_t length = std::min(from.size(), capacity - 1);
+  std::memcpy(to, from.data(), length);
+  to[length] = '\0';
+}
+
+}  // namespace
+
+BleServer::BleServer(std::string_view secret, signals::SignalStore& store, std::mutex& storeMutex,
+                     RequestHandler& requests)
+    : session_(secret), store_(store), storeMutex_(storeMutex), requests_(requests) {}
+
+void BleServer::connected() { mtu_ = kDefaultAttMtu; }
+
+void BleServer::disconnected() {
+  endSession("phone disconnected");
+  mtu_ = kDefaultAttMtu;
+}
+
+void BleServer::notificationsEnabled(bool enabled) {
+  if (!enabled) {
+    endSession("phone turned notifications off");
+  }
+}
+
+void BleServer::mtuChanged(std::uint16_t mtu) {
+  if (mtu >= kDefaultAttMtu) {
+    mtu_ = mtu;
+  }
+}
+
+void BleServer::receiveFrame(std::span<const std::uint8_t> frame, std::int64_t nowMonotonicMs) {
+  const ble::FrameAssembler::Result assembled = assembler_.push(frame);
+  if (assembled.problem != nullptr) {
+    counters_.problems++;
+    logInfo(kTag, "inbound frame: %s", assembled.problem);
+  }
+  if (!assembled.envelope) return;
+
+  // Replies (REFUSED, WELCOME) are written straight into the next free slot.
+  Slot* slot = freeSlot();
+  const ble::BleSession::Received result =
+      session_.receive(*assembled.envelope, nowMonotonicMs, slot != nullptr ? std::span<std::uint8_t>(slot->bytes)
+                                                                            : std::span<std::uint8_t>());
+  if (result.problem != nullptr) {
+    counters_.problems++;
+    logInfo(kTag, "%s", result.problem);
+  }
+  if (result.startedSession) {
+    // Whatever was queued belonged to the session this one replaces.
+    counters_.sessionsStarted++;
+    streaming_ = false;
+    stream_.cancelSnapshot();
+    requestCount_ = 0;
+    responseStage_ = ResponseStage::kNone;
+    assembler_.reset();
+    if (slot != nullptr) {
+      slotHead_ = static_cast<std::size_t>(slot - slots_.data());
+    }
+    slotCount_ = 0;
+    splitter_.reset();
+    attempt_.reset();
+    logInfo(kTag, "phone authenticated, session started");
+  }
+  if (result.replyLength > 0 && slot != nullptr) {
+    slot->length = result.replyLength;
+    commitSlot(*slot);
+    if (!result.startedSession) {
+      counters_.refusals++;
+    }
+  }
+  if (result.message) {
+    dispatch(*result.message, nowMonotonicMs);
+  }
+}
+
+void BleServer::tick(std::int64_t nowMonotonicMs, std::int64_t nowWallClockMs) {
+  if (!session_.authenticated()) return;
+  advanceResponse(nowMonotonicMs);
+  advanceStream(nowMonotonicMs, nowWallClockMs);
+}
+
+bool BleServer::nextFrame(std::span<std::uint8_t> out, std::size_t& length) {
+  while (slotCount_ > 0) {
+    Slot& head = slots_[slotHead_];
+    if (!splitter_) {
+      splitter_.emplace(std::span<const std::uint8_t>(head.bytes.data(), head.length), head.messageId,
+                        static_cast<std::size_t>(mtu_ - kNotificationOverheadBytes));
+    }
+    attempt_ = *splitter_;
+    if (attempt_->next(out, length)) {
+      attemptLength_ = length;
+      return true;
+    }
+    // Nothing left of this envelope (it can't happen, but a stuck slot would stop the link).
+    slotHead_ = (slotHead_ + 1) % kOutboundSlots;
+    slotCount_--;
+    splitter_.reset();
+    attempt_.reset();
+  }
+  return false;
+}
+
+void BleServer::frameSent() {
+  if (!attempt_) return;
+  splitter_ = attempt_;
+  attempt_.reset();
+  counters_.framesSent++;
+  counters_.bytesSent += attemptLength_;
+  if (splitter_->done()) {
+    slotHead_ = (slotHead_ + 1) % kOutboundSlots;
+    slotCount_--;
+    splitter_.reset();
+  }
+}
+
+std::size_t BleServer::queuedBytes() const {
+  std::size_t bytes = 0;
+  for (std::size_t index = 0; index < slotCount_; index++) {
+    bytes += slots_[(slotHead_ + index) % kOutboundSlots].length;
+  }
+  return bytes;
+}
+
+void BleServer::endSession(const char* reason) {
+  const bool hadSession = session_.authenticated() || streaming_;
+  if (responseStage_ == ResponseStage::kWaiting) requests_.abandon();
+  slotCount_ = 0;
+  splitter_.reset();
+  attempt_.reset();
+  assembler_.reset();
+  requestCount_ = 0;
+  responseStage_ = ResponseStage::kNone;
+  streaming_ = false;
+  stream_.cancelSnapshot();
+  if (!hadSession) return;
+  session_.end();
+  logInfo(kTag, "session ended (%s)", reason);
+}
+
+void BleServer::dispatch(const ble::Message& message, std::int64_t nowMonotonicMs) {
+  switch (static_cast<ble::MessageKind>(message.kind)) {
+    case ble::MessageKind::kRequest:
+      queueRequest(message.header);
+      return;
+    case ble::MessageKind::kSubscribe:
+      if (streaming_) return;
+      streaming_ = true;
+      {
+        // Patches carry changes from here on; the snapshot carries everything before.
+        const std::lock_guard<std::mutex> lock(storeMutex_);
+        store_.clearAllChanged();
+      }
+      stream_.beginSnapshot();
+      counters_.snapshots++;
+      lastSnapshotMs_ = nowMonotonicMs;
+      lastPatchMs_ = nowMonotonicMs;
+      return;
+    case ble::MessageKind::kUnsubscribe:
+      streaming_ = false;
+      stream_.cancelSnapshot();
+      return;
+    default:
+      logInfo(kTag, "ignoring message kind %u", static_cast<unsigned>(message.kind));
+      return;
+  }
+}
+
+void BleServer::queueRequest(std::string_view header) {
+  ble::JsonObjectReader reader;
+  char scratch[512];
+  const ble::JsonMember* id = nullptr;
+  if (!reader.read(header, scratch) || (id = reader.find("id")) == nullptr || id->type != ble::JsonType::kNumber) {
+    counters_.problems++;
+    logInfo(kTag, "a REQUEST without a readable header or id");
+    return;
+  }
+  if (requestCount_ == kMaxQueuedRequests) {
+    counters_.problems++;
+    logWarning(kTag, "%zu requests already waiting; dropping one", kMaxQueuedRequests);
+    return;
+  }
+  PendingRequest& request = requestQueue_[requestCount_++];
+  request.id = static_cast<std::int64_t>(id->number);
+  const ble::JsonMember* method = reader.find("method");
+  const ble::JsonMember* path = reader.find("path");
+  copyTruncated(method != nullptr && method->type == ble::JsonType::kString ? method->text : "GET",
+                request.method.data(), request.method.size());
+  copyTruncated(path != nullptr && path->type == ble::JsonType::kString ? path->text : "", request.path.data(),
+                request.path.size());
+  request.coolEva[0] = '\0';
+  if (const ble::JsonMember* headers = reader.find("headers"); headers != nullptr && headers->type == ble::JsonType::kObject) {
+    ble::JsonObjectReader headerReader;
+    char headerScratch[512];
+    if (headerReader.read(headers->text, headerScratch)) {
+      for (const ble::JsonMember& member : headerReader.members()) {
+        if (member.type == ble::JsonType::kString && equalsIgnoringCase(member.key, "x-emcool")) {
+          copyTruncated(member.text, request.coolEva.data(), request.coolEva.size());
+        }
+      }
+    }
+  }
+}
+
+BleServer::Slot* BleServer::freeSlot() {
+  if (slotCount_ == kOutboundSlots) return nullptr;
+  return &slots_[(slotHead_ + slotCount_) % kOutboundSlots];
+}
+
+void BleServer::commitSlot(Slot& slot) {
+  slot.messageId = ++nextMessageId_;
+  slotCount_++;
+}
+
+bool BleServer::sealIntoSlot(ble::MessageKind kind, std::string_view header, std::span<const std::uint8_t> body) {
+  Slot* slot = freeSlot();
+  if (slot == nullptr) return false;
+  const std::size_t length = session_.seal(kind, header, body, slot->bytes);
+  if (length == 0) {
+    counters_.problems++;
+    logWarning(kTag, "could not seal a message of kind %u", static_cast<unsigned>(kind));
+    return false;
+  }
+  slot->length = length;
+  commitSlot(*slot);
+  return true;
+}
+
+// One request at a time: its head, its body in pieces, its end — each as a slot frees up.
+void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
+  while (true) {
+    if (responseStage_ == ResponseStage::kNone) {
+      if (requestCount_ == 0) return;
+      const PendingRequest request = requestQueue_[0];
+      std::move(requestQueue_.begin() + 1, requestQueue_.begin() + requestCount_, requestQueue_.begin());
+      requestCount_--;
+      counters_.requests++;
+      logInfo(kTag, "%s %s", request.method.data(), request.path.data());
+      responseId_ = request.id;
+      responseOffset_ = 0;
+      if (request.path[0] != '/') {
+        response_ = {400, "text/plain; charset=utf-8", kBadPath.size()};
+        badPath_ = true;
+        responseStage_ = ResponseStage::kHead;
+      } else {
+        badPath_ = false;
+        const std::optional<HttpResponse> response =
+            requests_.begin({request.method.data(), request.path.data(), request.coolEva.data()}, nowMonotonicMs);
+        if (response) {
+          response_ = *response;
+          responseStage_ = ResponseStage::kHead;
+        } else {
+          responseStage_ = ResponseStage::kWaiting;
+          waitingSinceMs_ = nowMonotonicMs;
+        }
+      }
+    }
+    if (responseStage_ == ResponseStage::kWaiting) {
+      std::optional<HttpResponse> response = requests_.poll(nowMonotonicMs);
+      // cool-eva's tunnel gives a handler three minutes.
+      if (!response && nowMonotonicMs - waitingSinceMs_ > kRequestTimeoutMs) {
+        logWarning(kTag, "request %lld had no answer after %lld s", static_cast<long long>(responseId_),
+                   static_cast<long long>(kRequestTimeoutMs / 1000));
+        response = requests_.timedOut();
+      }
+      if (!response) return;
+      response_ = *response;
+      responseStage_ = ResponseStage::kHead;
+    }
+    if (freeSlot() == nullptr) return;
+
+    TextBuffer header(header_.data(), header_.size());
+    header.append("{\"id\":");
+    header.appendInteger(responseId_);
+    std::span<const std::uint8_t> body;
+    ble::MessageKind kind = ble::MessageKind::kResponseEnd;
+    ResponseStage next = ResponseStage::kNone;
+    if (responseStage_ == ResponseStage::kHead) {
+      header.append(",\"status\":");
+      header.appendInteger(response_.status);
+      header.append(",\"headers\":{\"content-type\":");
+      header.appendJsonString(response_.contentType);
+      header.append(",\"content-length\":\"");
+      header.appendUnsigned(response_.bodyLength);
+      header.append("\",\"cache-control\":\"no-store\"}");
+      kind = ble::MessageKind::kResponseHead;
+      next = response_.bodyLength > 0 ? ResponseStage::kBody : ResponseStage::kEnd;
+    } else if (responseStage_ == ResponseStage::kBody) {
+      const std::size_t wanted = std::min(kResponseChunkBytes, response_.bodyLength - responseOffset_);
+      const std::span<const char> piece =
+          badPath_ ? std::span<const char>(kBadPath.substr(responseOffset_, wanted))
+                   : requests_.body(responseOffset_, wanted);
+      if (piece.empty()) {
+        // The handler came up short of the length it promised: end it, rather than loop.
+        logWarning(kTag, "the body of request %lld ended %zu bytes early", static_cast<long long>(responseId_),
+                   response_.bodyLength - responseOffset_);
+        responseOffset_ = response_.bodyLength;
+      }
+      body = std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(piece.data()), piece.size());
+      responseOffset_ += piece.size();
+      kind = ble::MessageKind::kResponseBody;
+      next = responseOffset_ < response_.bodyLength ? ResponseStage::kBody : ResponseStage::kEnd;
+    }
+    header.append("}");
+    if (header.overflowed() || !sealIntoSlot(kind, std::string_view(header_.data(), header.length()), body)) {
+      logWarning(kTag, "dropping the response to request %lld", static_cast<long long>(responseId_));
+      responseStage_ = ResponseStage::kNone;
+      continue;
+    }
+    responseStage_ = next;
+  }
+}
+
+void BleServer::advanceStream(std::int64_t nowMonotonicMs, std::int64_t nowWallClockMs) {
+  if (!streaming_) return;
+  while (stream_.snapshotInProgress() && freeSlot() != nullptr) {
+    std::size_t length = 0;
+    {
+      const std::lock_guard<std::mutex> lock(storeMutex_);
+      length = stream_.nextSnapshotChunk(store_, nowWallClockMs, header_);
+    }
+    if (length == 0) break;
+    sealIntoSlot(ble::MessageKind::kStream, std::string_view(header_.data(), length), {});
+  }
+
+  // At most one patch window's worth per 100 ms; whatever doesn't fit a free slot stays marked.
+  if (nowMonotonicMs - lastPatchMs_ >= kPatchWindowMs && freeSlot() != nullptr) {
+    lastPatchMs_ = nowMonotonicMs;
+    while (freeSlot() != nullptr) {
+      std::size_t length = 0;
+      {
+        const std::lock_guard<std::mutex> lock(storeMutex_);
+        length = stream_.nextPatch(store_, nowWallClockMs, header_);
+      }
+      if (length == 0) break;
+      sealIntoSlot(ble::MessageKind::kStream, std::string_view(header_.data(), length), {});
+    }
+  }
+
+  if (nowMonotonicMs - lastSnapshotMs_ >= kHeartbeatMs && !stream_.snapshotInProgress()) {
+    lastSnapshotMs_ = nowMonotonicMs;
+    stream_.beginSnapshot();
+    counters_.snapshots++;
+  }
+}
+
+}  // namespace emcool::ble_server

@@ -1,0 +1,15 @@
+#pragma once
+
+// The bodies of cool-eva's /dtc-table and /fault-infokeys, byte for byte: static data,
+// generated from cool-eva by tools/generate-diagnostic-tables.mts and kept in flash. Neither
+// touches the bus, so they're served whether or not OBD is on — the Faults tab names the
+// active hub codes the bike broadcasts with them.
+
+#include <string_view>
+
+namespace emcool::obd {
+
+std::string_view dtcTableBody();
+std::string_view faultInfokeysBody();
+
+}  // namespace emcool::obd

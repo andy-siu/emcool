@@ -1,0 +1,257 @@
+// @ts-check
+
+// The pure half of the cooling-fan section: which duties the slider may select, and the
+// sentence each code out of src/fan/curve.ts and src/fan/fun.ts gets. No van, no fetch,
+// no DOM — so scripts/check-fan-curve.ts and scripts/check-fan-fun.ts can assert all of
+// it without standing up a page.
+//
+// ⚠️ Nothing here decides policy. The floor and the cap arrive in `/fan`'s `limits`, so
+// a cap lowered on the Pi to hold the fan's average voltage moves the slider's stops
+// with it and this file never has to be edited to agree.
+
+/**
+ * The gap between running stops, in percent.
+ *
+ * ⚠️ This was 5, and its reason was that "finer is not a duty this fan resolves". That is
+ * FALSE — a 50 000 ns period is about 2500 counts, so the bridge resolves ~0.04 %, and
+ * fun mode drives it at that resolution. The real reason for a coarse grid was thumb
+ * precision on a phone, and that has now been traded away on purpose: nobody cares
+ * whether it is 47 or 48 %, and sliding it and hearing the fan change immediately is
+ * worth more than landing on an exact number. The cap is always the LAST stop whether or
+ * not it lands on the grid.
+ */
+export const DUTY_STEP_PERCENT = 1;
+
+/**
+ * The duties the slider offers: stop, then the running band.
+ *
+ * ⚠️ This is the whole fix for the dead zone. The slider used to run 0…100 in 5 % steps
+ * against a 30 % minimum running duty, so 5, 10, 15, 20 and 25 — a quarter of the travel
+ * — all silently meant "stop". Every position here is a duty the Pi will actually take,
+ * and the slider indexes this array rather than carrying percentages of its own.
+ *
+ * @param {number} minRunningPercent the Pi's floor; 0 before it has answered
+ * @param {number} maxPercent the Pi's cap; 0 before it has answered
+ * @returns {number[]}
+ */
+export function dutyStops(minRunningPercent, maxPercent) {
+  const stops = [0];
+  if (!(minRunningPercent > 0) || !(maxPercent >= minRunningPercent)) {
+    // No reply yet, or a nonsense pair. One stop leaves the slider inert rather than
+    // offering duties nothing has agreed to.
+    return stops;
+  }
+  for (let duty = minRunningPercent; duty < maxPercent; duty += DUTY_STEP_PERCENT) {
+    stops.push(duty);
+  }
+  stops.push(maxPercent);
+  return stops;
+}
+
+/**
+ * Which stop a duty sits at — the nearest, so a duty the curve picked off its own line
+ * (say 63 %) still puts the thumb somewhere honest instead of at 0.
+ * @param {number[]} stops
+ * @param {number} duty
+ * @returns {number}
+ */
+export function dutyStopIndex(stops, duty) {
+  let best = 0;
+  for (let index = 1; index < stops.length; index += 1) {
+    if (Math.abs(stops[index] - duty) < Math.abs(stops[best] - duty)) {
+      best = index;
+    }
+  }
+  return best;
+}
+
+/**
+ * One sentence per FAN_REASON in src/fan/curve.ts, keyed by its code.
+ *
+ * ⚠️ The codes are the wire format and the words are not: a signal is a number, so this
+ * is where it becomes something a rider can read. A code with no entry here would render
+ * as a bare integer, which is why the check asserts the two sets match exactly.
+ * @type {Record<number, string>}
+ */
+export const FAN_REASON_TEXT = {
+  0: "The slider is driving the fan.",
+  1: "Waiting for the first pack temperature — the fan stays stopped until one arrives.",
+  // ⚠️ Rendered at TWO duties — the 30 % floor off a DC session and 100 % on one — so it
+  // must not name one. public/views/fan.js prints "Running at N %." directly above it.
+  2:
+    "⚠️  No usable pack temperature. The fan is running anyway — 'off' is the one answer a dead sensor must " +
+    "not produce, because it reads exactly like a cold pack.",
+  3: "The pack is below the temperature the fan starts at.",
+  4: "Moving fast enough that the airstream through the duct does the cooling.",
+  5: "Following the pack temperature.",
+  // 6 and 7 were the DC floor and the DC ramp, retired 2026-09-08 and never reused.
+  // docs/fan-control.md §6 "Retired reason codes" is where their words went.
+  8: "DC charging — 100 % for the whole session, whatever the pack temperature.",
+};
+
+/**
+ * The one reason code the sheet paints as a FAULT rather than a note: no usable pack
+ * temperature for a minute, so a sensor is dead — at the 30 % floor, or at 100 % if a DC
+ * session is what is setting the duty.
+ *
+ * ⚠️ A second copy of src/fan/curve.ts's FAN_REASON.TEMPERATURE_FAULT, because the
+ * browser cannot import a .ts module and the code is the wire format. §8 of
+ * scripts/check-fan-curve.ts asserts the two still agree. Written as a bare `2` in
+ * public/views/fan.js it survived swapping TEMPERATURE_FAULT with BELOW_THRESHOLD —
+ * which raises that banner for a merely cold pack and never for the dead sensor.
+ */
+export const TEMPERATURE_FAULT_REASON = 2;
+
+/**
+ * One clause per FAN_TEMPERATURE_INPUT in src/fan/curve.ts. Empty where there is nothing
+ * to add: a live reading needs no comment, and code 2 is already spelled out by whichever
+ * reason it arrives with — 1 or 2 off a DC session, and 8 on one, whose own sentence
+ * already says the duty owes nothing to the pack temperature.
+ * @type {Record<number, string>}
+ */
+export const FAN_TEMPERATURE_NOTE = {
+  0: "",
+  1: " The last in-bounds batt_temp_hi is all there is — the signal has stopped arriving.",
+  2: "",
+};
+
+/**
+ * The mode as `fan_auto_mode` carries it.
+ *
+ * ⚠️ A second copy of FAN_MODE_CODE in src/fan/auto.ts, because the browser cannot import
+ * a .ts module and the code is the wire format. scripts/check-fan-fun.ts asserts the two
+ * agree. Written as a bare `2` in public/views/fan.js it would survive swapping fun with
+ * manual — which shows "Manual" over a fan taking its orders from the throttle.
+ */
+export const FAN_MODE_CODE = { MANUAL: 0, AUTOMATIC: 1, FUN: 2 };
+
+/**
+ * `fan_off_state` — whose *off* this is, and why it ended.
+ *
+ * ⚠️ A second copy of FAN_OFF_STATE in src/fan/gesture-runner.ts, for the reason
+ * FAN_MODE_CODE above is: the browser cannot import a .ts module and the code is the wire
+ * format. scripts/check-fan-off-ceiling.ts asserts the two agree.
+ */
+export const FAN_OFF_STATE_CODE = { NOT_ARMED: 0, ARMED: 1, MOVED: 2 };
+
+/**
+ * The speed the gesture's *off* survives up to, in the sentence the rider reads.
+ *
+ * ⚠️ A second copy of FAN_OFF_CEILING_KMH in src/fan/gesture.ts, and the ONLY one that is
+ * a promise rather than a threshold: "off until 15 km/h" is what the phone tells a rider
+ * who has just silenced the fan at a toll booth, so it moving out of step with the Pi
+ * would be a lie rather than a mismatch. scripts/check-fan-off-ceiling.ts asserts the two
+ * agree, which is what makes it safe for this file to hold a number at all.
+ */
+export const FAN_OFF_CEILING_KMH = 15;
+
+/**
+ * One sentence per FUN_GATE in src/fan/fun.ts, keyed by its code — why fun mode is or is
+ * not on offer. Same arrangement as FAN_REASON_TEXT above and asserted the same way.
+ * @type {Record<number, string>}
+ */
+export const FUN_GATE_TEXT = {
+  0: "The bike cannot move, so the throttle can drive the fan.",
+  1: "The bike is in Go — the throttle belongs to the motor.",
+  2: "The bike is moving.",
+  3: "No fresh `go` off 0x102, so nothing says the bike cannot move.",
+  4: "No fresh `speed_can_kmh` off 0x104, so nothing says the bike is stopped.",
+  5: "No fresh `throttle_pct` off 0x109, so there is nothing to drive the fan with.",
+};
+
+/**
+ * A duty as a rider should read it. Fun mode carries a FRACTIONAL percent — the whole
+ * point is a throttle finer than whole percent — and `43.51724137931034 %` is not a thing
+ * to put on a phone. One decimal, and no trailing `.0` on the duties every other mode
+ * produces.
+ * @param {number | null | undefined} percent
+ * @returns {string}
+ */
+export function formatDuty(percent) {
+  if (typeof percent !== "number" || !Number.isFinite(percent)) {
+    return "—";
+  }
+  return Number.isInteger(percent) ? String(percent) : percent.toFixed(1);
+}
+
+/**
+ * What the automatic mode is doing right now, as one line.
+ * @param {number | null} reason
+ * @param {number | null} temperatureInput
+ * @returns {string}
+ */
+export function describeAutoReason(reason, temperatureInput) {
+  if (reason === null) {
+    return "";
+  }
+  const sentence = FAN_REASON_TEXT[reason] ?? `Reason code ${reason}, which this page has no words for.`;
+  return sentence + (temperatureInput === null ? "" : (FAN_TEMPERATURE_NOTE[temperatureInput] ?? ""));
+}
+
+/**
+ * Which of the fan's four announceable states this is, or null while it is unknown.
+ *
+ * ⚠️ The KEY is deliberately coarser than the text below it. A banner is raised when the
+ * key CHANGES, so a thumb dragging the slider from 40 % to 60 % raises none — where a key
+ * that carried the duty would raise one per command, at up to seven a second. The three
+ * states a handlebar hold can produce each land on a different key, which is what the
+ * gesture needs. docs/dashboard-decisions.md §"The toast banner".
+ *
+ * @param {number | null} modeCode `fan_auto_mode`
+ * @param {number | null} targetPercent `fan_target_pct`
+ * @returns {string | null}
+ */
+export function fanAnnouncementKey(modeCode, targetPercent) {
+  if (modeCode === null) {
+    return null;
+  }
+  if (modeCode === FAN_MODE_CODE.AUTOMATIC) {
+    return "automatic";
+  }
+  if (modeCode === FAN_MODE_CODE.FUN) {
+    return "fun";
+  }
+  if (targetPercent === null) {
+    return null;
+  }
+  // ⚠️ Manual only. In automatic the curve takes the duty through zero on temperature —
+  // several times an hour on a warm pack — and keying on that would put a banner over the
+  // header every time the fan started or stopped by itself.
+  return targetPercent > 0 ? "manual-running" : "manual-stopped";
+}
+
+/**
+ * What the banner says for that key. The duty is read at the moment it is raised, so the
+ * gesture's step reads "manual 100 %" with the number coming off the wire rather than
+ * from a copy of src/fan/control.ts's cap.
+ *
+ * ⚠️ `offState` words two of the four and NEVER enters fanAnnouncementKey(). A key that
+ * carried it would raise a banner on a bare disarm — the fan unchanged, the sentence
+ * changing — and would break the four-distinct-keys rule the cycle depends on.
+ *
+ * @param {string | null} key from fanAnnouncementKey()
+ * @param {number | null} targetPercent `fan_target_pct`
+ * @param {number | null} [offState] `fan_off_state`, read in the same pass as the key
+ * @returns {string}
+ */
+export function fanAnnouncementText(key, targetPercent, offState = null) {
+  if (key === "automatic") {
+    // The bike did this, not the rider: the gesture's *off* was handed back because the
+    // bike went over the ceiling and stayed there. Saying so is the whole point — the
+    // complaint that produced #205 was "drove up and the fan started blasting".
+    return offState === FAN_OFF_STATE_CODE.MOVED ? "Fan: automatic (moving)" : "Fan: automatic";
+  }
+  if (key === "fun") {
+    return "Fan: fun mode";
+  }
+  if (key === "manual-stopped") {
+    // Only the GESTURE's off carries the promise. A 0 the slider set has always survived
+    // until the bike is switched off, and telling that rider it ends at 15 km/h would be
+    // inventing a rule the Pi is not applying to them.
+    return offState === FAN_OFF_STATE_CODE.ARMED ? `Fan: off until ${FAN_OFF_CEILING_KMH} km/h` : "Fan: off";
+  }
+  if (key === "manual-running") {
+    return targetPercent === null ? "Fan: manual" : `Fan: manual ${formatDuty(targetPercent)} %`;
+  }
+  return "";
+}

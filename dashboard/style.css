@@ -1,0 +1,1603 @@
+/* emcool dashboard.
+ *
+ * Read at speed, through a visor, in daylight, one-handed. That constraint decides
+ * nearly everything below: very large numbers, very few of them per screen, colour
+ * carrying state so the digits don't have to be parsed, and touch targets sized for
+ * a gloved thumb rather than a cursor.
+ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #090f1c;
+  --tile: #1e293b;
+  --tile-edge: #2e3d55;
+  /* Text colours, with their contrast ratio against --tile / --bg.
+   *
+   * This screen is read in daylight, through a visor, at speed. WCAG AA's 4.5:1 is
+   * a floor for an indoor monitor, not a target here — everything below clears 6:1
+   * and the values clear 11:1. The first version of this file used #334155 for
+   * .sub and #64748b for .label, which measure 1.4:1 and 3.1:1 against the tile
+   * they sit on: the sub-lines were effectively invisible and the labels failed AA.
+   * If you darken any of these, measure it first. */
+  --fg: #f8fafc; /* 14.0:1 / 18.3:1 — values */
+  --label: #cbd5e1; /* 9.9:1 / 12.9:1 — labels, units, tabs */
+  --sub: #b6c2d4; /* 8.1:1 / 10.6:1 — second lines, section headings */
+  --dim: #334155; /* borders only — never text */
+  --bad: #f87171;
+  --good: #4ade80;
+  /* The same amber as WARN in public/lib/colors.js, and it has to stay the same:
+     the menu sheet marks a reversible write amber in CSS and colours the sentences
+     that argue against it amber from JS, and two ambers that nearly match would
+     read as two different meanings. 8.5:1 on --bg, 6.5:1 on --tile.
+     --bad measures 6.9:1 on --bg but only 5.3:1 on --tile, so red text in the sheet
+     sits on the sheet's own background and never on a tile. */
+  --warn: #fb923c;
+
+  /* The same two hues at the alpha the sheet's borders want, declared ONCE.
+     ⚠️ They are hand-expanded from --warn and --bad because a var() cannot be given
+     an alpha without color-mix(), which this dashboard does not assume — but hand-
+     expanding them at each use site is exactly the drift the note above forbids, and
+     there were four such copies. If you change --warn or --bad, change these; a grep
+     for the hex now finds every place the colour lives. */
+  --warn-edge: rgba(251, 146, 60, 0.45);
+  --bad-edge: rgba(248, 113, 113, 0.55);
+
+  /* The rest of the ramp public/lib/colors.js draws with, which used to be a second
+     hand-kept copy of --good/--warn/--bad. Tokens now, so the light palette restates the
+     ramp in one place and colors.WARN can no longer drift from --warn — which the note
+     above says it must not. colors.CALM and colors.MUTED are var(--fg) and var(--sub)
+     rather than tokens of their own: they have always been those exact values, and a
+     second name for one hex is the drift this block exists to prevent. */
+  --watch: #facc15;
+  --cold: #38bdf8;
+  --cool: #67e8f9; /* the 5-20 °C step between --cold and --good */
+
+  /* The unfilled part of every bar and ring, and the power meter's own grey. Sized by
+     VISIBILITY rather than readability, so it is the one mark not held to the 6:1 floor —
+     but it IS held, by MARK_FLOORS in scripts/check-theme-contrast.ts, because nothing
+     did until 2026-09-08 and a value walked towards --tile passed every check while
+     making the meter invisible.
+     It is also the ONE knob that sets how legible a derate is: the limited stretch is
+     this same grey dashed against the tile showing through, so dash-against-gap IS
+     track-against-tile. Raising it makes the derate clearer and the fill's edge weaker.
+     1.53:1 is where the drive fill still clears its 4:1 floor, at 4.44:1. */
+  --track: #39465b;
+  /* Drive: the meter's fill, and the kW figure beside it. Its own token because drive
+     used to be --fg, which drew the loudest thing on the hero in the same ink as the
+     numbers. A blue because green is regen and red and amber mean a fault here — and the
+     LIGHTER blue of the pair on this ground, since a saturated mid-blue on a dark tile is
+     what a navy is on a white one. ⚠️ It is INK as well as a fill, so it carries the 6:1
+     floor: 6.8:1 on --tile and 8.9:1 on --bg, and 4.44:1 against the track it grows out
+     of. Its nearest ink in a*b* is --cold at 17.1; check-theme-contrast.ts holds it apart
+     from every ink rather than from that one, because this palette has three blues. */
+  --flow: #7cb4fb;
+
+  /* Ink on the toast, which is painted --good or --bad rather than --tile. 10.3:1 on
+     --good and 6.5:1 on --bad; the light theme flips it to white for the same reason,
+     because there the two grounds are dark. */
+  --toast-ink: #0f172a;
+  /* The tab bar sits over scrolling content, so it is near-opaque rather than a token. */
+  --tabs-bg: rgba(9, 15, 28, 0.94);
+
+  /* The tab bar is fixed; every scrolling surface has to clear it plus the home
+     indicator, or the last tile sits permanently under your thumb. */
+  --tabs-height: 4.2rem;
+}
+
+/* ---------- the light palette ----------
+ *
+ * Same token names, different ground. This exists because the dark screen washes out
+ * in direct sun; docs/dashboard-decisions.md has the ramp measurements and the trade.
+ *
+ * Two rules to keep if you touch it. The accents sit at the Tailwind 800/900 step
+ * because that is the FIRST step clearing 6:1 on #f1f5f9 — the GROUND here, and the tile
+ * colour before the two surfaces were swapped; the 700 step tops out at 5.91 and fails.
+ * ⚠️ The ratios written beside each value below are against --tile (#ffffff), which is
+ * the easier of the two grounds. The 6:1 derivation is against #f1f5f9, and
+ * scripts/check-theme-contrast.ts measures every ink against both.
+ * Darkening yellow and orange that far walks them towards each other, so --watch and
+ * --warn are further apart here than the obvious amber/orange pair would be, and
+ * scripts/check-theme-contrast.ts pins both the ratio and the separation. */
+:root[data-theme="light"] {
+  --bg: #f1f5f9;
+  --tile: #ffffff;
+  --tile-edge: #bcc8d8;
+  --fg: #0f172a; /* 17.9:1 / 16.3:1 — values */
+  --label: #1e293b; /* 14.6:1 / 13.4:1 */
+  --sub: #334155; /* 10.4:1 / 9.5:1 */
+  --dim: #cbd5e1; /* borders only — never text */
+  --bad: #7f1d1d; /* 10.0:1 */
+  --good: #166534; /* 7.1:1 */
+  --warn: #9a3412; /* 7.3:1 */
+  --warn-edge: rgba(154, 52, 18, 0.45);
+  --bad-edge: rgba(127, 29, 29, 0.55);
+  --watch: #854d0e; /* 6.9:1 */
+  --cold: #075985; /* 7.6:1 */
+  --cool: #155e75; /* 7.3:1 */
+  --track: #bfcad9; /* 1.66:1 on --tile, against the dark theme's 1.53 — see the note there */
+  --flow: #1e40af; /* 8.7:1 / 8.0:1 as ink, 5.26:1 against the track, nearest ink --cold 47.4 */
+  --toast-ink: #ffffff; /* 7.1:1 on --good, 10.0:1 on --bad */
+  --tabs-bg: rgba(241, 245, 249, 0.94);
+}
+
+/* ⚠️ `prefers-color-scheme` is deliberately NOT a media query here. public/lib/theme.js
+   resolves the theme from three inputs — the rider's choice, the bike's day/night bit
+   and the phone's setting — and stamps the answer on <html> as data-theme. A media
+   query would be a SECOND resolver for the same question, and the two would disagree
+   the moment the bike says one thing and the phone says another. One source of truth,
+   and it is the one that can see all three inputs. The cost — a dark first paint — and
+   the four states it resolves are in docs/dashboard-decisions.md §"Light and dark". */
+:root {
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  /* ⚠️ NO transition on the theme flip, and this is measured rather than taste. A
+     150 ms cross-fade on `background-color` alone leaves the ink already switched over
+     a ground that has not: for the whole fade the page is #0f172a on #0f172a, i.e.
+     blank. Fixing THAT means transitioning `color` as well, which would also ramp a
+     tile going GOOD → WARN — and colour here is the channel that carries state without
+     being read. A snap is the only option that is legible at every instant. */
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  padding-bottom: calc(var(--tabs-height) + env(safe-area-inset-bottom));
+}
+
+/* ---------- header ---------- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: calc(env(safe-area-inset-top) + 0.5rem) 0.9rem 0.6rem;
+}
+
+.brand {
+  font-weight: 500;
+  flex: 1;
+  font-size: 0.8rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+.menu {
+  background: none;
+  border: 0;
+  color: var(--label);
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  cursor: pointer;
+}
+
+.status {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--label);
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--bad);
+  transition: background 0.3s;
+}
+.dot.live {
+  background: var(--good);
+}
+.dot.connecting {
+  background: var(--watch);
+}
+.dot.up {
+  background: var(--good);
+}
+.dot.down {
+  background: var(--bad);
+}
+.dot.unknown {
+  background: var(--label);
+}
+
+/* ---------- layout ---------- */
+
+/* The two-column grid every tab lays its tiles out in. ⚠️ `1fr` and not `minmax(0, 1fr)`,
+   and that is measured rather than preferred: take `min-width: 0` off `.tile` below and a
+   DIRECT tile with one unbreakable token really does push these tracks out, to
+   `2733px 10.59px`. Every other child here spans `1 / -1` (.hero, .section, .tile-group,
+   and the catch-all below), and a spanner over flexible tracks has no content-based minimum
+   at all — so with that line in place there is nothing left for a track minimum to do.
+   docs/dashboard-decisions.md. */
+.view {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, 1fr);
+  padding: 0 0.5rem;
+  align-content: start;
+}
+
+/* A run of full-width tiles inside a .view. Re-using .view here would work for
+   layout but double its horizontal padding, insetting the group relative to the
+   tiles above and below it; a bare div loses the gap instead, because the cards
+   stop being grid items. This carries the gap and nothing else. */
+.tile-group {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.section {
+  font-weight: 600;
+  grid-column: 1 / -1;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--sub);
+  padding: 0.45rem 0.2rem 0;
+}
+
+.tile {
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+  border-radius: 0.9rem;
+  padding: 0.7rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-height: 88px;
+  /* ⚠️ Not decoration: without it a tile's automatic minimum is its own min-content, so one
+     unbreakable row makes the card wider than the phone and the page scrolls sideways —
+     #253, and removing this line re-opens it. `.raw` has carried the same line since the
+     raw grid was written. The measured chain: docs/dashboard-decisions.md. */
+  min-width: 0;
+  transition: opacity 0.3s;
+}
+
+.tile.span2 {
+  grid-column: 1 / -1;
+}
+
+/* A value that has stopped arriving is dimmed rather than hidden: knowing the
+   number is old is more useful than an empty space where it used to be. */
+.tile.stale,
+.raw.stale {
+  /* Dimmed enough to read as "this is old", not so much that it stops being
+     readable: at the old 0.4 the text fell to around 2:1 and a stale value —
+     which is still the last thing the bike actually said — became a smudge. */
+  opacity: 0.72;
+}
+
+.label {
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--label);
+}
+
+.value {
+  font-size: 2.15rem;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  margin-top: auto;
+}
+
+/* A second, smaller reading on the value's own row — the riding screen's coolant ΔT,
+   which spends 94 px of a 348 px row on its number and left the rest empty.
+   A modifier and not a change to .value, which every tile on the dashboard uses.
+   Baseline-aligned so the two figures sit on one line, and the aside never wraps: the
+   tile's height is the constraint this layout exists to respect, and a wrapped aside
+   would spend the row it was meant to save. */
+.value-row {
+  gap: 0.5rem;
+  margin-top: auto;
+}
+.value-row > .value {
+  margin-top: 0;
+}
+.value-aside {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* .unit is sized for a 2.15rem numeral; beside a 0.95rem one it would be the same size. */
+.value-aside .unit {
+  font-size: 0.8rem;
+}
+
+.unit {
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--label);
+  margin-left: 0.2rem;
+}
+
+.sub {
+  font-weight: 500;
+  font-size: 0.72rem;
+  color: var(--sub);
+  line-height: 1.35;
+}
+
+/* The one thing on the page that must never be mistaken for a normal reading. */
+.sub.fault {
+  color: var(--bad);
+}
+
+.missing {
+  font-weight: 500;
+  font-size: 0.78rem;
+  padding: 0.4rem 0.1rem;
+}
+
+/* ---------- hero ---------- */
+
+.hero {
+  grid-column: 1 / -1;
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+  border-radius: 1.1rem;
+  padding: 0.8rem 0.85rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.hero-value {
+  font-size: 4rem;
+  font-weight: 500;
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.hero-unit {
+  font-weight: 500;
+  font-size: 1.1rem;
+  color: var(--label);
+  margin-left: 0.35rem;
+  letter-spacing: 0;
+}
+
+/* The speed hero is a row: the power meter down the left edge, everything else beside
+   it. The strip is the height of the block rather than a band under it, which is where
+   the row the old bar needed has gone. */
+.speed-hero {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.75rem;
+}
+
+.hero-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* Two labels on one line, two figures on the next, the sub-line and charge on a third.
+   Baseline rather than centre alignment, so the small figure sits on the big one's feet
+   instead of floating in the middle of it. */
+/* Shared with .value-row above: a big figure and a small one on one baseline. Listed
+   together so the alignment cannot drift between the hero and the tiles — only the gap
+   and the tile's margin differ, and those stay with each. */
+.hero-row,
+.value-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.hero-row {
+  gap: 1rem;
+}
+
+/* The second figure in the hero. Same size as a tile's value, and NOT pushed to the
+   bottom the way .value is — it is aligned to the speed's baseline, not to a card. */
+.hero-aside {
+  margin-top: 0;
+}
+
+/* State of charge, at the end of the sub-line rather than in a card of its own. Small
+   because it moves slowly, and up here because it is the one number that must never
+   need a scroll. Tabular so it does not jitter between 9 % and 10 %. */
+.hero-charge {
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.charge-hero {
+  flex-direction: row;
+  align-items: center;
+  gap: 1.2rem;
+}
+
+.charge-hero .ring {
+  width: 7.5rem;
+  flex: none;
+}
+
+.charge-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+/* ---------- svg primitives ---------- */
+
+.spark {
+  width: 100%;
+  height: 26px;
+  display: block;
+  margin-top: 0.1rem;
+}
+
+.meter {
+  width: 100%;
+  height: 12px;
+  display: block;
+  margin: 0.15rem 0;
+}
+
+.strip {
+  width: 100%;
+  height: 60px;
+  display: block;
+  margin: 0.3rem 0;
+}
+
+.ring {
+  display: block;
+}
+
+/* The power meter: a thin strip down the left edge of the speed hero, the height of the
+   block it sits beside. It costs no row of its own, which is the point — the horizontal
+   bar it replaces spent one on itself and another on a legend naming its two ends. */
+.power-strip {
+  /* ⚠️ width, not flex-basis. `flex: 0 0 7px` reads as a HEIGHT the moment this lands in
+     a column-direction flex container, which is how it renders as a 7 px stub. */
+  width: 7px;
+  flex: none;
+  display: block;
+  border-radius: 3.5px;
+}
+
+/* ---------- facts ---------- */
+
+.fact {
+  font-weight: 500;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  padding: 0.15rem 0;
+  border-top: 1px solid var(--tile-edge);
+}
+
+.fact-label {
+  color: var(--label);
+}
+
+.fact-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- tabs ---------- */
+
+.tabs {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  background: var(--tabs-bg);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--tile-edge);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 5;
+}
+
+.tab {
+  flex: 1;
+  background: none;
+  border: 0;
+  color: var(--label);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  /* Deliberately tall: this is aimed at with a gloved thumb, in motion. */
+  padding: 1.05rem 0.2rem;
+  /* The Faults tab widens to "⚠ Faults" when a code sets. With five tabs sharing
+     the width that can wrap on a narrow phone, and --tabs-height is a fixed
+     constant that body's padding-bottom derives from — so a wrapped label makes
+     the real bar taller than the space reserved for it and buries the last tile
+     under your thumb, the exact thing --tabs-height exists to prevent. */
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab.on {
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: inset 0 2px 0 var(--good);
+}
+
+/* ---------- sheet ---------- */
+
+/* ⚠️ `visibility: hidden`, and it is not belt-and-braces on top of the opacity.
+   `opacity: 0; pointer-events: none` hides a sheet from the eye and from a finger, and
+   from NOTHING ELSE: every control inside it stays in the tab order and stays
+   activatable. Verified before this line existed — open the sheet, open the red fold,
+   close the sheet, and `.focus()` still lands on "Say a service was performed NOW",
+   where two activations POST `31 FC`. The fold re-collapses on the next OPEN
+   (refreshVcuWrite), so the window is "closed and not yet reopened", which is most of
+   the time. Near-zero risk on a phone with no keyboard — but the whole argument for the
+   fold is that an irreversible action must not be reachable by accident, and an
+   invisible page is a worse place to reach one from than a visible one.
+
+   Transitioned rather than switched, so the fade survives: `visibility` steps at the
+   START of the transition going visible and at the END going hidden, which is exactly
+   the two moments wanted. Anything overriding .sheet for layout (the screenshot
+   harness) has to override this too. */
+.sheet {
+  position: fixed;
+  inset: 0;
+  /* Dark in BOTH themes on purpose, which is why it is a literal and not a palette
+     token: it dims the page behind the sheet, and a light scrim over a light page dims
+     nothing. A token here would read as a knob the light palette forgot to turn. */
+  background: rgba(2, 6, 23, 0.6);
+  display: flex;
+  align-items: flex-end;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.2s,
+    visibility 0.2s;
+  z-index: 10;
+}
+
+.sheet.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.sheet-body {
+  width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--bg);
+  border-top-left-radius: 1.2rem;
+  border-top-right-radius: 1.2rem;
+  border-top: 1px solid var(--tile-edge);
+  padding: 1rem 0.9rem calc(1.4rem + env(safe-area-inset-bottom));
+  transform: translateY(2rem);
+  transition: transform 0.2s;
+}
+
+.sheet.open .sheet-body {
+  transform: translateY(0);
+}
+
+/* The sheet has two levels of heading, and it needs both: it is one scroll
+ * containing five top-level sections, one of which (service mode) has four
+ * subsections of its own. With a single style for all nine, "Service actions"
+ * announced itself exactly as loudly as "This session" and nothing said which
+ * was inside which.
+ *
+ * Level 1 is a real heading — near-white, larger, and preceded by a rule that
+ * does most of the separating. Level 2 keeps the old small grey caps, which are
+ * a good subsection marker and were only ever a bad section marker.
+ *
+ * ⚠️ 1.15rem is chosen against `.action`'s 1rem, not by eye. A heading has to be
+ * BIGGER than the things it organises, and the first version of this rule was
+ * 0.95rem — measurably smaller than the button labels underneath it and than
+ * `.sheet-close`, which inherits 1rem. A heading out-sized by its own contents is
+ * the same "no hierarchy" complaint in a new place. If you change either number,
+ * change it knowing about the other.
+ */
+.sheet-heading {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--fg);
+  border-top: 1px solid var(--tile-edge);
+  margin-top: 1.5rem;
+  padding: 1rem 0.2rem 0.15rem;
+}
+
+/* No rule above the sheet's OWN first heading: it would sit a few pixels under the
+   sheet's top edge and read as a second border.
+   ⚠️ `.sheet-body >` is load-bearing, not tidiness. A bare `.sheet-heading:first-child`
+   also matches "Change something on the bike", which is the first child of the div
+   VcuWrite() returns — so the one heading in the sheet whose rule carries the most
+   meaning was the one silently losing it. */
+.sheet-body > .sheet-heading:first-child {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0.2rem;
+}
+
+/* One line under a level-1 heading saying what the whole section can do to the
+   bike — the risk tiers below, stated once for a group instead of per control.
+   Only the sections that hold controls get one; the two that are pure readouts
+   have nothing to warn about. The read/write boundary this makes visible existed
+   until now solely as a comment in public/views/service-mode.js, where no rider
+   could see it. */
+.sheet-heading-note {
+  font-size: 0.74rem;
+  color: var(--sub);
+  padding: 0.15rem 0.2rem 0;
+}
+
+/* The boundary itself.
+   ⚠️ The heading STAYS --fg; the amber is on the rule above it and the line under it.
+   Painting the heading amber sounds right and measures backwards: --warn is 7.9:1
+   where --fg is 14.5:1, so the one section heading that announces the bike can be
+   changed came out at half the contrast of "Stored codes", which announces "none set".
+   It is also the same amber as the deck directly under it, so head and deck stopped
+   separating. Rank belongs to the heading; hue belongs to the rule and the deck. */
+.sheet-heading.writes {
+  border-top-color: var(--warn);
+  /* ⚠️ Larger than its peers, because rank should track consequence. At one size for
+     all six, "Link" — a one-line status readout — announced itself exactly as loudly
+     as the section that permanently alters a motorcycle. The colour stays --fg (see
+     above); size is the channel that raises it without dimming it. */
+  font-size: 1.35rem;
+}
+
+.sheet-heading.writes + .sheet-heading-note {
+  color: var(--warn);
+}
+
+/* Level 2. Heavier and a touch larger than it was, because the sheet also uses
+   small grey caps for FIELD labels (`.probe-label`, `.stat-label`) and at 0.68rem
+   the only thing separating "SERVICE ACTIONS" from "ECU" was a point of tracking.
+   Weight is what tells them apart now; nobody perceives a pixel of cap height. */
+.sheet-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--sub);
+  padding: 1rem 0.2rem 0.5rem;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+
+.stat {
+  background: var(--tile);
+  border-radius: 0.7rem;
+  padding: 0.6rem 0.5rem;
+}
+
+.stat-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--label);
+}
+
+.stat-value {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  margin-top: 0.15rem;
+}
+
+/* A second line under a stat's value, for the one tile whose answer is two facts: the
+   Waypoints tile shows where the last one was AND when. Grey and small so the position
+   above stays what the eye lands on. Measured at 390 px: the pair wraps after its comma
+   into a 86 px tile, against 72 px for the row it sits in. */
+.stat-sub {
+  font-size: 0.62rem;
+  color: var(--sub);
+  margin-top: 0.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The waypoint list under the trip stats: what this boot kept, and what it refused.
+
+   ON THE SHEET'S OWN BACKGROUND, not on tiles, and that is the contrast note at the top of
+   this file being obeyed rather than a layout preference: --bad measures 6.9:1 on --bg and
+   only 5.3:1 on --tile, and both a refused row's mark and an out-of-range position are
+   drawn in it.
+
+   ⚠️ `overflow-wrap: anywhere`, and NOT #253's `min-width: 0`, which was tried here first
+   and measured to do nothing at all. The two are not the same shape: `.tile` is a GRID
+   ITEM whose implicit track was sized by its content, so flooring it widened the page,
+   while a `.waypoint-row` is a block inside a block — its width comes from its containing
+   block whatever it holds, and its content simply overflows. Measured in the rendered
+   sheet at 390 px, with the check's 145-character unbreakable token in a row: `.sheet-body`
+   scrollWidth 969 without this line and 390 with it, while the row's own box reads 355 and
+   its right edge 372 in every one of those, `min-width: 0` or `auto`. So the ROW box can
+   never witness this and the scroll container is what does — which is what
+   check-phone-width.ts asserts, with that token as its probe. Nothing the list holds today
+   is such a token (a coordinate has a space in it and every WAYPOINT_REFUSAL_TEXT sentence
+   breaks at spaces); Energica's identifiers are, which is the same call `.code-field`
+   makes. */
+.waypoint-list {
+  padding: 0.1rem 0.2rem 0;
+}
+
+.waypoint-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  padding-bottom: 0.4rem;
+}
+
+/* A column, so the positions line up and a `refused` row does not shunt the text of the one
+   above it sideways.
+
+   ⚠️ `0 0`, and NOT the `0 1` + `overflow-wrap: anywhere` a review asked for — measured in
+   the rendered sheet, that regresses the row it was meant to protect. A flex item's shrink
+   share is proportional to its BASE size, and the body's base is the whole unwrapped
+   sentence, so on the one row that takes two lines the mark yields with it: 54 px → 37, and
+   `anywhere` then breaks "refused" into "refuse / d". The hazard it was for does not exist
+   either — with the mark pinned at 3.4 rem, a `#1234567890` overflows into the body's space
+   and `.sheet-body.scrollWidth` still reads 390. It would overlap that row's text, which is
+   the cost of a mark this repo has no way to produce (the sequence restarts every boot and
+   the archive holds 97 waypoints ever). */
+.waypoint-mark {
+  flex: 0 0 3.4rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--label);
+}
+
+.waypoint-mark.refused {
+  color: var(--bad);
+}
+
+.waypoint-body {
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.waypoint-fault {
+  color: var(--bad);
+}
+
+.waypoint-when {
+  font-size: 0.62rem;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The two lines under the list: what the counts are, and that the bike keeps none of
+   this past a restart. --sub at the rows' own 0.62rem, NOT .sheet-heading-note's 0.74rem:
+   that one is a section's subtitle and these are a footnote to the list above them. */
+.waypoint-note {
+  font-size: 0.62rem;
+  color: var(--sub);
+  padding: 0.15rem 0 0;
+}
+
+/* ---------- the sheet's three risk tiers ---------- */
+
+/* Every control in this sheet used to be the same grey rectangle, which meant
+ * "read the last-service date", "say a service was performed NOW" and "clear the
+ * stored trouble codes" were indistinguishable until you had read all three —
+ * and one of them cannot be undone.
+ *
+ * The tier is carried by a 3 px gutter down the left edge of every control.
+ *
+ * ⚠️ Measured against --tile, the three gutters are NOT three comparable colours,
+ * and an earlier version of this comment claimed they were:
+ *
+ *   grey  --dim   1.41:1     amber --warn  6.46:1     red --bad  5.29:1
+ *
+ * At 1.41:1 through a visor in daylight nobody perceives the grey one, so what
+ * is actually read is presence against absence — a mark on the two tiers that
+ * have one, and nothing on the tier that does not. Which is the right signal to
+ * be carrying, and better than the one the claim described: presence/absence
+ * survives deuteranopia, which flattens amber against red, and it survives
+ * sunlight, which flattens everything. Grey is the default tier precisely
+ * because it means "unmarked", and an unmarked control looking unmarked is the
+ * system working. Do not raise --dim to "fix" this: it would put a visible
+ * stripe on eight read buttons that carry no risk, and spend the one channel
+ * that still works in daylight on saying nothing.
+ *
+ * The grey declaration stays anyway, and is not decoration: it fixes the
+ * geometry, so a tier modifier only ever RECOLOURS and can never shift a text
+ * baseline.
+ *
+ *   grey (default)     reads. A parameter read, a CSV export, a probe, a
+ *                      download. Cannot change the bike, and the safe tier
+ *                      deliberately needs no modifier — a control acquires risk
+ *                      by being marked, never by being forgotten.
+ *   amber .writes      a parameter write. Changes the bike, and can be written
+ *                      back, which is exactly what makes it a middle tier rather
+ *                      than being lumped in with the red one.
+ *   red .irreversible  the 31 FC service point, clearing stored DTCs, setting
+ *                      the bike's clock. No unset, and in the clock's case not
+ *                      even a read-back.
+ *
+ * ⚠️ EVERY tier keeps the filled tile. The first version of this made the read
+ * tier transparent so it would recede, which is a fine idea on a monitor and a
+ * bad one here: --tile against --bg is a 1.22:1 edge, so in daylight through a
+ * visor the only buttons still visible would have been the three that cannot be
+ * undone. Recession is not worth buying with legibility on the controls used
+ * most. Colour is the only thing that varies between tiers — the gutter and, at
+ * a lower volume, the hairline border. Every dimension is shared.
+ *
+ * ⚠️ The gutter is an inset shadow, not a fat border-left. A 3 px border meeting
+ * a 1 px border under a 0.8rem radius does not reconcile — the corner comes out
+ * visibly lumpy. An inset shadow is clipped by the border-radius and curves
+ * cleanly, and it costs no layout, so the text baseline is identical on all
+ * three tiers.
+ *
+ * ⚠️ And the red tier does not rest on any of this. It sits behind a fold
+ * (.risk-fold), so it is not on screen at all until it is asked for, and each
+ * button carries a red IRREVERSIBLE line above it. Four redundant channels —
+ * fold, badge, border, gutter — because a thumb scrolling this sheet on a
+ * handlebar-mounted phone must not be able to land on an irreversible action,
+ * and no single visual channel is trustworthy enough to be the one that stops it.
+ */
+.action {
+  width: 100%;
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+  border-radius: 0.8rem;
+  box-shadow: inset 3px 0 0 var(--dim);
+  color: var(--fg);
+  font: inherit;
+  font-size: 1rem;
+  /* Tall enough for a gloved thumb. `min-height` as well as padding, because without
+     it the row height is set by whichever GLYPH is in the label — emoji run taller
+     than the text arrows, so "Download ride log" came out 4 px shorter than "Save
+     waypoint here" directly above it. Icon metrics must not decide layout. */
+  padding: 1rem;
+  min-height: 3.75rem;
+  margin-top: 0.5rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.action.writes {
+  border-color: var(--warn-edge);
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.action.irreversible {
+  border-color: var(--bad-edge);
+  box-shadow: inset 3px 0 0 var(--bad);
+}
+
+/* ⚠️ 0.66, and the number is measured rather than felt. This is the state most of the
+   sheet sits in whenever the bike is off or not in reach — which is most of the time
+   somebody opens it — so the label has to clear the 6:1 floor this file sets at the top
+   while the button still reads unmistakably as "off".
+
+   Composite --fg and --tile against --bg at the opacity, then measure the label against
+   its own dimmed fill:
+
+     0.50  4.08:1   what it was, and well under the floor
+     0.62  5.52:1   the first correction, which did NOT reach the floor and said ~5.9:1
+     0.66  6.06:1   clears it
+
+   0.65 gives 5.92 and misses. If you change this, compute it — the value that looks
+   right and the value that measures right were four hundredths apart here. */
+.action:disabled {
+  opacity: 0.66;
+}
+
+/* 0.2rem horizontally, matching .sheet-heading and .sheet-title rather than the 0.3rem
+   this used to carry — two text left-edges 1.3 px apart is a wobble you can see as you
+   scroll, and there is no reason for captions to hang off the heading grid. */
+.action-note {
+  font-size: 0.72rem;
+  color: var(--label);
+  padding: 0.35rem 0.2rem 0;
+}
+
+/* The prose under a control is three different things, and they were one
+ * undifferentiated amber block: "it will probably do nothing" sat in the same
+ * colour and size as "IRREVERSIBLE. There is no unset."
+ *
+ *   (unmarked)  what this does. Grey, always visible — it is how you know you
+ *               are on the right control.
+ *   .caution    why you might not want to. Amber. Folded away wherever there is
+ *               more than a sentence of it.
+ *   .no-undo    this cannot be taken back. Red, and never more than one short
+ *               line, because a paragraph of red is read as a paragraph.
+ *
+ * .no-undo leads the three under a button rather than following them: inside an
+ * opened fold, what separates the three irreversible actions from each other is
+ * precisely what each one cannot take back.
+ */
+.action-note.caution {
+  color: var(--warn);
+}
+
+/* A caution may carry more than one argument against pressing — the Clear button gains a
+   second one when the gate sees a cable in the inlet. Separated rather than run together:
+   as one block it read as "…come straight back. ⚠️ The charge manager reports…", two
+   warnings sharing a sentence, which is how the more urgent of the two gets skipped.
+
+   The "erased nothing" verdict uses .action-note.failure and the .no-undo badge rather than a
+   fourth set of red numbers: --bad and --warn are the closest adjacent pair in this ramp
+   (check-theme-contrast.ts's SEPARATION_FLOOR is set at 15 and that pair is what holds it
+   there), so a red line among amber ones has to carry its severity in weight, not in hue. */
+.caution-paragraph + .caution-paragraph {
+  margin-top: 0.6em;
+}
+
+/* Machine output — git's, from the Update button — rather than prose we wrote.
+   pre-wrap because a pull's summary is multi-line and CSS would otherwise collapse
+   `Updating a1b2..c3d4 / Fast-forward / src/… | 3 +-` into one run-on sentence.
+   overflow-wrap because the long unbroken token in it (a remote URL, a deep path)
+   would push the sheet sideways on a 390 px phone, which reads worse than the
+   collapse did. */
+.action-note.output {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The write section could not be reached at all.
+ *
+ * ⚠️ Ranked like .no-undo and NOT with it. The header of vcu-write.js calls this "the
+ * loudest failure this section has", and at the bare .action-note size (11.52 px,
+ * --label) it rendered byte-for-byte identically to "Reads four identifiers on the A8"
+ * — the one sentence saying the whole section is dead, set as the quietest type in it.
+ * Deliberately not the .no-undo class: that means one specific thing (this action
+ * cannot be taken back), and inheriting its badge spacing here would be borrowing a
+ * meaning that does not apply. This is red because something is broken. */
+.action-note.failure {
+  color: var(--bad);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* ⚠️ Bigger and heavier, not only redder — and it sits ABOVE its button, so it also
+   needs the space that says it belongs to what follows rather than to what precedes.
+   Red is the dimmest ink in this palette (6.5:1 on --bg, against 14.5:1 for a
+   heading), so carrying severity in hue alone put the most consequential sentence on
+   the page at the BOTTOM of its own contrast ranking — quieter than every throwaway
+   grey line around it. Weight and size are the two channels that survive both that
+   and daylight through a visor. */
+.action-note.no-undo {
+  color: var(--bad);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
+  padding: 0.9rem 0.2rem 0.25rem;
+}
+
+/* The category, as a badge rather than as the first half of the sentence.
+   "IRREVERSIBLE" was appearing five times in a screen and a half — section deck, fold
+   label, and once per card — and at that rate it stops being read, while the only new
+   information on each card is what came after it. Same on all three cards, because the
+   category IS the same on all three; the consequence is what differs and it now gets
+   the weight. */
+.no-undo-badge {
+  display: inline-block;
+  margin-right: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--bad-edge);
+  border-radius: 0.25rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  vertical-align: 0.08em;
+}
+
+/* The fold in front of the irreversible actions.
+ *
+ * The same idiom as the parameter warnings' toggle — a counted, caret-ended
+ * toggle built on .code-toggle, from the fix that stopped four amber paragraphs
+ * stacking above the write form — rather than a second kind of disclosure. Red
+ * instead of amber because what is behind it is.
+ *
+ * ⚠️ But it has real chrome, which that toggle does not, and the reason is not
+ * decoration. As a bare line of coloured text it read as a footnote on the
+ * caption above it rather than as the gate on three destructive operations, and
+ * it was a ~20 px line of text for somebody wearing gloves. It is now a
+ * full-width row with a real target: measured at 390x844, 49.8 px opened and
+ * 72.1 px collapsed — the collapsed state is taller because it carries the
+ * contents line as well, and it is the state the sheet spends its life in.
+ *
+ * ⚠️ Selected as `.code-toggle.risk-fold`, not `.risk-fold`. .code-toggle is
+ * declared further down this file, so at equal specificity it wins on source order
+ * and the variant silently rendered as the thing it was varying. */
+.code-toggle.risk-fold {
+  width: 100%;
+  text-align: left;
+  /* Flex so the caret can be pushed to the right edge — see .risk-fold-caret. The
+     label and the caret share the first line; .risk-fold-contents takes a full basis
+     and drops to the second, which is the two-line shape this had before. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--bad);
+  /* Solid, not dashed. Dashed was reached for to say "there is something behind
+     this", but a dashed edge means placeholder / empty state / drop target in every
+     UI vocabulary there is, and it was the only dashed thing on the page — so the one
+     control gating `31 FC` read as the component nobody had finished. What keeps it
+     from reading as a fourth button to press is that it has no fill and red type
+     where an action has a filled tile and near-white type. */
+  background: transparent;
+  border: 1px solid var(--bad-edge);
+  border-radius: 0.8rem;
+  padding: 0.9rem 1rem;
+  margin-top: 1.5rem;
+}
+
+/* The second line of the fold's label: what is actually in the drawer. The first line
+   says why it is shut, which is the more important fact and keeps the lead — but
+   "3 actions that cannot be undone" is a caveat used as a name, and somebody standing
+   at the bike who wants the clock should not have to open it to find out the clock is
+   in there. */
+.risk-fold-contents {
+  flex-basis: 100%;
+  margin-top: 0.2rem;
+  font-weight: 400;
+  color: var(--label);
+}
+
+/* One action and the prose that belongs to it. The gap between two of these is
+   deliberately wider than the gap inside one: with both at the default, the last
+   sentence about one irreversible action sat as close to the NEXT button as to the
+   one it was about. */
+.action-block + .action-block {
+  margin-top: 1.5rem;
+}
+
+/* The opened group.
+ *
+ * Spacing only — no rule and no indent. It had both, and both were wrong: the
+ * cards already carry a red gutter, so a second red rail 9 px to the left of it
+ * was the same line drawn twice, and indenting the group moved its LEFT edge
+ * while its right edge stayed on the page gutter, which reads as a layout bug
+ * rather than as grouping. What says these three belong together is that they
+ * are the only red things on the page and they appeared together when the fold
+ * opened. */
+/* ⚠️ The closing rule lives on the WRAPPER, not on the opened group, so it is there in
+   both states. On the group it existed only while open — so folded, "Recently written"
+   hung under the red panel with no divider at all, while "Stored codes" and "Link" each
+   got one, and it read as a caption on the danger box rather than as the next section.
+   The fold row is the opening edge and this is the closing one; neither touches the
+   left edge, which is what made the first attempt (a left rail plus an indent) ragged
+   on one side. */
+.risk-group {
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--bad-edge);
+  margin-bottom: 0.5rem;
+}
+
+/* Spacing only. What says these three belong together is that they are the only red
+   things on the page and they appeared together when the fold opened. */
+.danger-zone {
+  margin-top: 1.5rem;
+}
+
+/* ⚠️ The first card's gap comes from .danger-zone, the others' from
+   `.action-block + .action-block` — so they have to be the same number or the stack
+   leads raggedly (it ran 25 / 41 / 42 px). Both are 1.5rem; change them together. */
+.danger-zone > .action-block:first-child {
+  margin-top: 0;
+}
+
+.sheet-close {
+  width: 100%;
+  background: none;
+  border: 0;
+  color: var(--label);
+  font: inherit;
+  padding: 1.1rem;
+  margin-top: 0.6rem;
+  cursor: pointer;
+}
+
+/* ---------- raw signal view ---------- */
+
+.filter {
+  grid-column: 1 / -1;
+}
+
+.filter input {
+  width: 100%;
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+  border-radius: 0.7rem;
+  color: var(--fg);
+  font: inherit;
+  font-size: 1rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.raw-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.4rem;
+}
+
+.raw {
+  background: var(--tile);
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  min-width: 0;
+}
+
+.raw-key {
+  font-size: 0.62rem;
+  color: var(--label);
+  /* Generated keys like cell_v_lmu11_c7 must wrap rather than widen the grid. */
+  overflow-wrap: anywhere;
+}
+
+.raw-value {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.raw-fault {
+  font-size: 0.6rem;
+  color: var(--bad);
+}
+
+/* Second line on a button tile: the press count and how long ago, or — while a control
+   that is not momentary is still down — how long it has been held. --sub is the dimmest
+   colour that still clears 6:1 on a tile; see the palette note at the top. */
+.raw-sub {
+  font-size: 0.6rem;
+  color: var(--sub);
+}
+
+/* The second of two instructions, where the first is the one to follow: the lifetime
+   block's shell fallback for a Pi with the service stopped.
+   ⚠️ It INHERITS .raw-sub's --sub and sets no colour of its own. An earlier version put
+   --label here, reasoning that a command someone has to type should not be dimmed — but
+   --label is the BRIGHTER token (9.85:1 against --sub's 8.12:1 on a dark tile, 14.63:1
+   against 10.35:1 on a light one), so the line being demoted became the loudest text in
+   the block and out-shouted the instruction it is subordinate to. The separation is the
+   gap and the ordering; that argument is satisfied by inheriting, not by promoting. */
+.raw-footnote {
+  margin-top: 0.25rem;
+}
+
+/* An instruction rather than a reading, so it takes the whole width: the two sentences
+   below "lifetime · never read" wrap to seven lines and 100.5 px in a half-width tile
+   against two lines and 66 px across the full one, and a sentence someone has to follow
+   at the bike is the wrong thing to make them unpick. */
+.raw-notice {
+  margin-top: 0.35rem;
+}
+
+/* A handlebar button, held down or released within the last 600 ms.
+ *
+ * The border does the work rather than a background swap: this is watched from arm's
+ * length while the other hand is on the bars, and an outline is the change that reads
+ * fastest in peripheral vision. Deliberately no transition — the press is already only
+ * held for 600 ms (public/lib/press.js) and fading either edge of that would eat the
+ * margin that makes a 30 ms tap visible at all. */
+.raw.pressed {
+  box-shadow: inset 0 0 0 2px var(--good);
+}
+
+.raw.pressed .raw-value {
+  color: var(--good);
+}
+
+/* ---------- stored trouble codes (faults view) ---------- */
+
+/* Thirty-nine of these have to fit on a phone: the code on the left at a fixed width so
+   the codes form a readable column, the description filling the rest. Long rows wrap
+   rather than clip — `· freeze frame · expected` are the two suffixes that say why a row
+   matters at all, they sit at the END of the longest lines, and that is exactly what an
+   ellipsis eats. Most rows still take one line; today's list wraps one. */
+.code-line {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.76rem;
+  line-height: 1.6;
+}
+
+.code-line-id {
+  flex: 0 0 3.6rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.code-line-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Wrapping at all is what fixes #253: `white-space: nowrap` held this span's min-content
+     at 327 px. `anywhere` rather than `break-word` — the call `.code-field` makes below,
+     for the same reason — buys the rest: break-word leaves the minimum at the longest WORD
+     (53 px in today's list, which fits), `anywhere` takes it to one character, and only
+     that survives a name longer than the column. Energica's table is full of candidates. */
+  overflow-wrap: anywhere;
+}
+
+/* The open/closed marker on a code line that has a shortlist. Pushed to the right
+   edge and given a fixed width so the caret does not shift the description text
+   when it flips, and so lines without one do not lose alignment. */
+.code-line-more {
+  flex: 0 0 0.9rem;
+  text-align: right;
+  color: var(--label);
+  font-size: 0.7rem;
+}
+
+/* Energica's field list under an opened code. Indented to the width of the code
+   column so it reads as belonging to the line above rather than as a new row. */
+.code-fields {
+  margin: 0.15rem 0 0.5rem 4.1rem;
+  font-size: 0.72rem;
+  line-height: 1.7;
+}
+
+.code-field {
+  font-variant-numeric: tabular-nums;
+  /* The names are Energica's internal identifiers — long, and full of
+     underscores. Wrapping beats clipping here: a truncated `ai_WaterPumpCurr…`
+     is exactly the name you needed to read. */
+  overflow-wrap: anywhere;
+}
+
+.code-toggle {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  color: var(--label);
+  font: inherit;
+  font-size: 0.74rem;
+  /* Padded well past the text: this is a thumb target in a garage, and the label
+     itself is only about 60 px wide. */
+  padding: 0.5rem 0.1rem;
+  cursor: pointer;
+}
+
+/* The `all` view sets its own two-column grid inside each group, so the outer
+   view grid must not also try to lay its children out in two columns. */
+.view > div:not(.tile):not(.hero):not(.section):not(.filter) {
+  grid-column: 1 / -1;
+}
+
+/* The charge screen swaps its whole delivery section between AC and DC, so those
+   tiles live inside a wrapper rather than directly in the view grid. */
+.subgrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+.heatmap-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 0.3rem;
+  margin: 0.35rem 0 0.1rem;
+}
+
+/* One label per row, sharing the grid's height so they line up without the SVG
+   having to carry glyphs through its own horizontal stretch. */
+.heatmap-labels {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 1.1rem;
+  text-align: right;
+  font-size: 0.6rem;
+  color: var(--label);
+  font-variant-numeric: tabular-nums;
+}
+
+.heatmap-labels > div {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.heatmap {
+  flex: 1;
+  min-width: 0;
+  /* Tall enough that eleven module rows stay tappable-sized on a phone, and the
+     labels do not collapse into each other. */
+  height: 180px;
+  display: block;
+}
+
+.toggle-row {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.toggle-row button {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--tile-edge);
+  border-radius: 0.5rem;
+  color: var(--label);
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.45rem 0.3rem;
+  cursor: pointer;
+}
+
+.toggle-row button.on {
+  color: var(--fg);
+  border-color: var(--good);
+}
+
+/* Service mode's "probe index N" form. Three fields on one row, because on a phone
+   the whole point is that it fits above the button that uses them. */
+.probe-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.probe-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.probe-label {
+  font-size: 0.62rem;
+  color: var(--label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 0.2rem 0.2rem;
+}
+
+.probe-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+  border-radius: 0.6rem;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.65rem 0.5rem;
+}
+
+/* The one field-shaped thing in the sheet that cannot be typed into: what the bike
+   currently holds, sitting immediately left of the box you type the new value into.
+   In identical chrome those two read as a pair of inputs, one of which silently
+   ignores you. Keeps the padding so the arrow between them still lines up; loses
+   everything that says "edit me". */
+.probe-input.readout {
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0.15rem;
+}
+
+/* The cooling fan's duty slider. The only range input on the dashboard, and the only
+   control here whose value you set by dragging rather than by typing.
+   ⚠️ 2.75rem of height, which is mostly padding around a 0.35rem track: the thumb is
+   what a gloved finger has to catch, and the default ~16 px one is under half the 44pt
+   target every other control on this sheet clears. The track keeps `.probe-input`'s
+   fill and edge so it reads as a field rather than as decoration. */
+/* The mode toggle and the slider sit on one line, because they are one control: the
+   toggle says who is moving the thumb, and moving the thumb changes the toggle. Two
+   stacked rows read as two unrelated settings, which is what they must not be. */
+.fan-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+/* Sized off .action rather than styled like it: same 3.75rem touch height for a gloved
+   thumb, but it must not stretch — the slider takes the rest of the row. */
+.fan-mode {
+  flex: 0 0 auto;
+  min-height: 3.75rem;
+  padding: 0 0.9rem;
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+  border-radius: 0.8rem;
+  box-shadow: inset 3px 0 0 var(--dim);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Green rather than the slider's amber, and deliberately so: amber on this sheet means
+   "you are about to move something", and automatic is the resting state nobody has to
+   act on. The thumb stays amber because dragging it IS the act. */
+.fan-mode.automatic {
+  border-color: var(--good);
+  box-shadow: inset 3px 0 0 var(--good);
+}
+
+/* The same measured 0.66 as .action:disabled — see the note above that rule. */
+.fan-mode:disabled {
+  opacity: 0.66;
+  cursor: default;
+}
+
+.fan-slider {
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 2.75rem;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+/* ⚠️ The vendor pseudo-elements get one rule EACH and are never grouped in a selector
+   list: a browser that does not know one of the selectors throws the whole rule away, so
+   a combined `::-webkit-… , ::-moz-…` block styles the track in neither engine. */
+.fan-slider::-webkit-slider-runnable-track {
+  height: 0.35rem;
+  border-radius: 0.2rem;
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+}
+
+.fan-slider::-moz-range-track {
+  height: 0.35rem;
+  border-radius: 0.2rem;
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+}
+
+/* Amber, matching `.action.writes` directly under it: this is the same tier — it moves
+   something on the bike and can be moved straight back. */
+.fan-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1.9rem;
+  height: 1.9rem;
+  margin-top: -0.85rem;
+  border-radius: 50%;
+  border: 1px solid var(--warn-edge);
+  background: var(--warn);
+}
+
+.fan-slider::-moz-range-thumb {
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  border: 1px solid var(--warn-edge);
+  background: var(--warn);
+}
+
+.fan-slider:disabled {
+  opacity: 0.66;
+  cursor: default;
+}
+
+/* ---------- toast ---------- */
+
+/* The banner a handlebar gesture answers with. Sized and coloured for the worst case
+ * it has: read in direct sunlight, through a visor, in the second or two of attention
+ * a rider has to spare — so it is a full-bleed bar with a saturated background and
+ * near-black text, which is a road sign rather than a notification.
+ *
+ * Colour carries the outcome as well as the words do, on the same argument the rest of
+ * this file makes: green and red are read before a sentence is parsed, and the rider
+ * only needs the sentence when the answer is "no". Both pairs clear the 6:1 floor set
+ * at the top of this file against the dark text they carry — ~10.5:1 for good, ~6.4:1
+ * for bad. If you restyle either, measure it first.
+ */
+.toast {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* Above the sheet (10) as well as the tabs (5): this reports something that
+     happened on the bars, and it must never be the thing hidden behind a panel the
+     rider forgot was open. */
+  z-index: 20;
+  /* Never intercepts a tap. Half of "does not need to be dismissed" is that it cannot
+     be in the way of whatever you meant to touch while it is up. */
+  pointer-events: none;
+  padding: calc(env(safe-area-inset-top) + 0.9rem) 1rem 0.9rem;
+  color: var(--toast-ink);
+  text-align: center;
+  opacity: 0;
+  transform: translateY(-100%);
+  /* Out slowly enough to notice it going, in fast enough that it is already there by
+     the time the glance arrives. */
+  transition:
+    opacity 0.45s ease,
+    transform 0.45s ease;
+}
+
+.toast.on {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.toast.good {
+  background: var(--good);
+}
+
+.toast.bad {
+  background: var(--bad);
+}
+
+.toast-text {
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.2;
+  /* Refusals are a sentence, not a word, and they must not spill off a narrow phone. */
+  overflow-wrap: break-word;
+}
+
+/* Export is a twice-a-year action sitting directly under a button pressed every
+   visit. At the same size the sheet claimed they matter equally.
+   ⚠️ This DOES shrink the target: 48px against .action's 60px, which that rule's own
+   comment calls "tall enough for a gloved thumb". 48 still clears the 44pt guidance
+   and the smaller target is the point — but it is a real trade, not a free one, and
+   an earlier version of this comment claimed the height was unchanged. */
+.action.action-quiet {
+  font-size: 0.9rem;
+  min-height: 3rem;
+  padding: 0.7rem 1rem;
+  color: var(--label);
+}
+
+/* The caret carried the whole "this opens" signal at text size, and did not read
+   as one. Sized up and pushed to the end of the row so the control has an edge to
+   aim at rather than a glyph trailing two spaces after a sentence. */
+.risk-fold-caret {
+  margin-left: auto;
+  padding-left: 0.75rem;
+  font-size: 1.5rem;
+  line-height: 1;
+  /* The one part of this control that says "there is more behind it". It was text-
+     sized and trailing two spaces after a sentence, which read as punctuation. */
+}
+
+/* The header's BLE Connect button (views/ble-connect.js), only ever present on a BLE copy
+   of the dashboard. Its own class rather than `.action`: that one is sized for a gloved
+   thumb in the sheet (min-height 3.75rem), which in the header wrapped the button and
+   squeezed the brand onto two lines. */
+.ble-connect {
+  flex: none;
+  white-space: nowrap;
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+  border-radius: 999px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+}

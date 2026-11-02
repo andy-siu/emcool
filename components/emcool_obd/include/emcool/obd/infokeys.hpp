@@ -1,0 +1,46 @@
+#pragma once
+
+// Energica's "what to look at for this fault" data, generated from cool-eva
+// src/diagnostics/infokey-table.ts and fault-infokeys.ts (tools/generate-diagnostic-tables.mts):
+// the 120 telemetry fields a freeze frame can carry, and per (component, symptom) which of them it
+// carries, in payload order.
+
+#include <cstdint>
+#include <span>
+#include <string_view>
+
+namespace emcool::obd {
+
+enum class InfokeyDatatype : std::uint8_t { kUint8, kInt8, kUint16, kInt16, kUint32 };
+// Each equation Energica's table uses; kMalformed is their own `f(x)=x@&255`, applied by nobody.
+enum class InfokeyEquation : std::uint8_t { kIdentity, kTimes0_1, kTimes0_05625, kHalfMinus40, kMalformed };
+
+struct InfokeyField {
+  std::uint8_t id;
+  const char* name;
+  const char* unit;
+  InfokeyDatatype datatype;
+  const char* equation;  // as Energica wrote it
+  InfokeyEquation scaling;
+  // Why cool-eva refuses this field's scaling though the equation parses, or null.
+  const char* refusedScaling;
+};
+
+struct FaultInfokeys {
+  std::uint8_t component;
+  std::uint8_t symptom;
+  const char* serviceToolObdCode;
+  std::span<const std::uint8_t> infokeys;
+};
+
+std::span<const InfokeyField> infokeyTable();
+std::span<const FaultInfokeys> faultInfokeysTable();
+
+const InfokeyField* lookupInfokey(int id);
+const FaultInfokeys* infokeysFor(int component, int symptom);
+int infokeyWidth(InfokeyDatatype datatype);
+const char* infokeyDatatypeName(InfokeyDatatype datatype);
+// The payload bytes a shortlist's fields take.
+int freezeFrameFieldBytes(const FaultInfokeys& shortlist);
+
+}  // namespace emcool::obd

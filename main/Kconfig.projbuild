@@ -1,0 +1,55 @@
+menu "emcool"
+
+    config EMCOOL_CAN_TX_GPIO
+        int "CAN transceiver TXD GPIO (ESP32 -> transceiver)"
+        range -1 33
+        default 25
+        help
+            The GPIO wired to the CAN transceiver's TXD pin. 25 on the Copperhill/SK Pang
+            ESP32 CAN-BUS board rev B (schematic ESP32_CAN_rev_B, net CAN_TD into the
+            MCP2562's pin 1). -1 keeps the CAN bus off. Listen-only mode never transmits,
+            but the pin is still routed so the controller holds TXD recessive.
+
+    config EMCOOL_CAN_RX_GPIO
+        int "CAN transceiver RXD GPIO (transceiver -> ESP32)"
+        range -1 39
+        default 26
+        help
+            The GPIO wired to the CAN transceiver's RXD pin. 26 on the ESP32 CAN-BUS board
+            rev B (net CAN_RD from the MCP2562's pin 4). -1 keeps the CAN bus off.
+
+    menu "microSD card (ride log)"
+
+        config EMCOOL_SD_SCK_GPIO
+            int "SCK GPIO"
+            range -1 33
+            default 5
+            help
+                The board's SPI header SCK (JP2-7). -1 leaves the ride log off.
+
+        config EMCOOL_SD_MOSI_GPIO
+            int "MOSI GPIO"
+            range -1 33
+            default 18
+            help
+                The board's SPI header MOSI (JP2-8).
+
+        config EMCOOL_SD_MISO_GPIO
+            int "MISO GPIO"
+            range -1 39
+            default 19
+            help
+                The board's SPI header MISO (JP2-9). Not GPIO12: an SD card's pull-up on MISO
+                would hold that strapping pin high at reset and stop the module booting.
+
+        config EMCOOL_SD_CS_GPIO
+            int "CS GPIO"
+            range -1 33
+            default 17
+            help
+                Chip select (JP2-6).
+
+    endmenu
+
+
+endmenu

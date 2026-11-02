@@ -1,0 +1,40 @@
+#pragma once
+
+// Every signal the bike can report: its unit, group, deadband and physical bounds. The data
+// is generated from cool-eva src/can/registry.ts by tools/generate-registry.mts.
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <string_view>
+
+#include "emcool/signals/registry_size.gen.hpp"
+
+namespace emcool::signals {
+
+enum class SignalSource : std::uint8_t { kStream, kPoll, kSensor };
+
+// Why a signal has no physical bounds, mirroring cool-eva's `unbounded` reasons.
+enum class Unbounded : std::uint8_t { kNone, kCounter, kRawWord, kIndex, kUnresolved };
+
+struct SignalDef {
+  const char* key;
+  const char* unit;
+  const char* group;
+  SignalSource source;
+  // 0 where cool-eva defines none, which logs every change.
+  double deadband;
+  bool onDemand;
+  bool hasBounds;
+  double lowerBound;
+  double upperBound;
+  Unbounded unbounded;
+};
+
+// Sorted by key.
+std::span<const SignalDef> signalRegistry();
+
+std::optional<std::size_t> findSignal(std::string_view key);
+
+}  // namespace emcool::signals
