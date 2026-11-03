@@ -111,6 +111,8 @@ The oldest parts are deleted to make room, first in, first out:
 
 **Every part stands alone.** Each part opens with its own signal metadata, so deleting old parts never leaves a newer one unreadable.
 
+**Over Bluetooth:** the dashboard's `/dl` downloads the newest parts as one file, each cut where its records end (found by bisecting for the first all-zero sector, then probing past it). Records frame themselves, so the reader takes the file just as it takes the card's own parts. See [`ble.md`](ble.md).
+
 **On import:** `tools/import-ride-log.mts` says how many of a session's records aren't on the card. Missing from the start usually means rotated away; a gap in the middle means lost.
 
 The 10 s status line counts how many old parts have been deleted for room.

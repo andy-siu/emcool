@@ -23,3 +23,13 @@ CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=247
 # The link seals every message itself (AES-GCM keyed from the shared secret), so it needs no
 # BLE pairing — as cool-eva's characteristics carry no encrypt flags.
 CONFIG_BT_NIMBLE_SECURITY_ENABLE=n
+
+# Wi-Fi as a station only, beside Bluetooth (WIFI_SSID and ADMIN_PASSWORD turn it on; it is linked in
+# either way). Both stacks don't fit at -Og: the fast instruction RAM overflows and the image outgrows
+# its 1.875 MB slot. So: build for size, and leave out what joining a home network or phone hotspot
+# doesn't need (being an access point, enterprise logins, OWE, and the receive path's IRAM copy).
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
+CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n

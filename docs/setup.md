@@ -18,6 +18,8 @@ emcool>
 
 In a Claude Code session you can reach the same prompt by typing `! idf.py monitor` so its output lands in the conversation.
 
+With Wi-Fi set up, the same console is also on the network: `nc <bike> 23`, behind `ADMIN_PASSWORD`. See [`wifi.md`](wifi.md).
+
 NVS settings **survive reflashing and firmware updates**. Only `idf.py erase-flash` clears them (which also wipes the Bluetooth secret, so the link goes off until you set one again).
 
 ## Commands
@@ -52,6 +54,9 @@ Types: **flag** is `0`/`1`; **integer** is a whole number in a range; **text**/*
 | `SERVICE_MODE_ENABLED` | flag | `0` | — | restart | `1` to let the dashboard **read** the VCU's calibration parameters, lifetime stats and freeze frames, while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`service-mode.md`](service-mode.md). |
 | `SERVICE_WRITE_ENABLED` | flag | `0` | — | restart | `1` to let the dashboard **write** to the VCU (`/vcu-write`: allowlisted parameters, service point, clock sync, clear DTCs, charge current/stop, SOC limit, reset). The only switch that lets a web page change the bike. Needs `OBD_ENABLED` and `SERVICE_MODE_ENABLED`. See [`service-mode.md`](service-mode.md). |
 | `CHARGE_AUTO_ENABLED` | flag | `0` | — | restart | `1` for the automatic charge-current controller — it commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`service-mode.md`](service-mode.md). |
+| `WIFI_SSID` | text | *not set* | 1–32 chars | restart | The Wi-Fi network to join. With `ADMIN_PASSWORD` also set, the bike joins it and serves this console on port 23 and the ride log on port 80. Unset keeps Wi-Fi off. See [`wifi.md`](wifi.md). |
+| `WIFI_PASSWORD` | secret | *not set* | 8–63 chars | restart | That network's password. Unset for an open network. |
+| `ADMIN_PASSWORD` | secret | *not set* | 12–128 chars | restart | What the Wi-Fi console and the ride-log page ask for. Unset keeps Wi-Fi off. ⚠️ It crosses the network in plain text, and it unlocks everything the console can do. |
 | `STATUS_REPORT` | flag | `1` | — | **now** | Whether the serial console prints the periodic status report. `status on` / `status off` is the shorthand. |
 | `STATUS_INTERVAL_S` | integer | `10` | 5–3600 | **now** | Seconds between status reports. `status every SECONDS` is the shorthand (and turns the report on if it was off). |
 

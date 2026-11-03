@@ -1,6 +1,5 @@
 #include "emcool/ride_log/log_writer.hpp"
 
-#include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -10,9 +9,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <strings.h>
 #include <string_view>
 
+#include "card_layout.hpp"
 #include "emcool/log.hpp"
 #include "emcool/text/text_buffer.hpp"
 #include "emcool/signals/registry.hpp"
@@ -42,40 +41,11 @@ const char* sourceName(signals::SignalSource source) {
   return "stream";
 }
 
-// The number in a name of the form <prefix><digits><suffix>, compared case-insensitively
-// because FAT without long names hands names back upper-case. Anything else is not ours.
-std::optional<std::uint32_t> numberIn(std::string_view name, std::string_view prefix, std::string_view suffix) {
-  if (name.size() <= prefix.size() + suffix.size() || strncasecmp(name.data(), prefix.data(), prefix.size()) != 0 ||
-      strncasecmp(name.data() + name.size() - suffix.size(), suffix.data(), suffix.size()) != 0) {
-    return std::nullopt;
-  }
-  const std::string_view digits = name.substr(prefix.size(), name.size() - prefix.size() - suffix.size());
-  if (digits.size() > 9) return std::nullopt;
-  std::uint32_t number = 0;
-  for (const char digit : digits) {
-    if (digit < '0' || digit > '9') return std::nullopt;
-    number = number * 10 + static_cast<std::uint32_t>(digit - '0');
-  }
-  return number;
-}
-
-// The numbers of `directory`'s entries named <prefix><digits><suffix>, ascending.
+// The numbers of `directory`'s entries named <prefix><digits><suffix>, ascending; none if it
+// can't be listed (layout::numberedEntries has warned).
 std::vector<std::uint32_t> numberedEntries(const std::string& directory, std::string_view prefix,
                                            std::string_view suffix) {
-  std::vector<std::uint32_t> numbers;
-  DIR* listing = opendir(directory.c_str());
-  if (listing == nullptr) {
-    logWarning(kTag, "cannot list %s (errno %d)", directory.c_str(), errno);
-    return numbers;
-  }
-  while (const dirent* entry = readdir(listing)) {
-    if (const std::optional<std::uint32_t> number = numberIn(entry->d_name, prefix, suffix)) {
-      numbers.push_back(*number);
-    }
-  }
-  closedir(listing);
-  std::sort(numbers.begin(), numbers.end());
-  return numbers;
+  return layout::numberedEntries(directory, prefix, suffix).value_or(std::vector<std::uint32_t>{});
 }
 
 bool writeFully(int fd, const std::uint8_t* data, std::size_t length, std::uint64_t offset) {
@@ -115,7 +85,7 @@ bool LogWriter::open() {
   bootNumber_ = (boots.empty() ? 0 : boots.back()) + 1;
   std::uint32_t partsOnCard = 0;
   for (const std::uint32_t boot : boots) {
-    partsOnCard += static_cast<std::uint32_t>(numberedEntries(bootDirectory(boot), "PART", ".LOG").size());
+    partsOnCard += static_cast<std::uint32_t>(numberedEntries(bootDirectory(boot), layout::kPartPrefix, layout::kPartSuffix).size());
   }
   counters_.partsOnCard.store(partsOnCard, std::memory_order_relaxed);
   nextPartBlocked_ = false;
@@ -133,6 +103,7 @@ bool LogWriter::open() {
   if (!createPart(current_, 1)) {
     return false;
   }
+  publishExtent();
   logInfo(kTag, "logging to %s (session %s)", bootDirectory().c_str(), session_.hex.data());
   return true;
 }
@@ -147,6 +118,7 @@ void LogWriter::close() {
     *part = Part{};
   }
   nextReady_ = false;
+  publishExtent();
 }
 
 bool LogWriter::write(SegmentBuffer& segment) {
@@ -261,6 +233,7 @@ bool LogWriter::switchToNextPart() {
   next_ = Part{};
   nextReady_ = false;
   counters_.currentPart.store(current_.number, std::memory_order_relaxed);
+  publishExtent();
   return true;
 }
 
@@ -290,7 +263,7 @@ bool LogWriter::makeRoomForPart() {
 bool LogWriter::deleteOldestPart() {
   for (const std::uint32_t boot : numberedEntries(config_.rootDirectory, "", "")) {
     const std::string directory = bootDirectory(boot);
-    const std::vector<std::uint32_t> parts = numberedEntries(directory, "PART", ".LOG");
+    const std::vector<std::uint32_t> parts = numberedEntries(directory, layout::kPartPrefix, layout::kPartSuffix);
     for (const std::uint32_t part : parts) {
       if (boot == bootNumber_ && (part == current_.number || part == next_.number)) {
         continue;
@@ -401,6 +374,7 @@ bool LogWriter::writeRecordAtEnd(const std::uint8_t* record, std::size_t length)
   }
   current_.writeOffset += length;
   current_.allocatedBytes = std::max(current_.allocatedBytes, current_.writeOffset);
+  publishExtent();
   nextRecordIndex_++;
   counters_.recordsWritten.fetch_add(1, std::memory_order_relaxed);
   counters_.bytesWritten.fetch_add(length, std::memory_order_relaxed);
@@ -418,17 +392,27 @@ bool LogWriter::fail(const char* operation, const std::string& path) {
 std::string LogWriter::bootDirectory() const { return bootDirectory(bootNumber_); }
 
 std::string LogWriter::bootDirectory(std::uint32_t bootNumber) const {
-  char name[16];
-  std::snprintf(name, sizeof name, "%05u", static_cast<unsigned>(bootNumber));
-  return config_.rootDirectory + "/" + name;
+  return layout::bootDirectory(config_.rootDirectory, bootNumber);
 }
 
 std::string LogWriter::partPath(std::uint32_t number) const { return partPath(bootNumber_, number); }
 
 std::string LogWriter::partPath(std::uint32_t bootNumber, std::uint32_t number) const {
-  char name[16];
-  std::snprintf(name, sizeof name, "PART%04u.LOG", static_cast<unsigned>(number));
-  return bootDirectory(bootNumber) + "/" + name;
+  return layout::partPath(config_.rootDirectory, bootNumber, number);
+}
+
+void LogWriter::publishExtent() {
+  const std::lock_guard<std::mutex> lock(extentMutex_);
+  if (isOpen()) {
+    extent_ = LiveExtent{bootNumber_, current_.number, current_.writeOffset};
+  } else {
+    extent_.reset();
+  }
+}
+
+std::optional<LiveExtent> LogWriter::liveExtent() const {
+  const std::lock_guard<std::mutex> lock(extentMutex_);
+  return extent_;
 }
 
 }  // namespace emcool::ride_log

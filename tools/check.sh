@@ -33,7 +33,8 @@
 #   - the Bluetooth wire protocol's pieces hold (crypto vectors, deflate against zlib, JSON,
 #     framing, the handshake), and the C++ server, driven by cool-eva's own phone-side
 #     ble-wire.js, handshakes, streams the live state exactly, and answers requests with
-#     cool-eva's bodies
+#     cool-eva's bodies; /dl sends the ride log the corpus run left on disk, which the laptop
+#     reads and imports exactly as it does the card's files, while the live stream keeps coming
 #
 # Needs a cool-eva checkout (COOL_EVA_DIR, default ../cool-eva), Node 22.6+, CMake and Ninja.
 # Does not need ESP-IDF.
@@ -150,8 +151,14 @@ node "${node_flags[@]}" "$root/tools/check-ride-log.mts" "$build/ride-log-corpus
   exit 1
 }
 node "${node_flags[@]}" "$root/tools/check-ble.mts" "$build/ble_server_host" "$golden" "$cool_eva" \
-  2>"$build/check_ble.stderr" || {
-  grep -vE '^[IW] (gps|attitude|ble-server): ' "$build/check_ble.stderr" >&2
+  "$build/ride-log-corpus/RIDES" 2>"$build/check_ble.stderr" || {
+  grep -vE '^[IW] (gps|attitude|ble-server|ride-log): ' "$build/check_ble.stderr" >&2
+  exit 1
+}
+# And with no card configured, /dl says the ride log is off.
+node "${node_flags[@]}" "$root/tools/check-ble.mts" "$build/ble_server_host" "$golden" "$cool_eva" \
+  2>"$build/check_ble_no_card.stderr" || {
+  grep -vE '^[IW] (gps|attitude|ble-server|ride-log): ' "$build/check_ble_no_card.stderr" >&2
   exit 1
 }
 

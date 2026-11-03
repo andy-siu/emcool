@@ -14,6 +14,7 @@ using text::TextBuffer;
 
 constexpr const char* kJson = "application/json; charset=utf-8";
 constexpr const char* kText = "text/plain; charset=utf-8";
+constexpr const char* kOctets = "application/octet-stream";
 constexpr std::size_t kMaxGroups = 32;
 
 struct GroupCount {
@@ -47,9 +48,15 @@ std::optional<HttpResponse> DashboardEndpoints::begin(const HttpRequest& request
   const std::size_t mark = request.path.find('?');
   const std::string_view route = request.path.substr(0, mark);
   const std::string_view query = mark == std::string_view::npos ? std::string_view() : request.path.substr(mark + 1);
-  waiting_ = false;
+  endDownload();
+  waiting_ = Waiting::kNothing;
   parts_.reset();
   const std::string_view method = request.method;
+  if (route == "/dl") {
+    if (method != "GET") return fromText(405, kText, "use GET to download the ride log\n");
+    if (download_ == nullptr) return fromText(503, kText, "emcool: the ride log is off (no microSD pins configured)\n");
+    return beginDownload(query);
+  }
   if (method == "GET") {
     if (route == "/status") return status(nowMonotonicMs);
     if (route == "/dtc-table" || route == "/fault-infokeys") {
@@ -214,22 +221,105 @@ std::optional<HttpResponse> DashboardEndpoints::service(const HttpRequest& reque
     submitted.index = queryValue(query, "index");
   }
   if (!service_->submit(submitted)) return fromText(503, kText, "emcool: another service request is still being answered\n");
-  waiting_ = true;
+  waiting_ = Waiting::kService;
   return std::nullopt;
 }
 
+namespace {
+
+// A whole number from 1 to `most`, or nullopt.
+std::optional<std::uint64_t> positiveNumber(const std::optional<std::string>& text, std::uint64_t most) {
+  if (!text || text->empty() || text->size() > 10) return std::nullopt;
+  std::uint64_t number = 0;
+  for (const char digit : *text) {
+    if (digit < '0' || digit > '9') return std::nullopt;
+    number = number * 10 + static_cast<std::uint64_t>(digit - '0');
+  }
+  if (number == 0 || number > most) return std::nullopt;
+  return number;
+}
+
+}  // namespace
+
+// GET /dl[?mb=N][&boot=N]. Planning reads the card, a step per poll, so the head comes later.
+std::optional<HttpResponse> DashboardEndpoints::beginDownload(std::string_view query) {
+  ride_log::DownloadSelection selection;
+  if (const std::optional<std::string> mb = queryValue(query, "mb")) {
+    const std::optional<std::uint64_t> megabytes = positiveNumber(mb, ride_log::kMaxDownloadBytes / ride_log::kMegabyte);
+    if (!megabytes) {
+      return fromText(400, kText,
+                      "mb= wants a whole number of megabytes from 1 to " +
+                          std::to_string(ride_log::kMaxDownloadBytes / ride_log::kMegabyte) + "\n");
+    }
+    selection.maxBytes = *megabytes * ride_log::kMegabyte;
+  }
+  if (const std::optional<std::string> boot = queryValue(query, "boot")) {
+    const std::optional<std::uint64_t> number = positiveNumber(boot, 99999);
+    if (!number) return fromText(400, kText, "boot= wants a boot number, as in RIDES/00012: 12\n");
+    selection.boot = static_cast<std::uint32_t>(*number);
+  }
+  const ride_log::LogDownload::Outcome outcome = download_->start(selection);
+  if (outcome == ride_log::LogDownload::Outcome::kMeasuring) {
+    waiting_ = Waiting::kDownload;
+    return std::nullopt;
+  }
+  return fromText(outcome == ride_log::LogDownload::Outcome::kNothing ? 404 : 503, kText,
+                  "emcool: " + download_->problem() + "\n");
+}
+
+std::optional<HttpResponse> DashboardEndpoints::pollDownload() {
+  for (int step = 0; step < kDownloadStepsPerPoll; step++) {
+    switch (download_->measureNext()) {
+      case ride_log::LogDownload::Outcome::kMeasuring:
+        continue;
+      case ride_log::LogDownload::Outcome::kReady: {
+        waiting_ = Waiting::kNothing;
+        source_ = Source::kDownload;
+        length_ = static_cast<std::size_t>(download_->totalBytes());
+        downloadName_ = download_->fileName();
+        HttpResponse response{200, kOctets, length_};
+        response.fileName = downloadName_.c_str();
+        return response;
+      }
+      case ride_log::LogDownload::Outcome::kNothing:
+        waiting_ = Waiting::kNothing;
+        return fromText(404, kText, "emcool: " + download_->problem() + "\n");
+      case ride_log::LogDownload::Outcome::kFailed:
+        waiting_ = Waiting::kNothing;
+        return fromText(503, kText, "emcool: " + download_->problem() + "\n");
+    }
+  }
+  return std::nullopt;
+}
+
+// Lets go of the card's files; a no-op when no download is running.
+void DashboardEndpoints::endDownload() {
+  if (download_ != nullptr && (source_ == Source::kDownload || waiting_ == Waiting::kDownload)) download_->stop();
+  if (source_ == Source::kDownload) {
+    source_ = Source::kBuffer;
+    length_ = 0;
+  }
+}
+
 std::optional<HttpResponse> DashboardEndpoints::poll(std::int64_t) {
-  if (!waiting_) return timedOut();
+  if (waiting_ == Waiting::kDownload) return pollDownload();
+  if (waiting_ != Waiting::kService) return timedOut();
   std::optional<ServiceAnswer> answer = service_->take();
   if (!answer) return std::nullopt;
-  waiting_ = false;
+  waiting_ = Waiting::kNothing;
   return fromText(answer->status, kJson, answer->body);
 }
 
+HttpResponse DashboardEndpoints::timedOut() {
+  endDownload();
+  waiting_ = Waiting::kNothing;
+  return {504, kText, 0};
+}
+
 void DashboardEndpoints::abandon() {
-  if (!waiting_) return;
-  waiting_ = false;
-  if (service_ != nullptr) service_->abandon();
+  if (waiting_ == Waiting::kService && service_ != nullptr) service_->abandon();
+  endDownload();
+  waiting_ = Waiting::kNothing;
 }
 
 HttpResponse DashboardEndpoints::fromText(int status, const char* contentType, std::string_view text) {
@@ -267,6 +357,11 @@ std::span<const char> DashboardEndpoints::body(std::size_t offset, std::size_t m
     }
     case Source::kText:
       return {text_.data() + offset, count};
+    case Source::kDownload: {
+      if (download_ == nullptr) return {};
+      const std::size_t got = download_->read(offset, std::span<char>(buffer_.data(), std::min(count, buffer_.size())));
+      return {buffer_.data(), got};
+    }
     case Source::kParts: {
       if (!parts_) return {};
       // Pieces are asked for in order; one asked for again from earlier starts over.

@@ -10,9 +10,10 @@
 //        L           dump live state           Z  dump counters          Q  quit
 //   out  I info JSON   F a notification frame   J a JSON dump   K done with the command
 //
-//   ble_server_host <secret> <golden decode corpus> [<mode 03 reply hex>]
+//   ble_server_host <secret> <golden decode corpus> [<mode 03 reply hex> [<RIDES dir>]]
 //
-// With a mode 03 reply, /stored-dtcs serves the stored list as if the bike had sent it.
+// With a mode 03 reply, /stored-dtcs serves the stored list as if the bike had sent it. With a
+// RIDES directory, /dl serves the ride log from it, as a mounted card with nothing being written.
 
 #include <unistd.h>
 
@@ -23,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -33,6 +35,7 @@
 #include "emcool/ble_server/server.hpp"
 #include "emcool/can/frame_decoder.hpp"
 #include "emcool/obd/stored_codes.hpp"
+#include "emcool/ride_log/download.hpp"
 #include "emcool/signals/signal_store.hpp"
 
 namespace {
@@ -82,6 +85,18 @@ class StubServiceDesk final : public emcool::ble_server::ServiceDesk {
   int looks_ = 0;
 };
 
+class FolderCard final : public emcool::ride_log::DownloadCard {
+ public:
+  explicit FolderCard(std::string root) : root_(std::move(root)) {}
+  const std::string& rootDirectory() const override { return root_; }
+  std::mutex& mountLock() override { return mutex_; }
+  State state() override { return {true, 0, std::nullopt}; }
+
+ private:
+  std::string root_;
+  std::mutex mutex_;
+};
+
 class DiscardingRecorder final : public emcool::obd::SignalRecorder {
  public:
   void record(std::string_view, double) override {}
@@ -112,8 +127,8 @@ std::uint32_t bigEndian32(const std::uint8_t* bytes) {
 }  // namespace
 
 int main(int argumentCount, char** arguments) {
-  if (argumentCount != 3 && argumentCount != 4) {
-    std::fprintf(stderr, "usage: ble_server_host <secret> <golden decode corpus> [<mode 03 reply hex>]\n");
+  if (argumentCount < 3 || argumentCount > 5) {
+    std::fprintf(stderr, "usage: ble_server_host <secret> <golden decode corpus> [<mode 03 reply hex> [<RIDES dir>]]\n");
     return 2;
   }
   if (!emcool::ble::initCrypto() || !emcool::ble::cryptoSelfTest()) {
@@ -132,12 +147,18 @@ int main(int argumentCount, char** arguments) {
   FixedTroubleCodes troubleCodes;
   char directory[] = "/tmp/emcool-ble-host-XXXXXX";
   StubServiceDesk desk(::mkdtemp(directory));
-  emcool::ble_server::DashboardEndpoints endpoints(store, storeMutex, storage, troubleCodes, &desk);
+  std::unique_ptr<FolderCard> rides;
+  std::unique_ptr<emcool::ride_log::LogDownload> download;
+  if (argumentCount == 5) {
+    rides = std::make_unique<FolderCard>(arguments[4]);
+    download = std::make_unique<emcool::ride_log::LogDownload>(*rides);
+  }
+  emcool::ble_server::DashboardEndpoints endpoints(store, storeMutex, storage, troubleCodes, &desk, download.get());
   emcool::ble_server::BleServer server(arguments[1], store, storeMutex, endpoints);
   emcool::can::FrameDecoder decoder;
   std::int64_t monotonicMs = 1'000'000;
   const auto wallClockMs = [&] { return 1767225600000LL + monotonicMs; };
-  if (argumentCount == 4) {
+  if (argumentCount >= 4 && arguments[3][0] != '\0') {
     const std::string replyHex = arguments[3];
     std::vector<std::uint8_t> reply;
     for (std::size_t offset = 0; offset + 1 < replyHex.size(); offset += 2) {

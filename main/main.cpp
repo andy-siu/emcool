@@ -1,7 +1,8 @@
 // emcool: listen to the bike's CAN bus, decode every frame with the port of cool-eva's
 // decoders into live state, log what changes to the microSD card, keep the clock on GPS
 // time, serve cool-eva's phone dashboard over Bluetooth, and report over the serial console
-// every 10 s. With OBD_ENABLED, also poll OBD-II as cool-eva does; otherwise it never sends.
+// every 10 s. With OBD_ENABLED, also poll OBD-II as cool-eva does; otherwise it never sends. With
+// WIFI_SSID and ADMIN_PASSWORD, join that Wi-Fi and serve the console and the ride log over it.
 //
 // Tasks: decode (core 1) owns the CAN queue, the clock and the ride log's segment buffers, and
 // writes live state; diagnostics (core 1) owns everything that transmits — the OBD poller and
@@ -33,6 +34,7 @@
 #include "diagnostics_task.hpp"
 #include "emcool/obd/hub_diagnostics.hpp"
 #include "emcool/obd/obd_stack.hpp"
+#include "emcool/ride_log/download.hpp"
 #include "emcool/ride_log/log_writer.hpp"
 #include "emcool/ride_log/ride_log.hpp"
 #include "emcool/settings/settings.hpp"
@@ -49,6 +51,7 @@
 #include "settings_console.hpp"
 #include "status_report.hpp"
 #include "system_time.hpp"
+#include "wifi_link.hpp"
 
 namespace {
 
@@ -100,7 +103,8 @@ template <typename Type, typename... Arguments>
 Type* allocate(const char* what, Arguments&&... arguments);
 bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
                     std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
-                    emcool::DiagnosticsTask& diagnostics, emcool::BleLinkCounters& counters);
+                    emcool::DiagnosticsTask& diagnostics, emcool::ride_log::LogDownload* download,
+                    emcool::BleLinkCounters& counters);
 void logSettings(const emcool::settings::Settings& settings);
 
 }  // namespace
@@ -148,9 +152,12 @@ extern "C" void app_main() {
   static emcool::ride_log::RideLog rideLog(session, std::span<emcool::ride_log::SegmentBuffer>(segmentBuffers, 2),
                                            segmentQueue, clock);
   static emcool::SdCard card;
+  static emcool::CardAccess cardAccess(card, writer);
   static emcool::RideLogTaskCounters rideLogTaskCounters;
-  static emcool::RideLogTaskContext rideLogTaskContext{segmentQueue, writer, card, rideLogTaskCounters};
-  emcool::startRideLogTask(rideLogTaskContext);
+  static emcool::RideLogTaskContext rideLogTaskContext{segmentQueue, writer, cardAccess, rideLogTaskCounters};
+  // /dl reads the card from the Bluetooth task; with no card configured there is nothing to read.
+  static emcool::ride_log::LogDownload logDownload(cardAccess);
+  emcool::ride_log::LogDownload* download = emcool::startRideLogTask(rideLogTaskContext) ? &logDownload : nullptr;
 
   auto* storeAllocation = allocate<emcool::signals::SignalStore>("live state", rideLog);
   if (storeAllocation == nullptr) return;
@@ -166,9 +173,13 @@ extern "C" void app_main() {
   if (diagnostics == nullptr || !diagnostics->start()) return;
   // NimBLE keeps PHY calibration in NVS; without it the radio can't start.
   const bool bluetooth =
-      nvsReady && startBluetooth(settings, store, storeMutex, storageReport, *diagnostics, bleLinkCounters);
+      nvsReady && startBluetooth(settings, store, storeMutex, storageReport, *diagnostics, download, bleLinkCounters);
+  // Wi-Fi after Bluetooth: they share the radio, and coexistence wants the Bluetooth controller up first.
+  static emcool::WifiCounters wifiCounters;
+  const bool wifi = nvsReady && emcool::startWifi(settings, settingsStorage, runtimeSettings,
+                                                  download != nullptr ? &cardAccess : nullptr, wifiCounters);
   static emcool::StatusReport status({bus, store, storeMutex, rideLog, writer, rideLogTaskCounters, clock,
-                                      bleLinkCounters, bluetooth, runtimeSettings, diagnostics});
+                                      bleLinkCounters, bluetooth, wifiCounters, wifi, runtimeSettings, diagnostics});
   static DecodeContext context{bus, decoder, packTemperature, store, storeMutex, rideLog, clock, status, *diagnostics};
   if (xTaskCreatePinnedToCore(decodeTask, "decode", kDecodeTaskStackBytes, &context, kDecodeTaskPriority, nullptr,
                               kDecodeTaskCore) != pdPASS) {
@@ -267,7 +278,8 @@ bool initNvs() {
 // The phone link, if it has a usable secret and the crypto passes its known-answer tests.
 bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
                     std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
-                    emcool::DiagnosticsTask& diagnostics, emcool::BleLinkCounters& counters) {
+                    emcool::DiagnosticsTask& diagnostics, emcool::ride_log::LogDownload* download,
+                    emcool::BleLinkCounters& counters) {
   if (!emcool::ble::BleSession::secretIsUsable(settings.bleSecret)) {
     emcool::logWarning(kTag,
                        "Bluetooth is off: no link secret. On the serial console: set BLE_SECRET \"a phrase of "
@@ -280,7 +292,7 @@ bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals:
     return false;
   }
   auto* endpoints = allocate<emcool::ble_server::DashboardEndpoints>("the dashboard endpoints", store, storeMutex,
-                                                                     storage, diagnostics, &diagnostics);
+                                                                     storage, diagnostics, &diagnostics, download);
   auto* server = endpoints == nullptr ? nullptr
                                       : allocate<emcool::ble_server::BleServer>("the Bluetooth server",
                                                                                  settings.bleSecret, store, storeMutex,
@@ -292,11 +304,12 @@ bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals:
 void logSettings(const emcool::settings::Settings& settings) {
   emcool::logInfo(kTag,
                   "settings: BLE_SECRET %s, BLE_NAME %s, CUSTOM_BMS_CONFIG %d, OBD_ENABLED %d, ELOCK_ENABLED %d, "
-                  "SERVICE_MODE_ENABLED %d, status report %s (serial console: show)",
+                  "SERVICE_MODE_ENABLED %d, WIFI_SSID %s, status report %s (serial console: show)",
                   settings.bleSecret.empty() ? "not set" : ("set (" + std::to_string(settings.bleSecret.size()) +
                                                              " characters)").c_str(),
                   settings.bleName.c_str(), settings.customBmsConfig ? 1 : 0, settings.obdEnabled ? 1 : 0,
                   settings.elockEnabled ? 1 : 0, settings.serviceModeEnabled ? 1 : 0,
+                  settings.wifiSsid.empty() ? "not set" : settings.wifiSsid.c_str(),
                   settings.statusReport ? ("every " + std::to_string(settings.statusIntervalSeconds) + " s").c_str()
                                         : "off");
   if (!settings.obdEnabled) {

@@ -66,8 +66,14 @@ struct Settings {
   bool serviceWriteEnabled = false;
   // The automatic charge-current controller. Needs SERVICE_WRITE_ENABLED, since it commands writes.
   bool chargeAutoEnabled = false;
+  // Wi-Fi joins wifiSsid, and only with an admin password for what it serves (wifiEnabled()).
+  std::string wifiSsid;
+  std::string wifiPassword;
+  std::string adminPassword;
   bool statusReport = true;
   std::uint32_t statusIntervalSeconds = 10;
+
+  bool wifiEnabled() const { return !wifiSsid.empty() && !adminPassword.empty(); }
 
   // A stored value that no longer validates is ignored (with a warning) and the default used.
   static Settings load(SettingsStorage& storage);

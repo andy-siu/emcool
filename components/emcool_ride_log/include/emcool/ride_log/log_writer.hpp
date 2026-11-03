@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -43,6 +44,14 @@ class CardSpace {
   virtual ~CardSpace() = default;
   // nullopt when it can't be read; the writer then carries on and relies on ENOSPC.
   virtual std::optional<std::uint64_t> freeBytes() = 0;
+};
+
+// The part being written, and how far into it every record is on the card for good (written and
+// fsynced). Nothing before durableBytes changes again; anything after it may be mid-write.
+struct LiveExtent {
+  std::uint32_t boot;
+  std::uint32_t part;
+  std::uint64_t durableBytes;
 };
 
 // Atomics: the writer task updates them, the decode task's status report reads them.
@@ -85,6 +94,9 @@ class LogWriter {
 
   const LogWriterCounters& counters() const { return counters_; }
   std::uint32_t partBytes() const { return config_.partBytes; }
+  const std::string& rootDirectory() const { return config_.rootDirectory; }
+  // nullopt while closed. Safe from any task: the download asks it from the Bluetooth task.
+  std::optional<LiveExtent> liveExtent() const;
 
  private:
   struct Part {
@@ -121,6 +133,10 @@ class LogWriter {
   bool nextPartBlocked_ = false;
   std::uint32_t nextRecordIndex_ = 0;
   LogWriterCounters counters_;
+  // liveExtent()'s copy, set after each fsync and part switch.
+  mutable std::mutex extentMutex_;
+  std::optional<LiveExtent> extent_;
+  void publishExtent();
 };
 
 }  // namespace emcool::ride_log

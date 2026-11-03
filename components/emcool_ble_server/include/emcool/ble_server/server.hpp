@@ -78,6 +78,8 @@ class BleServer {
     std::array<std::uint8_t, ble::kMaxEnvelopeBytes> bytes = {};
     std::size_t length = 0;
     std::uint8_t messageId = 0;
+    // A response's message, not the stream's (nor a handshake reply).
+    bool response = false;
   };
 
   struct PendingRequest {
@@ -95,7 +97,8 @@ class BleServer {
   void dispatch(const ble::Message& message, std::int64_t nowMonotonicMs);
   void queueRequest(std::string_view header);
   Slot* freeSlot();
-  void commitSlot(Slot& slot);
+  void commitSlot(Slot& slot, bool response = false);
+  bool mayTakeSlot(bool response) const;
   bool sealIntoSlot(ble::MessageKind kind, std::string_view header, std::span<const std::uint8_t> body);
   void advanceResponse(std::int64_t nowMonotonicMs);
   void advanceStream(std::int64_t nowMonotonicMs, std::int64_t nowWallClockMs);
@@ -128,6 +131,8 @@ class BleServer {
   std::int64_t waitingSinceMs_ = 0;
   // The response is the server's own 400, not the handler's.
   bool badPath_ = false;
+  // How far the body fell short of its promised length; the END says so.
+  std::size_t bodyShortBy_ = 0;
   std::array<char, ble::kMaxMessageBytes - 64> header_ = {};
 
   BleServerCounters counters_;

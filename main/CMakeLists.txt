@@ -1,5 +1,5 @@
 idf_component_register(
-  SRCS main.cpp ble_link.cpp can_bus.cpp diagnostics_task.cpp ride_log_task.cpp sd_card.cpp settings_console.cpp status_report.cpp system_time.cpp
+  SRCS main.cpp ble_link.cpp can_bus.cpp diagnostics_task.cpp ride_log_task.cpp sd_card.cpp settings_console.cpp status_report.cpp system_time.cpp wifi_link.cpp
   INCLUDE_DIRS .
   REQUIRES
     bootloader_support
@@ -20,9 +20,15 @@ idf_component_register(
     esp_driver_spi
     esp_driver_twai
     esp_hw_support
+    esp_event
+    esp_http_server
+    esp_netif
     esp_timer
+    esp_wifi
     fatfs
     freertos
+    log
+    lwip
     nvs_flash
     sdmmc
 )

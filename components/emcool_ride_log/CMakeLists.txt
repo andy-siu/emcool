@@ -1,7 +1,9 @@
 # The ride log: segments built by the decode task, records written to the card by the writer
-# task. Platform-neutral — POSIX file calls that ESP-IDF maps onto FatFs — so host/ runs it.
+# task, and read back off it for the dashboard's /dl. Platform-neutral — POSIX file calls that ESP-IDF maps onto FatFs — so host/ runs it.
 set(emcool_ride_log_sources
+  src/card_layout.cpp
   src/crc32.cpp
+  src/download.cpp
   src/log_writer.cpp
   src/record.cpp
   src/ride_log.cpp

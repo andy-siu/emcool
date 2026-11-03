@@ -1,6 +1,6 @@
 # The phone dashboard over Bluetooth
 
-emcool serves its phone dashboard over Bluetooth LE. The framing and session follow cool-eva's `public/lib/ble-wire.js` (described in cool-eva `docs/ble-server.md`), with one deliberate change: emcool renamed the handshake salts (`emcool/hello`, `emcool/session`) and the request header (`X-Emcool`) so the stack is its own. Open the dashboard in Bluefy on iOS or Chrome on Android. There is no Wi-Fi.
+emcool serves its phone dashboard over Bluetooth LE. The framing and session follow cool-eva's `public/lib/ble-wire.js` (described in cool-eva `docs/ble-server.md`), with one deliberate change: emcool renamed the handshake salts (`emcool/hello`, `emcool/session`) and the request header (`X-Emcool`) so the stack is its own. Open the dashboard in Bluefy on iOS or Chrome on Android. The dashboard has no Wi-Fi path; the optional Wi-Fi ([`wifi.md`](wifi.md)) serves only the console and the ride log.
 
 The dashboard itself now lives in this repo at [`../dashboard/`](../dashboard/) — a static site copied from cool-eva's `public/` and rebranded to emcool, paired with this firmware's wire protocol. See its [README](../dashboard/README.md) for how to serve it.
 
@@ -45,7 +45,17 @@ The secret lives in NVS, not in the firmware image or the build directory. The c
   - **Freeze frames and the expected-fault list:** `/lifetime-read` and `/freeze-frame-read` (POST, `X-Cool-Eva: service-mode`); `/lifetime-stats` and `/freeze-frames`; `/expected-faults` (GET, and POST with `X-Cool-Eva: expected-faults`). All answered by the diagnostics task.
   - **`/vcu-write`** (GET, POST): the write engine, with `SERVICE_WRITE_ENABLED`. GET returns the allowlist, the gate and the journal and touches nothing, behind no header. POST does one thing to the bike and wants `X-Cool-Eva: service-write` — **deliberately a different value** from the read path's `service-mode`, so a caller that only knows about reads cannot reach a write. See [`service-mode.md`](service-mode.md).
   - **`/charge-auto`** (GET, POST): the automatic charge-current controller, with `CHARGE_AUTO_ENABLED`. GET shows what it is doing (no header); POST `?mode=automatic|off` turns it on or off, behind `X-Cool-Eva: charge-auto`. Answered by the diagnostics task, which owns the controller.
-- **Everything else** answers 404, with a body saying the endpoint isn't on emcool yet. That covers `/dl` (ride log download) and fan control. The dashboard shows the error where it would show the result.
+- **`GET /dl`: the ride log off the card.** The sheet's *Download recent ride log* button, in Bluefy on iOS or Chrome on Android, and on a Mac in Chrome or Edge (Safari has no Web Bluetooth).
+  - **What it sends:** the newest parts, whole, until the next would take it past `?mb=` megabytes (default 16, at most 256). At least one part always goes. They come oldest first, each cut where its records end, so a part's zero-filled tail never goes over the radio. `?boot=12` limits it to `RIDES/00012`.
+  - **What you get:** one file, named for the first and last part it holds (`emcool-00012.3-00014.1.log`). Records frame themselves, so the parts laid end to end read like the card's own files. Import it the same way: `node tools/import-ride-log.mts emcool-00012.3-00014.1.log --out rides.db`.
+  - **The part being written** goes only as far as the writer has fsynced. The part it's preparing next, all zeros, is left out.
+  - **How fast:** the link compresses the log about 3.6× (measured on the corpus), so 16 MB is about 4.5 MB over the air. Bluetooth 4.2's real rate on this board hasn't been measured. At cool-eva's guessed 24 kB/s that's about three minutes. The phone holds the file in memory until it's saved, which is why there's a cap. For the whole card, take the card out.
+  - **The live stream keeps going.** While both have something to send, a download and the stream each keep a message slot, so the dashboard never thinks the link has died during a long download.
+  - **Planning reads the card** a step at a time: one directory listing, or one part measured by bisecting for its last record (about 14 sector reads for an 8 MB part). So the link task never waits long.
+  - **If something goes wrong partway,** the response ends with an error and the dashboard says it failed, never handing over a short file as whole. That covers a card pulled or a file read failing. If the phone goes away, the bike lets go of the file.
+  - **A part deleted to make room** during a download (only the oldest, on a full card) goes as zeros, or as what its freed clusters then hold. The laptop's reader steps over both by CRC and drops records it has already seen.
+  - **Who can download:** only a phone holding the link secret, like every other request. The log isn't encrypted on the card or in the file.
+- **Everything else** answers 404, with a body saying the endpoint isn't on emcool yet. That covers fan control. The dashboard shows the error where it would show the result.
 
 ## How it differs from cool-eva's server
 
@@ -72,6 +82,8 @@ The server's buffers come from the heap once at boot, about 52 KB:
 | Header buffer | ~4.5 KB |
 | The endpoints' body buffer | 4 KB |
 
+A `/dl` in progress adds one open file on the card, which FatFs allocates when it's opened (a `FIL` and its 4 KB sector buffer, since `FATFS_USE_DYN_BUFFERS` is on). The mount allows six open files: the ride log's two, two for service mode's snapshots, the download's one, and one to spare.
+
 With Bluetooth on, the static-data region is too small for them. The 10 s status line reports free heap and its low point. If the heap runs short on the bike, the first things to shrink are the slot count and the message cap (`kMaxMessageBytes`).
 
 ## Verified, and not
@@ -84,6 +96,19 @@ With Bluetooth on, the static-data region is too small for them. The 10 s status
   - **Snapshots:** every snapshot equals the server's live state exactly, value and timestamp, with cool-eva's units and groups. This holds at MTU 185 and at MTU 23 (20-byte notifications).
   - **Patches:** they carry the latest values, including after a link that drained nothing for a second.
   - **Requests:** `/status` has the right shape and counts. `/dtc-table` and `/fault-infokeys` are byte-identical to cool-eva's, over seven and three 4 KB pieces. `/stored-dtcs`, after a 60-code mode 03 reply, equals what cool-eva's own `stored-codes.ts` serves for that reply, apart from the read's time. 404 and 400 come back as expected.
+  - **`/dl`:** served from the ride log the corpus run wrote, it holds exactly the newest parts' records, byte for byte. The laptop's reader gets the same readings from it as from those parts' files, and it imports through cool-eva's `db.ts`. Also checked:
+    - its name, `?boot=`, and the refusals (bad `mb=` or `boot=`, POST, a boot that isn't there)
+    - 503 with no card configured
+    - at one notification per 10 ms, the stream's messages keep arriving during the body, with no gap near the dashboard's 12 s limit
+    - a part truncated mid-download ends the response with an error
+    - neither that nor a disconnect mid-download leaves a file open (checked with `lsof`)
+    - removing each of those three safeguards (the stream's slot, the error, letting go on disconnect) makes the check fail
+  - `check_ride_log` checks the download itself against the writer's real parts:
+    - read in pieces of 1 byte to 1 MB
+    - budgets, one boot, and the live part only to its durable length, never the next part
+    - a part deleted after planning goes as zeros, with every later offset unmoved
+    - an unmount mid-download stops it
+    - measuring the end of a part's records past a run of zeroed sectors
   - **Tampering and replay:** a tampered envelope and a replayed one are both dropped, and the session carries on.
   - **Unsubscribe and disconnect:** unsubscribe stops the stream, and a disconnect ends the session.
 - **The test can fail.** With the outbound direction byte wrong, the phone can't open anything and the check fails.
@@ -91,6 +116,7 @@ With Bluetooth on, the static-data region is too small for them. The 10 s status
 **Not verified yet** (nothing has run on the ESP32):
 
 - NimBLE itself: advertising, GATT, MTU exchange and notifications.
-- Real throughput, and the heap left over.
+- Real throughput, and the heap left over. That includes how long a 16 MB `/dl` really takes.
+- `/dl` reading the card while the ride-log task writes it, on the real FatFs and SPI bus.
 - The iOS app or a browser against the real radio.
 - The PSA crypto backend and ROM inflate, which are only compiled. The boot self-test covers the crypto the first time it runs.

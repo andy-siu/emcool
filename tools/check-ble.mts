@@ -4,17 +4,32 @@
 // host/build/ble_server_host (the C++ server with the radio replaced by stdin/stdout) through
 // the handshake, the live stream and requests, the way public/lib/ble-link.js would.
 //
-//   node tools/check-ble.mts <ble_server_host> <golden decode corpus> <cool-eva checkout>
+//   node tools/check-ble.mts <ble_server_host> <golden decode corpus> <cool-eva checkout> [<RIDES dir>]
+//
+// With a RIDES directory (check_ride_log --corpus's), /dl is downloaded from a copy of it and held
+// to what the laptop reads off the card's own files.
 
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { join } from "node:path";
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { copyFile, cp, mkdtemp, readFile, realpath, rm, truncate, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
-const [hostBinary, goldenPath, coolEvaDirectory] = process.argv.slice(2);
+import { importRideLog } from "./import-ride-log.mts";
+import { collectFiles, readFileBlob, scanRecords } from "./lib/ride-log-reader.mts";
+
+const execFileAsync = promisify(execFile);
+
+const [hostBinary, goldenPath, coolEvaDirectory, ridesSource] = process.argv.slice(2);
 if (!hostBinary || !goldenPath || !coolEvaDirectory) {
-  console.error("usage: node tools/check-ble.mts <ble_server_host> <golden decode corpus> <cool-eva checkout>");
+  console.error("usage: node tools/check-ble.mts <ble_server_host> <golden decode corpus> <cool-eva checkout> [<RIDES dir>]");
   process.exit(2);
 }
+// The server reads a copy, so the check can damage it.
+const workDirectory = await mkdtemp(join(tmpdir(), "emcool-check-ble-"));
+const ridesDirectory = join(workDirectory, "RIDES");
+if (ridesSource) await cp(ridesSource, ridesDirectory, { recursive: true });
 
 // ⚠️ The phone-side wire module is emcool's OWN copy now (dashboard/lib/ble-wire.js), not
 // cool-eva's — emcool renamed the handshake salts (emcool/hello, emcool/session) and the request
@@ -77,7 +92,12 @@ class Bike {
   #waiting: (() => void) | null = null;
 
   constructor() {
-    this.#process = spawn(hostBinary, [SECRET, goldenPath, Buffer.from(storedReply).toString("hex")]);
+    this.#process = spawn(hostBinary, [
+      SECRET,
+      goldenPath,
+      Buffer.from(storedReply).toString("hex"),
+      ...(ridesSource ? [ridesDirectory] : []),
+    ]);
     this.#process.stderr.on("data", (chunk: Buffer) => process.stderr.write(chunk));
     this.#process.stdout.on("data", (chunk: Buffer) => {
       this.#buffer = Buffer.concat([this.#buffer, chunk]);
@@ -136,6 +156,9 @@ class Bike {
   }
   quit() {
     return this.command("Q");
+  }
+  get pid(): number {
+    return this.#process.pid!;
   }
 }
 
@@ -246,6 +269,88 @@ function mergeStream(messages: Received[], type: string): Record<string, any> {
   return merged;
 }
 
+interface Answer {
+  status: number;
+  headers: any;
+  parts: Uint8Array[];
+  bytes: Buffer;
+  error: string | undefined;
+  ended: boolean;
+  // Stream messages that arrived between the head and the end, and the longest stretch of rounds
+  // without one while the body was going.
+  streamDuring: number;
+  longestStreamGap: number;
+  sinceStream: number;
+}
+
+interface GatherOptions {
+  rounds?: number;
+  milliseconds?: number;
+  budget?: number;
+  // Stop once this much body has come (the response still running).
+  untilBytes?: number;
+}
+
+// Gathers more of response `id`: up to `rounds` × collect(milliseconds, budget).
+async function gather(
+  phone: Phone,
+  id: number,
+  answer: Answer,
+  { rounds = 20, milliseconds = 0, budget = ALL_FRAMES, untilBytes = Infinity }: GatherOptions = {}
+): Promise<Answer> {
+  let received = answer.parts.reduce((total, part) => total + part.length, 0);
+  for (let round = 0; round < rounds && !answer.ended && received < untilBytes; round++) {
+    let streamed = false;
+    for (const message of await phone.collect(milliseconds, budget)) {
+      if (message.kind === MessageKind.STREAM && answer.status !== -1) {
+        answer.streamDuring++;
+        streamed = true;
+      }
+      if (message.header?.id !== id) continue;
+      if (message.kind === MessageKind.RESPONSE_HEAD) {
+        answer.status = message.header.status;
+        answer.headers = message.header.headers;
+      } else if (message.kind === MessageKind.RESPONSE_BODY) {
+        answer.parts.push(message.body);
+        received += message.body.length;
+      } else if (message.kind === MessageKind.RESPONSE_END) {
+        answer.ended = true;
+        answer.error = message.header.error;
+      }
+    }
+    if (answer.status !== -1 && !answer.ended) {
+      answer.sinceStream = streamed ? 0 : answer.sinceStream + 1;
+      answer.longestStreamGap = Math.max(answer.longestStreamGap, answer.sinceStream);
+    }
+  }
+  answer.bytes = Buffer.concat(answer.parts);
+  return answer;
+}
+
+async function exchange(
+  phone: Phone,
+  id: number,
+  path: string,
+  { method = "GET", headers = { accept: "*/*" } as Record<string, string>, ...options }: GatherOptions & {
+    method?: string;
+    headers?: Record<string, string>;
+  } = {}
+): Promise<Answer> {
+  await phone.send(MessageKind.REQUEST, { id, method, path, headers });
+  const answer: Answer = {
+    status: -1,
+    headers: {},
+    parts: [],
+    bytes: Buffer.alloc(0),
+    error: undefined,
+    ended: false,
+    streamDuring: 0,
+    longestStreamGap: 0,
+    sinceStream: 0,
+  };
+  return gather(phone, id, answer, options);
+}
+
 async function request(
   phone: Phone,
   id: number,
@@ -253,27 +358,29 @@ async function request(
   method = "GET",
   requestHeaders: Record<string, string> = { accept: "*/*" }
 ): Promise<{ status: number; headers: any; body: string }> {
-  await phone.send(MessageKind.REQUEST, { id, method, path, headers: requestHeaders });
-  let status = -1;
-  let headers: any = {};
-  const parts: Uint8Array[] = [];
-  let ended = false;
-  for (let round = 0; round < 20 && !ended; round++) {
-    for (const message of await phone.collect(0)) {
-      if (message.header?.id !== id) continue;
-      if (message.kind === MessageKind.RESPONSE_HEAD) {
-        status = message.header.status;
-        headers = message.header.headers;
-      } else if (message.kind === MessageKind.RESPONSE_BODY) {
-        parts.push(message.body);
-      } else if (message.kind === MessageKind.RESPONSE_END) {
-        ended = true;
-        check(message.header.error === undefined, `${path} ended with error ${message.header.error}`);
-      }
-    }
+  const answer = await exchange(phone, id, path, { method, headers: requestHeaders });
+  check(answer.ended, `${path} never ended`);
+  check(answer.error === undefined, `${path} ended with error ${answer.error}`);
+  return { status: answer.status, headers: answer.headers, body: answer.bytes.toString("utf-8") };
+}
+
+// What /dl should send for the newest parts under `maxBytes`: each part up to its last record's end,
+// oldest first — worked out from the card's files with the laptop's own reader.
+async function expectedDownload(maxBytes: number): Promise<{ body: Buffer; files: string[] }> {
+  const chosen: { path: string; used: Buffer }[] = [];
+  let total = 0;
+  for (const path of (await collectFiles([ridesDirectory])).reverse()) {
+    const blob = await readFile(path);
+    const records = scanRecords(blob).records;
+    if (records.length === 0) continue;
+    const last = records[records.length - 1];
+    const used = blob.subarray(0, last.offset + last.length);
+    if (chosen.length > 0 && total + used.length > maxBytes) break;
+    chosen.push({ path, used });
+    total += used.length;
   }
-  check(ended, `${path} never ended`);
-  return { status, headers, body: Buffer.concat(parts).toString("utf-8") };
+  chosen.reverse();
+  return { body: Buffer.concat(chosen.map(part => part.used)), files: chosen.map(part => part.path) };
 }
 
 const bike = new Bike();
@@ -350,8 +457,131 @@ check(payload.disk?.freeBytes > 0 && payload.disk?.totalBytes > payload.disk?.fr
 const batteryTotal = [...registry.values()].filter(signal => signal.group === "battery").length;
 check(payload.groups?.battery?.[1] === batteryTotal && payload.groups.battery[0] > 0, `/status battery ${payload.groups?.battery}`);
 check(payload.groups?.waypoint === undefined, "/status counted the on-demand-only waypoint group");
-const missing = await request(phone, 2, "/dl");
-check(missing.status === 404 && missing.body.includes("isn't available"), `/dl: ${missing.status} ${missing.body}`);
+const missing = await request(phone, 2, "/fan");
+check(missing.status === 404 && missing.body.includes("isn't available"), `/fan: ${missing.status} ${missing.body}`);
+if (ridesSource) {
+  await checkDownload();
+} else {
+  const off = await request(phone, 2, "/dl");
+  check(off.status === 503 && off.body.includes("ride log is off"), `/dl with no card: ${off.status} ${off.body}`);
+}
+
+// /dl: the ride log, read off the card copy by the C++ download and carried by the server's pieces.
+async function checkDownload(): Promise<void> {
+  const ridesReal = await realpath(ridesDirectory);
+  // The card's files the server still holds open; null where lsof isn't there to ask.
+  const openUnderRides = async (): Promise<string[] | null> => {
+    try {
+      const { stdout } = await execFileAsync("lsof", ["-p", String(bike.pid), "-Fn"]);
+      return stdout.split("\n").filter(line => line.startsWith("n" + ridesReal)).map(line => line.slice(1));
+    } catch {
+      return null;
+    }
+  };
+  const nothingOpen = async (when: string) => {
+    const open = await openUnderRides();
+    if (open === null) return;
+    check(open.length === 0, `${when}, the server still holds ${open.join(", ")}`);
+  };
+
+  // The newest megabyte. Read with the laptop's own reader it is what those files hold, and saved as
+  // the phone saves it, it imports through cool-eva's db.ts.
+  const wanted = await expectedDownload(1024 * 1024);
+  check(wanted.files.length > 1, "the 1 MB download covers only one part; it should span several");
+  const notifiedBefore = phone.frameSizes.reduce((total, size) => total + size, 0);
+  const answer = await exchange(phone, 50, "/dl?mb=1", { rounds: 400 });
+  const overTheAir = phone.frameSizes.reduce((total, size) => total + size, 0) - notifiedBefore;
+  console.log(
+    `check-ble: /dl?mb=1 sent ${answer.bytes.length} bytes of ride log in ${overTheAir} bytes of notifications ` +
+      `(${(answer.bytes.length / overTheAir).toFixed(2)}× smaller over the air)`
+  );
+  check(answer.ended && answer.error === undefined && answer.status === 200, `/dl?mb=1: ${answer.status} ${answer.error}`);
+  check(answer.headers["content-type"] === "application/octet-stream", `/dl type ${answer.headers["content-type"]}`);
+  check(
+    Number(answer.headers["content-length"]) === wanted.body.length,
+    `/dl content-length ${answer.headers["content-length"]}, expected ${wanted.body.length}`
+  );
+  check(
+    answer.bytes.equals(wanted.body),
+    `/dl?mb=1 sent ${answer.bytes.length} bytes, expected ${wanted.body.length} from ${wanted.files.length} parts, or different`
+  );
+  const name = /filename="([^"]+)"/.exec(answer.headers["content-disposition"] ?? "")?.[1];
+  const label = (path: string) => `${path.split("/").at(-2)}.${Number(path.split("/").at(-1)!.slice(4, 8))}`;
+  check(name === `emcool-${label(wanted.files[0])}-${label(wanted.files.at(-1)!)}.log`, `/dl named ${name}`);
+  const fromFiles: unknown[] = [];
+  const seen = new Set<string>();
+  for (const path of wanted.files) fromFiles.push(...readFileBlob(path, await readFile(path), seen).readings);
+  const fromDownload = readFileBlob("dl", answer.bytes);
+  check(
+    fromDownload.damagedRecords === 0 && fromDownload.unrecognizedSectors === 0,
+    `/dl reads with ${fromDownload.damagedRecords} damaged records, ${fromDownload.unrecognizedSectors} stray sectors`
+  );
+  check(
+    fromDownload.readings.length > 0 && JSON.stringify(fromDownload.readings) === JSON.stringify(fromFiles),
+    `/dl holds ${fromDownload.readings.length} readings, the card's parts ${fromFiles.length}`
+  );
+  const saved = join(workDirectory, name ?? "emcool.log");
+  await writeFile(saved, answer.bytes);
+  const summary = await importRideLog([saved], join(workDirectory, "rides.db"), coolEvaDirectory, () => {});
+  check(
+    summary.readings === fromFiles.length && summary.damagedRecords === 0,
+    `/dl imported ${summary.readings} readings, expected ${fromFiles.length}`
+  );
+  await nothingOpen("after a finished download");
+
+  // One boot, and what is refused.
+  const four = await expectedDownload(4 * 1024 * 1024);
+  const boot = await exchange(phone, 51, "/dl?boot=1&mb=4", { rounds: 400 });
+  check(boot.ended && boot.status === 200 && boot.bytes.equals(four.body), `/dl?boot=1&mb=4 sent ${boot.bytes.length} bytes, expected ${four.body.length}`);
+  const noBoot = await request(phone, 52, "/dl?boot=9");
+  check(noBoot.status === 404 && noBoot.body.includes("no boot 9"), `/dl?boot=9: ${noBoot.status} ${noBoot.body}`);
+  for (const bad of ["/dl?mb=0", "/dl?mb=257", "/dl?mb=x", "/dl?boot=-1"]) {
+    const refused = await request(phone, 53, bad);
+    check(refused.status === 400, `${bad}: ${refused.status} ${refused.body}`);
+  }
+  const posted = await request(phone, 54, "/dl", "POST");
+  check(posted.status === 405, `POST /dl: ${posted.status}`);
+
+  // At the radio's pace the live stream keeps coming while the body goes. One notification per 10 ms
+  // (~18 kB/s) makes this download longer than the 5 s heartbeat; the dashboard calls a link dead after
+  // 12 s with no stream message, so the heartbeats must not wait for the body.
+  const paced = await exchange(phone, 55, "/dl?mb=1", { rounds: 1200, milliseconds: 100, budget: 1 });
+  check(paced.ended && paced.error === undefined && paced.bytes.equals(wanted.body), `paced /dl: ${paced.bytes.length} bytes, ${paced.error}`);
+  check(
+    paced.streamDuring >= 2 && paced.longestStreamGap <= 60,
+    `paced /dl: ${paced.streamDuring} stream messages during the body, longest gap ${paced.longestStreamGap * 100} ms`
+  );
+
+  // A part cut short under a running download: it ends with an error, never a short file passed off
+  // as whole, and lets go of the file.
+  const victim = wanted.files.at(-1)!;
+  const cut = await exchange(phone, 56, "/dl?mb=1", { rounds: 2000, milliseconds: 10, budget: 1, untilBytes: 4096 });
+  check(cut.status === 200 && !cut.ended, `the download to cut short: ${cut.status}, ended ${cut.ended}`);
+  await truncate(victim, 512);
+  await gather(phone, 56, cut, { rounds: 400 });
+  check(
+    cut.ended && cut.error !== undefined && cut.bytes.length < Number(cut.headers["content-length"]),
+    `a truncated part: ended ${cut.ended}, error ${cut.error}, ${cut.bytes.length} of ${cut.headers["content-length"]} bytes`
+  );
+  await copyFile(join(ridesSource!, relative(ridesDirectory, victim)), victim);
+  await nothingOpen("after a download that failed");
+
+  // Gone mid-download, the phone's session takes the download with it: the file is let go, and the
+  // next session downloads afresh.
+  const partial = await exchange(phone, 59, "/dl?mb=1", { rounds: 2000, milliseconds: 10, budget: 1, untilBytes: 4096 });
+  check(partial.status === 200 && !partial.ended, `the download to abandon: ${partial.status}, ended ${partial.ended}`);
+  await bike.command("D");
+  await nothingOpen("after the phone went mid-download");
+  await bike.connect(185);
+  await bike.notifications(true);
+  await phone.hello();
+  check((await phone.collect(0))[0]?.kind === MessageKind.WELCOME, "no WELCOME after the abandoned download");
+  await phone.send(MessageKind.SUBSCRIBE, {});
+  await phone.collect(0);
+  const again = await exchange(phone, 60, "/dl?mb=1", { rounds: 400 });
+  check(again.ended && again.error === undefined && again.bytes.equals(wanted.body), `/dl after an abandoned one: ${again.status} ${again.error}`);
+}
+
 for (const [id, path, module] of [
   [20, "/dtc-table", "src/http/dtc-table.ts"],
   [21, "/fault-infokeys", "src/http/fault-infokeys.ts"],
@@ -468,6 +698,7 @@ check(Math.max(...smallPhone.frameSizes) <= 20, `a ${Math.max(...smallPhone.fram
 
 const final = await bike.json("Z");
 await bike.quit();
+await rm(workDirectory, { recursive: true, force: true });
 console.log(
   `check-ble: ${final.sessionsStarted} sessions, ${final.snapshots} snapshots (${snapshotChunks} chunks each), ` +
     `${final.requests} requests, ${final.framesSent} notifications through emcool's ble-wire.js — ${failures} failures`
