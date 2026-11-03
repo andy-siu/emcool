@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <string>
 
 #include "emcool/ride_log/download.hpp"
 #include "emcool/settings/settings.hpp"
@@ -36,5 +37,9 @@ struct WifiCounters {
 // run at once. Null without a card.
 bool startWifi(const settings::Settings& settings, settings::SettingsStorage& storage,
                settings::RuntimeSettings& running, ride_log::DownloadCard* card, WifiCounters& counters);
+
+// The `network` command's report: the network joined, its signal, and the address, netmask,
+// gateway and DNS server the network handed out, or why there are none. One line each.
+std::string describeNetwork();
 
 }  // namespace emcool

@@ -52,6 +52,7 @@ struct Link {
   settings::RuntimeSettings* running = nullptr;
   ride_log::DownloadCard* card = nullptr;
   std::string adminPassword;
+  std::string ssid;
   esp_netif_t* netif = nullptr;
   esp_timer_handle_t retryTimer = nullptr;
   std::int64_t retryMs = kFirstRetryMs;
@@ -124,8 +125,12 @@ bool drainLog(int client) {
 void runCommand(int argumentCount, char** arguments, std::string& output) {
   const std::string_view command = arguments[0];
   if (command == "help") {
-    output += "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | restart | exit\n"
+    output += "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | network | restart | exit\n"
               "`show` lists every setting and what it does is in the USB console's `help`.\n";
+    return;
+  }
+  if (command == "network") {
+    output += describeNetwork();
     return;
   }
   if (command == "restart") {
@@ -400,7 +405,56 @@ void onEvent(void*, esp_event_base_t base, std::int32_t id, void* data) {
   }
 }
 
+std::string address(const esp_ip4_addr_t& ip) {
+  char text[16];
+  std::snprintf(text, sizeof text, IPSTR, IP2STR(&ip));
+  return text;
+}
+
 }  // namespace
+
+std::string describeNetwork() {
+  if (link.netif == nullptr) {
+    return "wifi: off (set WIFI_SSID and ADMIN_PASSWORD, then restart)\n";
+  }
+  std::string out;
+  std::uint8_t mac[6] = {};
+  esp_wifi_get_mac(WIFI_IF_STA, mac);
+  char line[160];
+  wifi_ap_record_t network = {};
+  if (esp_wifi_sta_get_ap_info(&network) == ESP_OK) {
+    std::snprintf(line, sizeof line, "wifi:     joined \"%s\", channel %u, signal %d dBm\n",
+                  reinterpret_cast<const char*>(network.ssid), static_cast<unsigned>(network.primary),
+                  static_cast<int>(network.rssi));
+  } else {
+    std::snprintf(line, sizeof line, "wifi:     not joined; trying \"%s\" (%u attempts so far)\n",
+                  link.ssid.c_str(), static_cast<unsigned>(link.counters->reconnects.load(std::memory_order_relaxed)));
+  }
+  out += line;
+  esp_netif_ip_info_t ip = {};
+  if (esp_netif_get_ip_info(link.netif, &ip) != ESP_OK || ip.ip.addr == 0) {
+    out += "address:  none yet (waiting for the network's DHCP)\n";
+  } else {
+    out += "address:  " + address(ip.ip) + "\n";
+    out += "netmask:  " + address(ip.netmask) + "\n";
+    out += "gateway:  " + address(ip.gw) + "\n";
+    esp_netif_dns_info_t dns = {};
+    if (esp_netif_get_dns_info(link.netif, ESP_NETIF_DNS_MAIN, &dns) == ESP_OK && dns.ip.type == ESP_IPADDR_TYPE_V4 &&
+        dns.ip.u_addr.ip4.addr != 0) {
+      out += "dns:      " + address(dns.ip.u_addr.ip4) + "\n";
+    }
+  }
+  const char* hostname = nullptr;
+  esp_netif_get_hostname(link.netif, &hostname);
+  std::snprintf(line, sizeof line, "hostname: %s\nmac:      %02x:%02x:%02x:%02x:%02x:%02x\n",
+                hostname != nullptr ? hostname : "-", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  out += line;
+  if (ip.ip.addr != 0) {
+    out += "console:  nc " + address(ip.ip) + " " + std::to_string(kConsolePort) + "\n";
+    out += "ride log: http://" + address(ip.ip) + "/\n";
+  }
+  return out;
+}
 
 bool startWifi(const settings::Settings& settings, settings::SettingsStorage& storage,
                settings::RuntimeSettings& running, ride_log::DownloadCard* card, WifiCounters& counters) {
@@ -413,6 +467,7 @@ bool startWifi(const settings::Settings& settings, settings::SettingsStorage& st
   link.running = &running;
   link.card = card;
   link.adminPassword = settings.adminPassword;
+  link.ssid = settings.wifiSsid;
 
   if (esp_netif_init() != ESP_OK) {
     logError(kTag, "esp_netif_init failed; Wi-Fi stays off");

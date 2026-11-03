@@ -6,6 +6,7 @@
 #include "esp_console.h"
 #include "esp_system.h"
 #include "nvs.h"
+#include "wifi_link.hpp"
 
 // The console follows ESP-IDF's examples/system/console/basic.
 
@@ -24,6 +25,11 @@ int runCommand(int argumentCount, char** arguments) {
   const int status = settings::runSettingsCommand(*consoleStorage, *runningSettings, argumentCount, arguments, output);
   std::fputs(output.c_str(), stdout);
   return status;
+}
+
+int network(int, char**) {
+  std::fputs(describeNetwork().c_str(), stdout);
+  return 0;
 }
 
 int restart(int, char**) {
@@ -126,6 +132,10 @@ bool startSettingsConsole(settings::SettingsStorage& storage, settings::RuntimeS
                "SECONDS` (5-3600) change it at once and are saved.",
        .hint = "[on | off | every SECONDS]", .func = runCommand, .argtable = nullptr, .func_w_context = nullptr,
        .context = nullptr},
+      {.command = "network",
+       .help = "The Wi-Fi network joined and its signal, and the address, netmask, gateway and DNS server it handed "
+               "out.",
+       .hint = nullptr, .func = network, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
       {.command = "restart", .help = "Restart, so saved settings take effect.", .hint = nullptr, .func = restart,
        .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
   };
