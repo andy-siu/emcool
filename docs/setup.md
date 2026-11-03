@@ -24,7 +24,7 @@ NVS settings **survive reflashing and firmware updates**. Only `idf.py erase-fla
 
 ## Commands
 
-There are five, no more:
+There are six, no more:
 
 | Command | What it does |
 | --- | --- |
@@ -32,6 +32,7 @@ There are five, no more:
 | `set NAME VALUE` | Saves one setting. Quote a value with spaces: `set BLE_SECRET "my long phrase"`. |
 | `unset NAME` | Puts one setting back to its default (removes it from NVS). |
 | `status [on \| off \| every SECONDS]` | The periodic status report. `status` prints one now; `status off` / `status on` / `status every SECONDS` (5–3600) change it and save at once. |
+| `network` | The Wi-Fi network joined and its signal, the address, netmask, gateway and DNS server it handed out, the hostname and MAC address, and where to find the console and the ride-log page. With Wi-Fi off, says so. |
 | `restart` | Reboots, so saved settings take effect. |
 
 There is deliberately **no `get`** — `show` prints everything, and it is short. An unknown name tells you so and points at `show`.

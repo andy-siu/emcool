@@ -30,7 +30,22 @@ The boot log says where to find it:
 I wifi: connected as 192.168.1.42: console `nc 192.168.1.42 23`, ride log http://192.168.1.42/
 ```
 
-The 10 s status line repeats the address. The bike asks the router for the hostname `emcool`, so `emcool.local` or `emcool` may work too, depending on the router.
+The 10 s status line repeats the address, and `network`, on either console, shows the rest:
+
+```
+emcool> network
+wifi:     joined "garage wifi", channel 6, signal -58 dBm
+address:  192.168.1.42
+netmask:  255.255.255.0
+gateway:  192.168.1.1
+dns:      192.168.1.1
+hostname: emcool
+mac:      24:6f:28:aa:bb:cc
+console:  nc 192.168.1.42 23
+ride log: http://192.168.1.42/
+```
+
+Before it has joined, it says what it is trying and how many attempts it has made. A router can reserve the bike an address by that MAC address. The bike asks the router for the hostname `emcool`, so `emcool.local` or `emcool` may work too, depending on the router.
 
 The bike rejoins by itself if the network drops or the router restarts, retrying from 1 s up to once a minute. `unset WIFI_SSID` then `restart` turns Wi-Fi off.
 
@@ -43,7 +58,7 @@ nc 192.168.1.42 23
 macOS has no `telnet` any more; `nc` is built in, and a telnet client works too.
 
 1. Type the admin password. A telnet client hides it; `nc` shows it as you type.
-2. Then use the same commands as the USB console: `show`, `set`, `unset`, `status`, `restart`, plus `help` and `exit`.
+2. Then use the same commands as the USB console: `show`, `set`, `unset`, `status`, `network`, `restart`, plus `help` and `exit`.
 3. The log follows the console as it does on the serial port, status reports included. If the network can't keep up, lines are dropped and a note says how many bytes.
 
 **Limits:**
