@@ -689,6 +689,36 @@ void checkDownload() {
                  body ? emcool::ride_log::scanRecords(*body).size() : 0, fromCard);
   }
 
+  // The page's listing: every boot newest first, each part at the length /dl would send.
+  {
+    std::string problem;
+    const std::optional<emcool::ride_log::CardListing> listing = emcool::ride_log::listCard(folder, problem);
+    EMCOOL_CHECK(listing && listing->boots.size() == 2 && listing->boots[0].boot == 2 && listing->boots[1].boot == 1,
+                 "the listing's boots are wrong (%s)", problem.c_str());
+    std::size_t listed = 0;
+    std::uint64_t listedBytes = 0;
+    if (listing) {
+      for (auto boot = listing->boots.rbegin(); boot != listing->boots.rend(); ++boot) {
+        for (const auto& part : boot->parts) {
+          if (part.bytes == 0) continue;
+          char name[32];
+          std::snprintf(name, sizeof name, "%05u/PART%04u.LOG", static_cast<unsigned>(boot->boot),
+                        static_cast<unsigned>(part.part));
+          EMCOOL_CHECK(listed < parts.size() && parts[listed].first == name && parts[listed].second.size() == part.bytes,
+                       "listed %s at %llu bytes", name, static_cast<unsigned long long>(part.bytes));
+          listed++;
+          listedBytes += part.bytes;
+        }
+      }
+      EMCOOL_CHECK(listed == parts.size() && listedBytes == listing->bytes && listing->bytes == concatenated(0, parts.size()).size(),
+                   "the listing has %zu parts, %llu bytes", listed, static_cast<unsigned long long>(listedBytes));
+    }
+    folder.mounted = false;
+    EMCOOL_CHECK(!emcool::ride_log::listCard(folder, problem) && problem.find("no card") != std::string::npos,
+                 "a listing with no card");
+    folder.mounted = true;
+  }
+
   // A budget: the newest whole parts that fit, contiguous, at least one.
   {
     const std::size_t lastTwo = parts[parts.size() - 1].second.size() + parts[parts.size() - 2].second.size();

@@ -2,11 +2,14 @@
 
 #include <cstdio>
 #include <map>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "check.hpp"
 #include "emcool/log.hpp"
+#include "emcool/settings/remote_console.hpp"
 #include "emcool/settings/settings.hpp"
 
 using namespace emcool::settings;
@@ -167,6 +170,39 @@ int main() {
   result = run(storage, live, {"unset", "STATUS_INTERVAL_S"});
   EMCOOL_CHECK(result.status == 0 && live.statusIntervalSeconds() == 10, "unset did not restore the 10 s default");
 
+  // Wi-Fi: off by default, and on only with both a network and an admin password. The passwords are
+  // never printed; WPA's 8-63 characters or nothing.
+  {
+    MemoryStorage wifiStorage;
+    RuntimeSettings fresh(Settings::load(wifiStorage));
+    EMCOOL_CHECK(!fresh.boot().wifiEnabled(), "Wi-Fi is on by default");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "WIFI_SSID", "garage"}).status == 0, "set WIFI_SSID failed");
+    EMCOOL_CHECK(!Settings::load(wifiStorage).wifiEnabled(), "Wi-Fi came on with no admin password");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "ADMIN_PASSWORD", "too short"}).status == 1,
+                 "an 9-character admin password was accepted");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "ADMIN_PASSWORD", "a long admin phrase"}).status == 0,
+                 "set ADMIN_PASSWORD failed");
+    const Settings withPassword = Settings::load(wifiStorage);
+    EMCOOL_CHECK(withPassword.wifiEnabled() && withPassword.wifiSsid == "garage" && withPassword.wifiPassword.empty() &&
+                     withPassword.adminPassword == "a long admin phrase",
+                 "the Wi-Fi settings did not load");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "WIFI_PASSWORD", "1234567"}).status == 1, "a 7-character WPA password");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "WIFI_PASSWORD", std::string(64, 'x').c_str()}).status == 1,
+                 "a 64-character WPA password");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "WIFI_PASSWORD", "wpa password"}).status == 0, "set WIFI_PASSWORD failed");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "WIFI_SSID", ""}).status == 1, "an empty WIFI_SSID was accepted");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "WIFI_SSID", std::string(33, 'n').c_str()}).status == 1,
+                 "a 33-character WIFI_SSID was accepted");
+    const Result shown = run(wifiStorage, fresh, {"show"});
+    EMCOOL_CHECK(!contains(shown.output, "wpa password") && !contains(shown.output, "a long admin phrase") &&
+                     contains(shown.output, "WIFI_PASSWORD      set (12 characters)") &&
+                     contains(shown.output, "ADMIN_PASSWORD     set (19 characters)") &&
+                     contains(shown.output, "WIFI_SSID          garage"),
+                 "show printed a password, or not the Wi-Fi settings:\n%s", shown.output.c_str());
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"unset", "WIFI_SSID"}).status == 0 && !Settings::load(wifiStorage).wifiEnabled(),
+                 "unset WIFI_SSID did not turn Wi-Fi off");
+  }
+
   // The schedule: every interval while on, nothing while off, and a fresh window on resuming.
   {
     MemoryStorage scheduleStorage;
@@ -189,6 +225,76 @@ int main() {
     EMCOOL_CHECK(!decision.report && decision.restartWindow, "resuming reported at once instead of starting a window");
     EMCOOL_CHECK(!schedule.decide(running, false, 209999).report, "a report before 10 s after resuming");
     EMCOOL_CHECK(schedule.decide(running, false, 210000).report, "no report 10 s after resuming");
+  }
+
+  // The Wi-Fi console: the password first, then the same commands as the USB console.
+  {
+    MemoryStorage remoteStorage;
+    RuntimeSettings running(Settings::load(remoteStorage));
+    std::vector<std::vector<std::string>> ran;
+    RemoteConsole console("a long admin phrase", [&](int count, char** words, std::string& output) {
+      ran.emplace_back(words, words + count);
+      runSettingsCommand(remoteStorage, running, count, words, output);
+    });
+    const auto send = [&](std::string_view bytes, std::int64_t nowMs, bool& close) {
+      return console.receive(std::span<const char>(bytes.data(), bytes.size()), nowMs, close);
+    };
+    bool close = false;
+    std::string out = console.connected(0);
+    EMCOOL_CHECK(contains(out, "password: ") && contains(out, "plain text"), "no password prompt:\n%s", out.c_str());
+    out = send("show\r\n", 0, close);
+    EMCOOL_CHECK(!console.authenticated() && !close && ran.empty() && contains(out, "wrong password"),
+                 "a command ran before the password:\n%s", out.c_str());
+    // A telnet client's negotiation, a CR NUL line end and a backspace don't get in the way.
+    const std::string negotiated = std::string("\xff\xfb\x18\xff\xfa\x18", 6) + std::string(1, '\0') + "xterm" +
+                                   "\xff\xf0" "a long admin phrasX\x7f" "e\r";
+    out = send(negotiated, 0, close);
+    EMCOOL_CHECK(console.authenticated() && !close && contains(out, "logged in") && contains(out, "emcool> "),
+                 "the right password, through telnet negotiation, was refused:\n%s", out.c_str());
+    out = send("\nset WIFI_SSID \"garage wifi\"\nshow\n", 0, close);
+    const std::vector<std::string> expectedSet = {"set", "WIFI_SSID", "garage wifi"};
+    EMCOOL_CHECK(ran.size() == 2 && ran[0] == expectedSet &&
+                     remoteStorage.values["wifi_ssid"] == "garage wifi" && contains(out, "WIFI_SSID saved") &&
+                     contains(out, "\r\n") && contains(out, "WIFI_SSID          garage wifi"),
+                 "commands over the Wi-Fi console:\n%s", out.c_str());
+    out = send(std::string(RemoteConsole::kMaxLineBytes + 10, 'x') + "\n", 0, close);
+    EMCOOL_CHECK(ran.size() == 2 && contains(out, "longer than"), "an overlong line ran:\n%s", out.c_str());
+    out = send("exit\n", 0, close);
+    EMCOOL_CHECK(close && contains(out, "bye"), "exit did not close");
+
+    // Three wrong passwords end the connection, and lock everyone out for a while after.
+    console.connected(1000);
+    send("one\n", 1000, close);
+    send("two\n", 1000, close);
+    EMCOOL_CHECK(!close, "closed before the third wrong password");
+    out = send("three\n", 1000, close);
+    EMCOOL_CHECK(close && !console.authenticated(), "the third wrong password did not close the connection");
+    console.connected(2000);
+    out = send("a long admin phrase\n", 2000, close);
+    EMCOOL_CHECK(close && !console.authenticated() && contains(out, "too many"),
+                 "the right password got in during the lockout:\n%s", out.c_str());
+    console.connected(1000 + RemoteConsole::kLockoutMs);
+    out = send("a long admin phrase\n", 1000 + RemoteConsole::kLockoutMs, close);
+    EMCOOL_CHECK(!close && console.authenticated(), "the lockout did not end:\n%s", out.c_str());
+    // A new connection starts logged out.
+    console.connected(9000);
+    EMCOOL_CHECK(!console.authenticated(), "a new connection inherited the last one's login");
+    // HTTP Basic: base64("user:pass"), user ignored, padding of every length, nonsense refused.
+    EMCOOL_CHECK(basicAuthPassword("Basic dXNlcjpwYXNz") == std::string("pass"), "Basic user:pass");
+    EMCOOL_CHECK(basicAuthPassword("basic OmFiYw==") == std::string("abc"), "Basic :abc, lower-case scheme");
+    EMCOOL_CHECK(basicAuthPassword("Basic eDphYg==") == std::string("ab"), "Basic x:ab");
+    EMCOOL_CHECK(basicAuthPassword("Basic eDph") == std::string("a"), "Basic x:a");
+    EMCOOL_CHECK(basicAuthPassword("Basic eDo=") == std::string(""), "Basic x:");
+    EMCOOL_CHECK(basicAuthPassword("Basic YSBsb25nOmEgbG9uZyBhZG1pbiBwaHJhc2U=") == std::string("a long admin phrase"),
+                 "Basic with spaces in the password");
+    for (const char* bad : {"Bearer dXNlcjpwYXNz", "Basic", "Basic ", "Basic dXNlcjpwYXN", "Basic dXNlcnBhc3M=",
+                            "Basic dX=lcjpwYXNz", "Basic dXNl*jpwYXNz"}) {
+      EMCOOL_CHECK(!basicAuthPassword(bad), "accepted %s", bad);
+    }
+    EMCOOL_CHECK(withCrLf("a\nb\n") == "a\r\nb\r\n", "withCrLf");
+    EMCOOL_CHECK(!constantTimeEquals("a long admin phrase", "a long admin phras") &&
+                     !constantTimeEquals("", "x") && constantTimeEquals("same", "same"),
+                 "constantTimeEquals is wrong");
   }
 
   std::printf("check_settings: %d failures\n", emcool::test::failures());

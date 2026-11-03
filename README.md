@@ -114,6 +114,9 @@ emcool> restart
 | `SERVICE_MODE_ENABLED` | `0` | `1` to let the dashboard read the VCU's calibration parameters, as cool-eva's `SERVICE_MODE_ENABLED`. Only while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `SERVICE_WRITE_ENABLED` | `0` | `1` to let the dashboard **write** to the VCU (`/vcu-write`), as cool-eva's `SERVICE_WRITE_ENABLED`. The one switch that lets a web page change the bike, so off by default even though it is a transmitting setting like the rest. Needs `OBD_ENABLED` and `SERVICE_MODE_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `CHARGE_AUTO_ENABLED` | `0` | `1` for the automatic charge-current controller, as cool-eva's `CHARGE_AUTO_ENABLED`. It commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`docs/service-mode.md`](docs/service-mode.md). |
+| `WIFI_SSID` | not set | The Wi-Fi network to join. With `ADMIN_PASSWORD` set too, the bike serves this console on port 23 and the ride log on port 80. See [Wi-Fi](#wi-fi). |
+| `WIFI_PASSWORD` | not set | That network's password, 8–63 characters; unset for an open network. |
+| `ADMIN_PASSWORD` | not set | What the Wi-Fi console and the ride-log page ask for, 12–128 characters. Unset keeps Wi-Fi off. |
 | `STATUS_REPORT` | `1` | Whether the console prints the periodic status report. Applies at once. |
 | `STATUS_INTERVAL_S` | `10` | Seconds between status reports, 5–3600. Applies at once. |
 
@@ -179,6 +182,15 @@ node tools/import-ride-log.mts /Volumes/EMCOOL/RIDES --out rides.db
 Or, without taking the card out, download a recent ride over Bluetooth from the dashboard's menu (*Download recent ride log*: the newest 16 MB or so). That gives one `.log` file, which imports the same way: `node tools/import-ride-log.mts emcool-00012.3-00014.1.log --out rides.db`. Bluetooth is slow, so for the whole card take the card out. See [`docs/ble.md`](docs/ble.md).
 
 This runs through cool-eva's own `src/db.ts`, so it needs a cool-eva checkout with its dependencies installed (`../cool-eva`, or set `COOL_EVA_DIR`).
+
+## Wi-Fi
+
+With `WIFI_SSID` and `ADMIN_PASSWORD` set, the bike joins that network (your garage Wi-Fi or a phone hotspot) and serves two things, both behind the admin password:
+
+- **The console** on port 23: `nc <bike> 23`, with the same commands as the USB console. The log follows it.
+- **The ride log** at `http://<bike>/`: every boot and part, to download in any browser or with `curl -u x:'password' -OJ 'http://<bike>/dl?mb=256'`. The files import with `tools/import-ride-log.mts`.
+
+The boot log and the status line give the address. ⚠️ It's all plain text on the network, the password included, so use it on a network you control. Fitting Wi-Fi beside Bluetooth meant building the firmware for size. [`docs/wifi.md`](docs/wifi.md) has the details, the costs and what's verified.
 
 ## Phone dashboard (Bluetooth)
 
@@ -259,7 +271,8 @@ The checks run on the laptop. They need a cool-eva checkout (`../cool-eva`, or s
 ## Decisions
 
 - **The ride log is plain text on a FAT32 microSD card**, unlike cool-eva's encrypted log. Position, heading and altitude are never written to it; the list is in `components/emcool_signals/include/emcool/signals/ride_log_policy.hpp`.
-- **Bluetooth only, no Wi-Fi.** The phone dashboard stays cool-eva's, loaded from the iOS app or GitHub Pages. The Bluetooth protocol is byte-compatible with cool-eva's `public/lib/ble-wire.js`, and `tools/check-ble.mts` holds it to that.
+- **The phone dashboard is Bluetooth only.** It stays cool-eva's, loaded from the iOS app or GitHub Pages. The Bluetooth protocol is byte-compatible with cool-eva's `public/lib/ble-wire.js`, and `tools/check-ble.mts` holds it to that.
+- **Wi-Fi is for the laptop, and off by default.** It serves the console and the ride log, never the dashboard. It's a station only, never an access point, and it's plain text behind one admin password. See [`docs/wifi.md`](docs/wifi.md).
 - **Nothing goes on the bus unless a setting asks for it.** Every transmitting feature defaults to off, even where cool-eva's defaults to on. With all of them off, the CAN controller is listen-only.
 
 ## License

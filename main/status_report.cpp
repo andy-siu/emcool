@@ -105,6 +105,29 @@ void StatusReport::report(std::int64_t nowMs) {
             static_cast<unsigned>(link.notifyFailures.load(std::memory_order_relaxed)));
   }
 
+  if (!sources_.wifiOn) {
+    logInfo(kTag, "wifi: off");
+  } else {
+    const WifiCounters& wifi = sources_.wifi;
+    const std::uint32_t address = wifi.address.load(std::memory_order_relaxed);
+    char where[24] = "not connected";
+    if (wifi.connected.load(std::memory_order_relaxed)) {
+      std::snprintf(where, sizeof where, "%u.%u.%u.%u", static_cast<unsigned>(address & 0xff),
+                    static_cast<unsigned>((address >> 8) & 0xff), static_cast<unsigned>((address >> 16) & 0xff),
+                    static_cast<unsigned>(address >> 24));
+    }
+    logInfo(kTag,
+            "wifi: %s | console %s, %u logins, %u refused | page %u served, %u refused, %.1f MB downloaded | %u "
+            "reconnects",
+            where, wifi.consoleClient.load(std::memory_order_relaxed) ? "in use" : "free",
+            static_cast<unsigned>(wifi.consoleLogins.load(std::memory_order_relaxed)),
+            static_cast<unsigned>(wifi.consoleRefusals.load(std::memory_order_relaxed)),
+            static_cast<unsigned>(wifi.pagesServed.load(std::memory_order_relaxed)),
+            static_cast<unsigned>(wifi.pagesRefused.load(std::memory_order_relaxed)),
+            static_cast<double>(wifi.bytesDownloaded.load(std::memory_order_relaxed)) / (1024.0 * 1024.0),
+            static_cast<unsigned>(wifi.reconnects.load(std::memory_order_relaxed)));
+  }
+
   const CanBusCounters& bus = sources_.bus.counters();
   const DiagnosticsSummary diagnostics = sources_.diagnostics->summary();
   if (!diagnostics.obd) {

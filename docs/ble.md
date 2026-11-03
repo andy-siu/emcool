@@ -1,6 +1,6 @@
 # The phone dashboard over Bluetooth
 
-emcool serves its phone dashboard over Bluetooth LE. The framing and session follow cool-eva's `public/lib/ble-wire.js` (described in cool-eva `docs/ble-server.md`), with one deliberate change: emcool renamed the handshake salts (`emcool/hello`, `emcool/session`) and the request header (`X-Emcool`) so the stack is its own. Open the dashboard in Bluefy on iOS or Chrome on Android. There is no Wi-Fi.
+emcool serves its phone dashboard over Bluetooth LE. The framing and session follow cool-eva's `public/lib/ble-wire.js` (described in cool-eva `docs/ble-server.md`), with one deliberate change: emcool renamed the handshake salts (`emcool/hello`, `emcool/session`) and the request header (`X-Emcool`) so the stack is its own. Open the dashboard in Bluefy on iOS or Chrome on Android. The dashboard has no Wi-Fi path; the optional Wi-Fi ([`wifi.md`](wifi.md)) serves only the console and the ride log.
 
 The dashboard itself now lives in this repo at [`../dashboard/`](../dashboard/) — a static site copied from cool-eva's `public/` and rebranded to emcool, paired with this firmware's wire protocol. See its [README](../dashboard/README.md) for how to serve it.
 

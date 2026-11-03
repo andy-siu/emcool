@@ -1,7 +1,8 @@
 // emcool: listen to the bike's CAN bus, decode every frame with the port of cool-eva's
 // decoders into live state, log what changes to the microSD card, keep the clock on GPS
 // time, serve cool-eva's phone dashboard over Bluetooth, and report over the serial console
-// every 10 s. With OBD_ENABLED, also poll OBD-II as cool-eva does; otherwise it never sends.
+// every 10 s. With OBD_ENABLED, also poll OBD-II as cool-eva does; otherwise it never sends. With
+// WIFI_SSID and ADMIN_PASSWORD, join that Wi-Fi and serve the console and the ride log over it.
 //
 // Tasks: decode (core 1) owns the CAN queue, the clock and the ride log's segment buffers, and
 // writes live state; diagnostics (core 1) owns everything that transmits — the OBD poller and
@@ -50,6 +51,7 @@
 #include "settings_console.hpp"
 #include "status_report.hpp"
 #include "system_time.hpp"
+#include "wifi_link.hpp"
 
 namespace {
 
@@ -172,8 +174,12 @@ extern "C" void app_main() {
   // NimBLE keeps PHY calibration in NVS; without it the radio can't start.
   const bool bluetooth =
       nvsReady && startBluetooth(settings, store, storeMutex, storageReport, *diagnostics, download, bleLinkCounters);
+  // Wi-Fi after Bluetooth: they share the radio, and coexistence wants the Bluetooth controller up first.
+  static emcool::WifiCounters wifiCounters;
+  const bool wifi = nvsReady && emcool::startWifi(settings, settingsStorage, runtimeSettings,
+                                                  download != nullptr ? &cardAccess : nullptr, wifiCounters);
   static emcool::StatusReport status({bus, store, storeMutex, rideLog, writer, rideLogTaskCounters, clock,
-                                      bleLinkCounters, bluetooth, runtimeSettings, diagnostics});
+                                      bleLinkCounters, bluetooth, wifiCounters, wifi, runtimeSettings, diagnostics});
   static DecodeContext context{bus, decoder, packTemperature, store, storeMutex, rideLog, clock, status, *diagnostics};
   if (xTaskCreatePinnedToCore(decodeTask, "decode", kDecodeTaskStackBytes, &context, kDecodeTaskPriority, nullptr,
                               kDecodeTaskCore) != pdPASS) {
@@ -298,11 +304,12 @@ bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals:
 void logSettings(const emcool::settings::Settings& settings) {
   emcool::logInfo(kTag,
                   "settings: BLE_SECRET %s, BLE_NAME %s, CUSTOM_BMS_CONFIG %d, OBD_ENABLED %d, ELOCK_ENABLED %d, "
-                  "SERVICE_MODE_ENABLED %d, status report %s (serial console: show)",
+                  "SERVICE_MODE_ENABLED %d, WIFI_SSID %s, status report %s (serial console: show)",
                   settings.bleSecret.empty() ? "not set" : ("set (" + std::to_string(settings.bleSecret.size()) +
                                                              " characters)").c_str(),
                   settings.bleName.c_str(), settings.customBmsConfig ? 1 : 0, settings.obdEnabled ? 1 : 0,
                   settings.elockEnabled ? 1 : 0, settings.serviceModeEnabled ? 1 : 0,
+                  settings.wifiSsid.empty() ? "not set" : settings.wifiSsid.c_str(),
                   settings.statusReport ? ("every " + std::to_string(settings.statusIntervalSeconds) + " s").c_str()
                                         : "off");
   if (!settings.obdEnabled) {

@@ -72,6 +72,26 @@ class DownloadCard {
 // longer, which the laptop steps over. nullopt, with `problem` set, if the file can't be read.
 std::optional<std::uint64_t> writtenLength(int fd, std::string& problem);
 
+// What the card holds, for the ride-log page: every boot, newest first, and its parts in order, with
+// the size each would download at. Measuring reads each part's end (a few sector reads apiece), so a
+// full card's listing takes a moment. The part the writer is preparing next is left out.
+struct CardListing {
+  struct Part {
+    std::uint32_t part;
+    std::uint64_t bytes;  // to its last record, as /dl would send it; 0 for one with none yet
+    bool live;            // the part being written
+  };
+  struct Boot {
+    std::uint32_t boot;
+    std::vector<Part> parts;
+    std::uint64_t bytes;
+  };
+  std::vector<Boot> boots;
+  std::uint64_t bytes = 0;
+};
+// nullopt, with `problem` set, if there is no card or it can't be read.
+std::optional<CardListing> listCard(DownloadCard& card, std::string& problem);
+
 class LogDownload {
  public:
   enum class Outcome : std::uint8_t { kMeasuring, kReady, kNothing, kFailed };

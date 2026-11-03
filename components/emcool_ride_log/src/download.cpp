@@ -76,6 +76,53 @@ std::optional<std::uint64_t> writtenLength(int fd, std::string& problem) {
   return std::min(end * kSectorBytes, fileBytes);
 }
 
+std::optional<CardListing> listCard(DownloadCard& card, std::string& problem) {
+  const std::lock_guard<std::mutex> lock(card.mountLock());
+  const DownloadCard::State state = card.state();
+  if (!state.mounted) {
+    problem = "there is no card in the bike, or it isn't mounted";
+    return std::nullopt;
+  }
+  const std::optional<std::vector<std::uint32_t>> boots = layout::numberedEntries(card.rootDirectory(), "", "");
+  if (!boots) {
+    problem = "the card's " + card.rootDirectory() + " can't be listed";
+    return std::nullopt;
+  }
+  CardListing listing;
+  for (auto boot = boots->rbegin(); boot != boots->rend(); ++boot) {
+    std::optional<std::vector<std::uint32_t>> parts = layout::numberedEntries(
+        layout::bootDirectory(card.rootDirectory(), *boot), layout::kPartPrefix, layout::kPartSuffix);
+    if (!parts) continue;
+    CardListing::Boot entry{*boot, {}, 0};
+    for (const std::uint32_t part : *parts) {
+      const bool live = state.live && state.live->boot == *boot && state.live->part == part;
+      if (state.live && state.live->boot == *boot && part > state.live->part) continue;  // being prepared
+      std::uint64_t bytes = 0;
+      if (live) {
+        bytes = state.live->durableBytes;
+      } else {
+        const std::string path = layout::partPath(card.rootDirectory(), *boot, part);
+        const int fd = ::open(path.c_str(), O_RDONLY);
+        if (fd < 0) continue;  // deleted to make room since the listing
+        std::string unreadable;
+        const std::optional<std::uint64_t> length = writtenLength(fd, unreadable);
+        ::close(fd);
+        if (!length) {
+          problem = path + ": " + unreadable;
+          return std::nullopt;
+        }
+        bytes = *length;
+      }
+      entry.parts.push_back({part, bytes, live});
+      entry.bytes += bytes;
+    }
+    if (entry.parts.empty()) continue;
+    listing.bytes += entry.bytes;
+    listing.boots.push_back(std::move(entry));
+  }
+  return listing;
+}
+
 std::string LogDownload::partPath(std::uint32_t boot, std::uint32_t part) const {
   return layout::partPath(card_.rootDirectory(), boot, part);
 }

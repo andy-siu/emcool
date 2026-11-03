@@ -39,6 +39,17 @@ constexpr SettingSpec kSpecs[] = {
     {"CHARGE_AUTO_ENABLED", "charge_auto", SettingType::kFlag, "0", 0, 0, false,
      "1 to let the automatic charge-current controller command the bike's charge current on a timer, as cool-eva's "
      "CHARGE_AUTO_ENABLED. Needs SERVICE_WRITE_ENABLED — it commands writes. The most autonomous feature here."},
+    // Wi-Fi: off until WIFI_SSID and ADMIN_PASSWORD are both set. The bike joins that network and serves the
+    // console on port 23 and the ride log on port 80, both behind ADMIN_PASSWORD.
+    {"WIFI_SSID", "wifi_ssid", SettingType::kText, "", 0, 32, false,
+     "The Wi-Fi network to join (garage Wi-Fi or a phone hotspot), 1-32 characters; unset keeps Wi-Fi off. The bike "
+     "then serves this console on port 23 (`nc <bike> 23`) and the ride log on http://<bike>/, both behind "
+     "ADMIN_PASSWORD."},
+    {"WIFI_PASSWORD", "wifi_password", SettingType::kSecret, "", 0, 63, false,
+     "That network's password: 8-63 characters for WPA2/WPA3, or unset for an open network."},
+    {"ADMIN_PASSWORD", "admin_password", SettingType::kSecret, "", 12, 128, false,
+     "The password the console on port 23 and the ride-log page ask for, 12-128 characters. Unset keeps Wi-Fi off. "
+     "It crosses the network in plain text, so use one used nowhere else."},
     {"STATUS_REPORT", "status_report", SettingType::kFlag, "1", 0, 0, true,
      "Whether the serial console prints the periodic status report. `status on|off` is the shorthand."},
     {"STATUS_INTERVAL_S", "status_every_s", SettingType::kInteger, "10", 5, 3600, true,
@@ -215,6 +226,11 @@ std::optional<std::string> validate(const SettingSpec& spec, std::string_view va
     return std::nullopt;
   }
   const auto length = static_cast<std::int64_t>(value.size());
+  // A Wi-Fi password is WPA's 8-63 characters, or nothing for an open network.
+  if (spec.name == "WIFI_PASSWORD" && length > 0 && length < 8) {
+    return "must be 8-63 characters (WPA2/WPA3), or unset for an open network; this is " + std::to_string(length);
+  }
+  if (spec.name == "WIFI_SSID" && length == 0) return std::string("must be 1-32 characters; `unset WIFI_SSID` turns Wi-Fi off");
   if (length < spec.minimum || length > spec.maximum) {
     return "must be " + std::to_string(spec.minimum) + "-" + std::to_string(spec.maximum) + " characters; this is " +
            std::to_string(length);
@@ -243,6 +259,9 @@ Settings Settings::load(SettingsStorage& storage) {
   settings.serviceModeEnabled = storedOrDefault(storage, *findSetting("SERVICE_MODE_ENABLED")) == "1";
   settings.serviceWriteEnabled = storedOrDefault(storage, *findSetting("SERVICE_WRITE_ENABLED")) == "1";
   settings.chargeAutoEnabled = storedOrDefault(storage, *findSetting("CHARGE_AUTO_ENABLED")) == "1";
+  settings.wifiSsid = storedOrDefault(storage, *findSetting("WIFI_SSID"));
+  settings.wifiPassword = storedOrDefault(storage, *findSetting("WIFI_PASSWORD"));
+  settings.adminPassword = storedOrDefault(storage, *findSetting("ADMIN_PASSWORD"));
   settings.statusReport = storedOrDefault(storage, *findSetting("STATUS_REPORT")) == "1";
   settings.statusIntervalSeconds =
       static_cast<std::uint32_t>(*parseInteger(storedOrDefault(storage, *findSetting("STATUS_INTERVAL_S"))));
@@ -261,6 +280,9 @@ std::string RuntimeSettings::valueOf(const SettingSpec& spec) const {
   if (spec.name == "SERVICE_MODE_ENABLED") return boot_.serviceModeEnabled ? "1" : "0";
   if (spec.name == "SERVICE_WRITE_ENABLED") return boot_.serviceWriteEnabled ? "1" : "0";
   if (spec.name == "CHARGE_AUTO_ENABLED") return boot_.chargeAutoEnabled ? "1" : "0";
+  if (spec.name == "WIFI_SSID") return boot_.wifiSsid;
+  if (spec.name == "WIFI_PASSWORD") return boot_.wifiPassword;
+  if (spec.name == "ADMIN_PASSWORD") return boot_.adminPassword;
   if (spec.name == "STATUS_REPORT") return statusReport() ? "1" : "0";
   if (spec.name == "STATUS_INTERVAL_S") return std::to_string(statusIntervalSeconds());
   return std::string(spec.defaultValue);

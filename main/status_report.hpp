@@ -1,6 +1,6 @@
 #pragma once
 
-// The serial console's status report: the CAN bus, the ride log, the clock and Bluetooth, and a
+// The serial console's status report: the CAN bus, the ride log, the clock, Bluetooth and Wi-Fi, and a
 // few live values to recognise a healthy bike at a glance. Every 10 s by default; `status off`,
 // `status on` and `status every SECONDS` on the console change that at once, and `status` asks
 // for one now.
@@ -18,6 +18,7 @@
 #include "emcool/settings/settings.hpp"
 #include "emcool/signals/signal_store.hpp"
 #include "ride_log_task.hpp"
+#include "wifi_link.hpp"
 
 namespace emcool {
 
@@ -31,6 +32,8 @@ struct StatusSources {
   const clock::SystemClockSync& clock;
   const BleLinkCounters& bleLink;
   bool bluetooth;
+  const WifiCounters& wifi;
+  bool wifiOn;
   settings::RuntimeSettings& settings;
   DiagnosticsTask* diagnostics;
 };
