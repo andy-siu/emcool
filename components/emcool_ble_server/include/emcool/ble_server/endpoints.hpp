@@ -6,6 +6,8 @@
 //   GET /dtc-table       Energica's code table, byte for byte cool-eva's
 //   GET /fault-infokeys  Energica's per-fault telemetry shortlists, likewise
 //   GET /stored-dtcs     the OBD trouble-code lists as last read (all "not-read" with OBD off)
+//   GET /dl              the ride log off the card: the newest parts, up to ?mb= (default 16, at
+//                        most 256), or only ?boot=N's — see ride_log/download.hpp
 // Everything else is a 404 saying the endpoint isn't on emcool yet. None of these touches the
 // bus: like cool-eva's, they serve what is already known, so refreshing a page can't make the
 // bike answer anything.
@@ -26,6 +28,7 @@
 #include <string_view>
 
 #include "emcool/obd/stored_codes.hpp"
+#include "emcool/ride_log/download.hpp"
 #include "emcool/signals/signal_store.hpp"
 #include "emcool/vcu/bodies.hpp"
 #include "emcool/vcu/service_api.hpp"
@@ -37,6 +40,8 @@ struct HttpResponse {
   int status;
   const char* contentType;
   std::size_t bodyLength;
+  // A Content-Disposition attachment name, for a body meant to be saved; valid until the next begin().
+  const char* fileName = nullptr;
 };
 
 struct HttpRequest {
@@ -56,6 +61,7 @@ class RequestHandler {
   virtual std::optional<HttpResponse> poll(std::int64_t) { return timedOut(); }
   // No answer in time: what to send instead. And the phone went away before it came.
   virtual HttpResponse timedOut() { return {504, "text/plain; charset=utf-8", 0}; }
+  // The phone went away (or a new session began) with the response unfinished, waiting or partly sent.
   virtual void abandon() {}
   // Up to `maxBytes` of the body from `offset`; valid until the next call.
   virtual std::span<const char> body(std::size_t offset, std::size_t maxBytes) = 0;
@@ -107,30 +113,48 @@ class DashboardEndpoints final : public RequestHandler {
   // The largest body built whole (/status, the 404s), and the largest piece handed out.
   static constexpr std::size_t kBufferBytes = 4 * 1024;
 
+  // How many of the download's planning steps one poll may take. Each lists a directory or bisects
+  // one part — a few dozen sector reads — and the link task sends nothing while it runs.
+  static constexpr int kDownloadStepsPerPoll = 1;
+
   DashboardEndpoints(const signals::SignalStore& store, std::mutex& storeMutex, StorageReport& storage,
-                     TroubleCodeSource& troubleCodes, ServiceDesk* service = nullptr)
-      : store_(store), storeMutex_(storeMutex), storage_(storage), troubleCodes_(troubleCodes), service_(service) {}
+                     TroubleCodeSource& troubleCodes, ServiceDesk* service = nullptr,
+                     ride_log::LogDownload* download = nullptr)
+      : store_(store),
+        storeMutex_(storeMutex),
+        storage_(storage),
+        troubleCodes_(troubleCodes),
+        service_(service),
+        download_(download) {}
 
   std::optional<HttpResponse> begin(const HttpRequest& request, std::int64_t nowMonotonicMs) override;
   std::optional<HttpResponse> poll(std::int64_t nowMonotonicMs) override;
+  HttpResponse timedOut() override;
   void abandon() override;
   std::span<const char> body(std::size_t offset, std::size_t maxBytes) override;
 
  private:
-  enum class Source : std::uint8_t { kBuffer, kStatic, kStoredCodes, kParts, kText };
+  enum class Source : std::uint8_t { kBuffer, kStatic, kStoredCodes, kParts, kText, kDownload };
+  // What a request answered later is waiting on.
+  enum class Waiting : std::uint8_t { kNothing, kService, kDownload };
 
   HttpResponse status(std::int64_t nowMonotonicMs);
   HttpResponse fromBuffer(int status, const char* contentType, std::size_t length);
   HttpResponse fromText(int status, const char* contentType, std::string_view text);
   std::optional<HttpResponse> service(const HttpRequest& request, std::string_view route, std::string_view query);
   HttpResponse fromParts(int status, const char* contentType, std::unique_ptr<vcu::PartsBody> parts);
+  std::optional<HttpResponse> beginDownload(std::string_view query);
+  std::optional<HttpResponse> pollDownload();
+  void endDownload();
 
   const signals::SignalStore& store_;
   std::mutex& storeMutex_;
   StorageReport& storage_;
   TroubleCodeSource& troubleCodes_;
   ServiceDesk* service_;
-  bool waiting_ = false;
+  ride_log::LogDownload* download_;
+  Waiting waiting_ = Waiting::kNothing;
+  std::string downloadName_;
   // A body read a part at a time: the parts, and where the one in hand sits in the body.
   std::unique_ptr<vcu::PartsBody> parts_;
   std::string part_;

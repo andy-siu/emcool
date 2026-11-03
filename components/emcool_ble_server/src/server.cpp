@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "emcool/ble/json_reader.hpp"
 #include "emcool/log.hpp"
@@ -85,6 +86,7 @@ void BleServer::receiveFrame(std::span<const std::uint8_t> frame, std::int64_t n
     streaming_ = false;
     stream_.cancelSnapshot();
     requestCount_ = 0;
+    if (responseStage_ != ResponseStage::kNone) requests_.abandon();
     responseStage_ = ResponseStage::kNone;
     assembler_.reset();
     if (slot != nullptr) {
@@ -157,7 +159,7 @@ std::size_t BleServer::queuedBytes() const {
 
 void BleServer::endSession(const char* reason) {
   const bool hadSession = session_.authenticated() || streaming_;
-  if (responseStage_ == ResponseStage::kWaiting) requests_.abandon();
+  if (responseStage_ != ResponseStage::kNone) requests_.abandon();
   slotCount_ = 0;
   splitter_.reset();
   attempt_.reset();
@@ -240,9 +242,24 @@ BleServer::Slot* BleServer::freeSlot() {
   return &slots_[(slotHead_ + slotCount_) % kOutboundSlots];
 }
 
-void BleServer::commitSlot(Slot& slot) {
+void BleServer::commitSlot(Slot& slot, bool response) {
   slot.messageId = ++nextMessageId_;
+  slot.response = response;
   slotCount_++;
+}
+
+// A long response body (a ride-log download is megabytes) and the live stream share the slots: while
+// both have something to send, neither may hold every one. The stream keeps its messages coming
+// (the dashboard calls a link dead after 12 s without one), and a snapshot never stalls the body.
+bool BleServer::mayTakeSlot(bool response) const {
+  if (slotCount_ == kOutboundSlots) return false;
+  const bool contended = response ? streaming_ : responseStage_ == ResponseStage::kBody;
+  if (!contended) return true;
+  std::size_t held = 0;
+  for (std::size_t index = 0; index < slotCount_; index++) {
+    if (slots_[(slotHead_ + index) % kOutboundSlots].response == response) held++;
+  }
+  return held + 1 < kOutboundSlots;
 }
 
 bool BleServer::sealIntoSlot(ble::MessageKind kind, std::string_view header, std::span<const std::uint8_t> body) {
@@ -255,7 +272,8 @@ bool BleServer::sealIntoSlot(ble::MessageKind kind, std::string_view header, std
     return false;
   }
   slot->length = length;
-  commitSlot(*slot);
+  commitSlot(*slot, kind == ble::MessageKind::kResponseHead || kind == ble::MessageKind::kResponseBody ||
+                        kind == ble::MessageKind::kResponseEnd);
   return true;
 }
 
@@ -271,6 +289,7 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
       logInfo(kTag, "%s %s", request.method.data(), request.path.data());
       responseId_ = request.id;
       responseOffset_ = 0;
+      bodyShortBy_ = 0;
       if (request.path[0] != '/') {
         response_ = {400, "text/plain; charset=utf-8", kBadPath.size()};
         badPath_ = true;
@@ -300,7 +319,7 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
       response_ = *response;
       responseStage_ = ResponseStage::kHead;
     }
-    if (freeSlot() == nullptr) return;
+    if (!mayTakeSlot(true)) return;
 
     TextBuffer header(header_.data(), header_.size());
     header.append("{\"id\":");
@@ -315,7 +334,12 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
       header.appendJsonString(response_.contentType);
       header.append(",\"content-length\":\"");
       header.appendUnsigned(response_.bodyLength);
-      header.append("\",\"cache-control\":\"no-store\"}");
+      header.append("\",\"cache-control\":\"no-store\"");
+      if (response_.fileName != nullptr) {
+        header.append(",\"content-disposition\":");
+        header.appendJsonString(std::string("attachment; filename=\"") + response_.fileName + "\"");
+      }
+      header.append("}");
       kind = ble::MessageKind::kResponseHead;
       next = response_.bodyLength > 0 ? ResponseStage::kBody : ResponseStage::kEnd;
     } else if (responseStage_ == ResponseStage::kBody) {
@@ -324,19 +348,31 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
           badPath_ ? std::span<const char>(kBadPath.substr(responseOffset_, wanted))
                    : requests_.body(responseOffset_, wanted);
       if (piece.empty()) {
-        // The handler came up short of the length it promised: end it, rather than loop.
+        // The handler came up short of the length it promised: end it, rather than loop, and say so
+        // in the END, so the phone never hands over a truncated file as whole.
+        bodyShortBy_ = response_.bodyLength - responseOffset_;
         logWarning(kTag, "the body of request %lld ended %zu bytes early", static_cast<long long>(responseId_),
-                   response_.bodyLength - responseOffset_);
+                   bodyShortBy_);
         responseOffset_ = response_.bodyLength;
       }
       body = std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(piece.data()), piece.size());
       responseOffset_ += piece.size();
       kind = ble::MessageKind::kResponseBody;
       next = responseOffset_ < response_.bodyLength ? ResponseStage::kBody : ResponseStage::kEnd;
+      // An empty piece carries nothing; go straight on to the END.
+      if (piece.empty()) {
+        responseStage_ = ResponseStage::kEnd;
+        continue;
+      }
+    } else if (bodyShortBy_ > 0) {
+      header.append(",\"error\":\"the bike's answer ended ");
+      header.appendUnsigned(bodyShortBy_);
+      header.append(" bytes short of its length\"");
     }
     header.append("}");
     if (header.overflowed() || !sealIntoSlot(kind, std::string_view(header_.data(), header.length()), body)) {
       logWarning(kTag, "dropping the response to request %lld", static_cast<long long>(responseId_));
+      requests_.abandon();
       responseStage_ = ResponseStage::kNone;
       continue;
     }
@@ -346,7 +382,7 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
 
 void BleServer::advanceStream(std::int64_t nowMonotonicMs, std::int64_t nowWallClockMs) {
   if (!streaming_) return;
-  while (stream_.snapshotInProgress() && freeSlot() != nullptr) {
+  while (stream_.snapshotInProgress() && mayTakeSlot(false)) {
     std::size_t length = 0;
     {
       const std::lock_guard<std::mutex> lock(storeMutex_);
@@ -357,9 +393,9 @@ void BleServer::advanceStream(std::int64_t nowMonotonicMs, std::int64_t nowWallC
   }
 
   // At most one patch window's worth per 100 ms; whatever doesn't fit a free slot stays marked.
-  if (nowMonotonicMs - lastPatchMs_ >= kPatchWindowMs && freeSlot() != nullptr) {
+  if (nowMonotonicMs - lastPatchMs_ >= kPatchWindowMs && mayTakeSlot(false)) {
     lastPatchMs_ = nowMonotonicMs;
-    while (freeSlot() != nullptr) {
+    while (mayTakeSlot(false)) {
       std::size_t length = 0;
       {
         const std::lock_guard<std::mutex> lock(storeMutex_);

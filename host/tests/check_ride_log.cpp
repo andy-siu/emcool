@@ -8,6 +8,10 @@
 //       at N bytes; with --statvfs <dir> is a real (small) filesystem. Either way the card
 //       fills and the oldest parts must be rotated away.
 
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -16,7 +20,10 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <set>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -27,6 +34,7 @@
 #include "emcool/can/frame_decoder.hpp"
 #include "emcool/clock/system_clock_sync.hpp"
 #include "emcool/ride_log/crc32.hpp"
+#include "emcool/ride_log/download.hpp"
 #include "emcool/ride_log/log_writer.hpp"
 #include "emcool/ride_log/record.hpp"
 #include "emcool/ride_log/ride_log.hpp"
@@ -120,6 +128,59 @@ class StatvfsCard final : public emcool::ride_log::CardSpace {
   std::string root_;
 };
 
+// A card for the ride-log download: a directory, mounted until told otherwise, with the writer's
+// live part if there is a writer.
+class FolderCard final : public emcool::ride_log::DownloadCard {
+ public:
+  FolderCard(std::string root, const emcool::ride_log::LogWriter* writer = nullptr)
+      : root_(std::move(root)), writer_(writer) {}
+  const std::string& rootDirectory() const override { return root_; }
+  std::mutex& mountLock() override { return mutex_; }
+  State state() override {
+    return {mounted, generation, liveOverride ? liveOverride : writer_ ? writer_->liveExtent() : std::nullopt};
+  }
+  bool mounted = true;
+  std::uint32_t generation = 0;
+  std::optional<emcool::ride_log::LiveExtent> liveOverride;
+
+ private:
+  std::string root_;
+  const emcool::ride_log::LogWriter* writer_;
+  std::mutex mutex_;
+};
+
+// Plans a download to the end; nullopt (and the outcome) unless it is ready.
+std::optional<std::vector<std::uint8_t>> downloadBody(emcool::ride_log::LogDownload& download,
+                                                      const emcool::ride_log::DownloadSelection& selection,
+                                                      emcool::ride_log::LogDownload::Outcome* outcome = nullptr,
+                                                      std::size_t pieceBytes = 4096) {
+  using Outcome = emcool::ride_log::LogDownload::Outcome;
+  Outcome result = download.start(selection);
+  while (result == Outcome::kMeasuring) result = download.measureNext();
+  if (outcome != nullptr) *outcome = result;
+  if (result != Outcome::kReady) return std::nullopt;
+  std::vector<std::uint8_t> body(download.totalBytes());
+  std::uint64_t offset = 0;
+  while (offset < body.size()) {
+    const std::size_t want = static_cast<std::size_t>(std::min<std::uint64_t>(pieceBytes, body.size() - offset));
+    const std::size_t got = download.read(offset, std::span<char>(reinterpret_cast<char*>(body.data()) + offset, want));
+    if (got == 0) {
+      body.resize(offset);
+      break;
+    }
+    offset += got;
+  }
+  return body;
+}
+
+// A part's bytes up to the end of its last record: what the download should send for it.
+std::vector<std::uint8_t> recordsOf(const std::vector<std::uint8_t>& part) {
+  const auto records = emcool::ride_log::scanRecords(part);
+  if (records.empty()) return {};
+  const std::size_t end = records.back().offset + records.back().length;
+  return std::vector<std::uint8_t>(part.begin(), part.begin() + static_cast<std::ptrdiff_t>(end));
+}
+
 // Every file under `root`, relative to it.
 std::set<std::string> filesUnder(const fs::path& root) {
   std::set<std::string> files;
@@ -170,6 +231,7 @@ void checkDropsWhenWriterIsBehind();
 void checkWriterFiles();
 void checkRotation();
 void checkFullCardOfForeignFiles();
+void checkDownload();
 int runCorpus(const char* goldenPath, const char* directory, const char* expectedPath, const char* cardOption,
               const char* cardValue);
 
@@ -191,6 +253,7 @@ int main(int argumentCount, char** arguments) {
   checkWriterFiles();
   checkRotation();
   checkFullCardOfForeignFiles();
+  checkDownload();
   std::printf("check_ride_log: %d failures\n", emcool::test::failures());
   return emcool::test::failures() == 0 ? 0 : 1;
 }
@@ -490,6 +553,232 @@ void checkFullCardOfForeignFiles() {
   EMCOOL_CHECK(!writer.open() && !writer.isOpen(), "the writer opened on a card with no room");
   EMCOOL_CHECK(fs::exists(card / "HOLIDAY.MP4") && fs::file_size(card / "HOLIDAY.MP4") == 900 * 1024,
                "a foreign file was touched");
+  fs::remove_all(card);
+}
+
+// writtenLength() on parts shaped like the card's: records then zeros, nothing, a zeroed run in the
+// middle, stale data past the end, and a part shorter than its full size.
+void checkWrittenLength() {
+  const fs::path directory = fs::temp_directory_path() / "emcool-check-written-length";
+  fs::remove_all(directory);
+  fs::create_directories(directory);
+  const auto lengthOf = [&](const std::vector<std::uint8_t>& bytes) -> std::optional<std::uint64_t> {
+    const fs::path path = directory / "PART0001.LOG";
+    {
+      std::ofstream output(path, std::ios::binary | std::ios::trunc);
+      output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    }
+    const int fd = ::open(path.c_str(), O_RDONLY);
+    std::string problem;
+    const std::optional<std::uint64_t> length = emcool::ride_log::writtenLength(fd, problem);
+    ::close(fd);
+    return length;
+  };
+  constexpr std::size_t kSector = emcool::ride_log::kSectorBytes;
+  // `sectors` sectors, with the given ones non-zero.
+  const auto shaped = [&](std::size_t sectors, std::initializer_list<std::pair<std::size_t, std::size_t>> runs) {
+    std::vector<std::uint8_t> bytes(sectors * kSector, 0);
+    for (const auto& [from, to] : runs) {
+      for (std::size_t sector = from; sector < to; sector++) bytes[sector * kSector + 7] = 'x';
+    }
+    return bytes;
+  };
+  EMCOOL_CHECK(lengthOf(shaped(256, {})) == 0u, "an all-zero part has %llu bytes of log",
+               static_cast<unsigned long long>(lengthOf(shaped(256, {})).value_or(1)));
+  EMCOOL_CHECK(lengthOf({}) == 0u, "an empty file has a log");
+  for (const std::size_t used : {1u, 2u, 3u, 100u, 255u, 256u}) {
+    const auto length = lengthOf(shaped(256, {{0, used}}));
+    EMCOOL_CHECK(length == used * kSector, "%zu sectors of records then zeros measured %llu bytes", used,
+                 static_cast<unsigned long long>(length.value_or(0)));
+  }
+  // Sectors the card zeroed in the middle, starting where the bisection looks first (the middle of
+  // the part), so it lands in them: the records after them are still found.
+  for (const std::size_t gap : {1u, 2u, 5u, 17u}) {
+    const auto length = lengthOf(shaped(16384, {{0, 8192}, {8192 + gap, 12000}}));
+    EMCOOL_CHECK(length == 12000 * kSector, "records past a %zu-sector zeroed run measured %llu bytes", gap,
+                 static_cast<unsigned long long>(length.value_or(0)));
+  }
+  // Stale non-zero data past the end makes it longer, never shorter.
+  const auto stale = lengthOf(shaped(16384, {{0, 1000}, {1001, 1002}}));
+  EMCOOL_CHECK(stale.value_or(0) >= 1000 * kSector, "stale data past the end cut the log to %llu bytes",
+               static_cast<unsigned long long>(stale.value_or(0)));
+  // A short last sector is measured by what it holds.
+  std::vector<std::uint8_t> ragged = shaped(4, {{0, 4}});
+  ragged.resize(3 * kSector + 100);
+  EMCOOL_CHECK(lengthOf(ragged) == 3 * kSector + 100, "a ragged file measured %llu bytes",
+               static_cast<unsigned long long>(lengthOf(ragged).value_or(0)));
+  fs::remove_all(directory);
+}
+
+// The /dl body: real parts written by the writer, cut where their records end, oldest first; the
+// newest whole parts that fit the budget; one boot; the live part only to its durable length and
+// never the prepared next one; a part deleted after it was measured; an unmounted card.
+void checkDownload() {
+  using Outcome = emcool::ride_log::LogDownload::Outcome;
+  checkWrittenLength();
+  const fs::path card = fs::temp_directory_path() / "emcool-check-download";
+  fs::remove_all(card);
+  fs::create_directories(card);
+  const fs::path rides = card / "RIDES";
+  constexpr std::uint32_t kPartBytes = 64 * 1024;
+  std::vector<std::uint8_t> scratch(emcool::ride_log::kRecordCapacityBytes);
+  SimulatedCard roomy(card, 1ull << 40);
+  const auto& soc = signalNamed("soc");
+
+  // Two finished boots, written and closed as a ride would leave them.
+  for (int boot = 0; boot < 2; boot++) {
+    emcool::ride_log::LogWriter writer({rides.string(), kPartBytes, 8 * 1024},
+                                       emcool::ride_log::SessionId::fromBytes({1, 2, 3, 4, 5, 6, 7, static_cast<std::uint8_t>(boot)}),
+                                       scratch, roomy);
+    EMCOOL_CHECK(writer.open(), "open failed");
+    SettableTrust trust;
+    WritingQueue queue(writer);
+    queue.idleSteps = 2;
+    SegmentBuffer buffers[2];
+    emcool::ride_log::RideLog log(testSession(), buffers, queue, trust);
+    for (int reading = 0; reading < (boot == 0 ? 5000 : 3000); reading++) {
+      log.appendReading(1767225600000LL + reading, reading, soc, reading % 101);
+    }
+    log.seal();
+    while (writer.prepareAhead()) {
+    }
+  }
+  // "00002/PART0003.LOG" as "00002.3", the way the download names its file.
+  const auto shortName = [](const std::string& relative) {
+    return relative.substr(0, 5) + "." + std::to_string(std::stoul(relative.substr(relative.find("PART") + 4, 4)));
+  };
+  // Every part on the card, in order, and what of each the download should carry.
+  std::vector<std::pair<std::string, std::vector<std::uint8_t>>> parts;
+  for (const std::string& name : filesUnder(rides)) {
+    const std::vector<std::uint8_t> used = recordsOf(readFile(rides / name));
+    if (!used.empty()) parts.emplace_back(name, used);
+  }
+  EMCOOL_CHECK(parts.size() >= 4, "only %zu parts with records; the test needs several per boot", parts.size());
+  const auto concatenated = [&](std::size_t from, std::size_t to) {
+    std::vector<std::uint8_t> body;
+    for (std::size_t index = from; index < to; index++) {
+      body.insert(body.end(), parts[index].second.begin(), parts[index].second.end());
+    }
+    return body;
+  };
+
+  FolderCard folder(rides.string());
+  emcool::ride_log::LogDownload download(folder);
+  // Everything, read back in pieces of every awkward size the server might ask for.
+  for (const std::size_t piece : {4096u, 1u, 511u, 4097u, 1u << 20}) {
+    emcool::ride_log::DownloadSelection all;
+    all.maxBytes = emcool::ride_log::kMaxDownloadBytes;
+    Outcome outcome = Outcome::kFailed;
+    const auto body = downloadBody(download, all, &outcome, piece);
+    EMCOOL_CHECK(outcome == Outcome::kReady, "the whole log did not plan (%d: %s)", static_cast<int>(outcome),
+                 download.problem().c_str());
+    EMCOOL_CHECK(body && *body == concatenated(0, parts.size()),
+                 "the whole log in %zu-byte pieces is %zu bytes, not the %zu its parts' records hold, or differs",
+                 piece, body ? body->size() : 0, concatenated(0, parts.size()).size());
+  }
+  EMCOOL_CHECK(download.partCount() == parts.size(), "%zu parts sent of %zu", download.partCount(), parts.size());
+  EMCOOL_CHECK(download.fileName() == "emcool-" + shortName(parts.front().first) + "-" + shortName(parts.back().first) + ".log",
+               "named %s", download.fileName().c_str());
+  // What the laptop reads from the download is what it reads from the card.
+  {
+    const auto body = downloadBody(download, {std::nullopt, emcool::ride_log::kMaxDownloadBytes});
+    std::size_t fromCard = 0;
+    for (const auto& part : parts) fromCard += emcool::ride_log::scanRecords(part.second).size();
+    EMCOOL_CHECK(body && emcool::ride_log::scanRecords(*body).size() == fromCard,
+                 "the download scans to %zu records, the card's parts to %zu",
+                 body ? emcool::ride_log::scanRecords(*body).size() : 0, fromCard);
+  }
+
+  // A budget: the newest whole parts that fit, contiguous, at least one.
+  {
+    const std::size_t lastTwo = parts[parts.size() - 1].second.size() + parts[parts.size() - 2].second.size();
+    const auto body = downloadBody(download, {std::nullopt, lastTwo + 1});
+    EMCOOL_CHECK(body && *body == concatenated(parts.size() - 2, parts.size()), "a two-part budget sent %zu bytes",
+                 body ? body->size() : 0);
+    const auto tiny = downloadBody(download, {std::nullopt, 1});
+    EMCOOL_CHECK(tiny && *tiny == concatenated(parts.size() - 1, parts.size()),
+                 "a budget under one part did not send the newest part whole");
+  }
+
+  // One boot.
+  {
+    std::size_t firstOfTwo = 0;
+    while (firstOfTwo < parts.size() && parts[firstOfTwo].first.rfind("00002/", 0) != 0) firstOfTwo++;
+    const auto first = downloadBody(download, {1u, emcool::ride_log::kMaxDownloadBytes});
+    EMCOOL_CHECK(firstOfTwo >= 2, "boot 1 has only %zu parts with records", firstOfTwo);
+    EMCOOL_CHECK(first && *first == concatenated(0, firstOfTwo), "boot 1 alone sent %zu bytes", first ? first->size() : 0);
+    EMCOOL_CHECK(download.fileName() == "emcool-00001.1-" + shortName(parts[firstOfTwo - 1].first) + ".log",
+                 "boot 1 named %s", download.fileName().c_str());
+    Outcome outcome = Outcome::kReady;
+    EMCOOL_CHECK(!downloadBody(download, {7u, emcool::ride_log::kMaxDownloadBytes}, &outcome) && outcome == Outcome::kNothing,
+                 "a boot that isn't there gave outcome %d", static_cast<int>(outcome));
+  }
+
+  // The live part: only as far as the writer says is durable, and never the part after it.
+  {
+    const std::string lastName = parts.back().first;
+    const std::uint32_t lastPart = static_cast<std::uint32_t>(std::stoul(lastName.substr(lastName.find("PART") + 4, 4)));
+    const std::size_t durable = parts.back().second.size() - emcool::ride_log::kSectorBytes * 2;
+    folder.liveOverride = emcool::ride_log::LiveExtent{2, lastPart, durable};
+    // The prepared next part, here a non-zero one, which would show if it were sent.
+    char nextName[16];
+    std::snprintf(nextName, sizeof nextName, "PART%04u.LOG", static_cast<unsigned>(lastPart + 1));
+    writeBytes(rides / "00002" / nextName, 4096);
+    std::vector<std::uint8_t> expected = concatenated(0, parts.size());
+    expected.resize(expected.size() - emcool::ride_log::kSectorBytes * 2);
+    const auto body = downloadBody(download, {std::nullopt, emcool::ride_log::kMaxDownloadBytes});
+    EMCOOL_CHECK(body && *body == expected, "with a live part the body is %zu bytes, expected %zu",
+                 body ? body->size() : 0, expected.size());
+    folder.liveOverride.reset();
+    fs::remove(rides / "00002" / nextName);
+  }
+
+  // A part deleted to make room after it was planned goes as zeros, and every offset holds.
+  {
+    Outcome outcome = download.start({std::nullopt, emcool::ride_log::kMaxDownloadBytes});
+    while (outcome == Outcome::kMeasuring) outcome = download.measureNext();
+    EMCOOL_CHECK(outcome == Outcome::kReady, "did not plan");
+    fs::remove(rides / parts[0].first);
+    std::vector<char> body(download.totalBytes());
+    std::uint64_t offset = 0;
+    while (offset < body.size()) {
+      const std::size_t got = download.read(offset, std::span<char>(body.data() + offset, std::min<std::size_t>(4096, body.size() - offset)));
+      if (got == 0) break;
+      offset += got;
+    }
+    EMCOOL_CHECK(offset == body.size() && download.partsGone() == 1, "a deleted part stopped the download at %llu of %zu",
+                 static_cast<unsigned long long>(offset), body.size());
+    const std::vector<std::uint8_t> rest = concatenated(1, parts.size());
+    EMCOOL_CHECK(std::all_of(body.begin(), body.begin() + static_cast<std::ptrdiff_t>(parts[0].second.size()),
+                             [](char byte) { return byte == 0; }) &&
+                     std::equal(rest.begin(), rest.end(), reinterpret_cast<const std::uint8_t*>(body.data()) + parts[0].second.size()),
+                 "a deleted part's place is not zeros, or the parts after it moved");
+  }
+
+  // The card unmounted mid-download: the read stops, says why, and never touches the old descriptor.
+  {
+    Outcome outcome = download.start({std::nullopt, emcool::ride_log::kMaxDownloadBytes});
+    while (outcome == Outcome::kMeasuring) outcome = download.measureNext();
+    std::vector<char> piece(4096);
+    EMCOOL_CHECK(download.read(0, piece) == piece.size(), "the first piece did not read");
+    folder.generation++;
+    EMCOOL_CHECK(download.read(piece.size(), piece) == 0 && download.problem().find("unmounted") != std::string::npos,
+                 "a read after an unmount gave data, or no reason (%s)", download.problem().c_str());
+    download.stop();
+    folder.mounted = false;
+    EMCOOL_CHECK(download.start({}) == Outcome::kFailed, "a download started with no card");
+    folder.mounted = true;
+  }
+
+  // No log at all.
+  {
+    FolderCard empty((card / "EMPTY").string());
+    fs::create_directories(card / "EMPTY");
+    emcool::ride_log::LogDownload nothing(empty);
+    Outcome outcome = Outcome::kReady;
+    EMCOOL_CHECK(!downloadBody(nothing, {}, &outcome) && outcome == Outcome::kNothing, "an empty card gave outcome %d",
+                 static_cast<int>(outcome));
+  }
   fs::remove_all(card);
 }
 

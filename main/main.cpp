@@ -33,6 +33,7 @@
 #include "diagnostics_task.hpp"
 #include "emcool/obd/hub_diagnostics.hpp"
 #include "emcool/obd/obd_stack.hpp"
+#include "emcool/ride_log/download.hpp"
 #include "emcool/ride_log/log_writer.hpp"
 #include "emcool/ride_log/ride_log.hpp"
 #include "emcool/settings/settings.hpp"
@@ -100,7 +101,8 @@ template <typename Type, typename... Arguments>
 Type* allocate(const char* what, Arguments&&... arguments);
 bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
                     std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
-                    emcool::DiagnosticsTask& diagnostics, emcool::BleLinkCounters& counters);
+                    emcool::DiagnosticsTask& diagnostics, emcool::ride_log::LogDownload* download,
+                    emcool::BleLinkCounters& counters);
 void logSettings(const emcool::settings::Settings& settings);
 
 }  // namespace
@@ -148,9 +150,12 @@ extern "C" void app_main() {
   static emcool::ride_log::RideLog rideLog(session, std::span<emcool::ride_log::SegmentBuffer>(segmentBuffers, 2),
                                            segmentQueue, clock);
   static emcool::SdCard card;
+  static emcool::CardAccess cardAccess(card, writer);
   static emcool::RideLogTaskCounters rideLogTaskCounters;
-  static emcool::RideLogTaskContext rideLogTaskContext{segmentQueue, writer, card, rideLogTaskCounters};
-  emcool::startRideLogTask(rideLogTaskContext);
+  static emcool::RideLogTaskContext rideLogTaskContext{segmentQueue, writer, cardAccess, rideLogTaskCounters};
+  // /dl reads the card from the Bluetooth task; with no card configured there is nothing to read.
+  static emcool::ride_log::LogDownload logDownload(cardAccess);
+  emcool::ride_log::LogDownload* download = emcool::startRideLogTask(rideLogTaskContext) ? &logDownload : nullptr;
 
   auto* storeAllocation = allocate<emcool::signals::SignalStore>("live state", rideLog);
   if (storeAllocation == nullptr) return;
@@ -166,7 +171,7 @@ extern "C" void app_main() {
   if (diagnostics == nullptr || !diagnostics->start()) return;
   // NimBLE keeps PHY calibration in NVS; without it the radio can't start.
   const bool bluetooth =
-      nvsReady && startBluetooth(settings, store, storeMutex, storageReport, *diagnostics, bleLinkCounters);
+      nvsReady && startBluetooth(settings, store, storeMutex, storageReport, *diagnostics, download, bleLinkCounters);
   static emcool::StatusReport status({bus, store, storeMutex, rideLog, writer, rideLogTaskCounters, clock,
                                       bleLinkCounters, bluetooth, runtimeSettings, diagnostics});
   static DecodeContext context{bus, decoder, packTemperature, store, storeMutex, rideLog, clock, status, *diagnostics};
@@ -267,7 +272,8 @@ bool initNvs() {
 // The phone link, if it has a usable secret and the crypto passes its known-answer tests.
 bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
                     std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
-                    emcool::DiagnosticsTask& diagnostics, emcool::BleLinkCounters& counters) {
+                    emcool::DiagnosticsTask& diagnostics, emcool::ride_log::LogDownload* download,
+                    emcool::BleLinkCounters& counters) {
   if (!emcool::ble::BleSession::secretIsUsable(settings.bleSecret)) {
     emcool::logWarning(kTag,
                        "Bluetooth is off: no link secret. On the serial console: set BLE_SECRET \"a phrase of "
@@ -280,7 +286,7 @@ bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals:
     return false;
   }
   auto* endpoints = allocate<emcool::ble_server::DashboardEndpoints>("the dashboard endpoints", store, storeMutex,
-                                                                     storage, diagnostics, &diagnostics);
+                                                                     storage, diagnostics, &diagnostics, download);
   auto* server = endpoints == nullptr ? nullptr
                                       : allocate<emcool::ble_server::BleServer>("the Bluetooth server",
                                                                                  settings.bleSecret, store, storeMutex,

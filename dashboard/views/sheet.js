@@ -197,7 +197,17 @@ function WaypointButton() {
 /** BLE-only: over wifi the browser's download manager shows progress, so this stays empty. */
 const downloadProgress = van.state("");
 
-/** Downloads the sealed ride log, with its size known before you commit to it. */
+/**
+ * Downloads the newest part of the ride log over Bluetooth, for tools/import-ride-log.mts.
+ *
+ * The bike sends its newest parts until about DOWNLOAD_MB megabytes (always at least one whole
+ * part, so it can run over), oldest first, each cut where its records end. The radio is slow — the
+ * link's compression shrinks the log to about a quarter over the air, but Bluetooth 4.2 still moves
+ * only tens of kB/s — so this is a recent ride, not the whole card: the card itself, in the laptop,
+ * is still the way to take everything. The phone holds the file in memory until it is saved.
+ */
+const DOWNLOAD_MB = 16;
+
 function DownloadButton() {
   return div(
     button(
@@ -205,7 +215,7 @@ function DownloadButton() {
         class: "action",
         onclick: () => {
           downloadProgress.val = "";
-          download("/dl", "emcool.celog", (receivedBytes, totalBytes) => {
+          download(`/dl?mb=${DOWNLOAD_MB}`, "emcool.log", (receivedBytes, totalBytes) => {
             downloadProgress.val =
               totalBytes === null ? bytes(receivedBytes) : `${bytes(receivedBytes)} of ${bytes(totalBytes)}`;
           }).then(
@@ -222,25 +232,20 @@ function DownloadButton() {
       () => {
         const current = status.val;
         if (!current) {
-          return "⬇  Download ride log";
+          return "⬇  Download recent ride log";
         }
         if (!current.log.enabled) {
-          return "⚠  No log — public key missing";
+          return "⚠  No ride log — no card in the bike";
         }
-        return `⬇  Download ride log (${bytes(current.log.bytes)})`;
+        // `log.bytes` counts every part at its full size, zero-filled tails and all; the download
+        // is only the newest ones, cut where their records end.
+        return `⬇  Download recent ride log (up to ${DOWNLOAD_MB} MB of ${bytes(current.log.bytes)})`;
       }
     ),
     () => (downloadProgress.val ? div({ class: "action-note" }, downloadProgress.val) : div())
-    // No caption under the button. The file count that used to sit here is still
-    // in the status payload (`log.files`) and still correct — it was dropped for
-    // screen space, not because it was wrong. The two facts it carried are worth
-    // knowing and live in the code that owns them: a `.celog` holds hundreds or
-    // thousands of segments, so the count moves a few times a day rather than as you
-    // ride — a day file plus whatever was sealed before the clock could be believed
-    // (src/http/status.ts, docs/ride-log-clock.md); and the log is unreadable without the laptop's
-    // private key, but /dl authenticates nobody, so the ciphertext is pullable by
-    // anyone on that wifi (src/http/download.ts, and README "What this does and
-    // doesn't hide").
+    // No caption under the button. What it would say lives in the code that owns it: the log on
+    // the card is plain text, not encrypted, and /dl answers only inside the Bluetooth session, so
+    // only a phone holding the link secret can pull it (docs/ble.md, docs/ride-log-format.md).
   );
 }
 

@@ -25,8 +25,7 @@ void releaseAsLost(ride_log::SegmentBuffer& buffer, RideLogTaskCounters& counter
 }
 
 bool tryToOpen(RideLogTaskContext& context) {
-  if (!context.card.mount(CONFIG_EMCOOL_SD_SCK_GPIO, CONFIG_EMCOOL_SD_MOSI_GPIO, CONFIG_EMCOOL_SD_MISO_GPIO,
-                          CONFIG_EMCOOL_SD_CS_GPIO)) {
+  if (!context.card.mount()) {
     return false;
   }
   context.counters.cardMounted.store(true, std::memory_order_relaxed);
@@ -78,6 +77,23 @@ void rideLogTask(void* argument) {
 }
 
 }  // namespace
+
+bool CardAccess::mount() {
+  if (!card_.mount(CONFIG_EMCOOL_SD_SCK_GPIO, CONFIG_EMCOOL_SD_MOSI_GPIO, CONFIG_EMCOOL_SD_MISO_GPIO,
+                   CONFIG_EMCOOL_SD_CS_GPIO)) {
+    return false;
+  }
+  const std::lock_guard<std::mutex> lock(mutex_);
+  mounted_ = true;
+  return true;
+}
+
+void CardAccess::unmount() {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  mounted_ = false;
+  generation_++;
+  card_.unmount();
+}
 
 bool FreeRtosSegmentQueue::create(UBaseType_t depth) {
   queue_ = xQueueCreate(depth, sizeof(ride_log::SegmentBuffer*));

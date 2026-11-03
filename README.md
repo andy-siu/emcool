@@ -176,6 +176,8 @@ To import the card into the same `rides.db` cool-eva's Grafana dashboards read:
 node tools/import-ride-log.mts /Volumes/EMCOOL/RIDES --out rides.db
 ```
 
+Or, without taking the card out, download a recent ride over Bluetooth from the dashboard's menu (*Download recent ride log*: the newest 16 MB or so). That gives one `.log` file, which imports the same way: `node tools/import-ride-log.mts emcool-00012.3-00014.1.log --out rides.db`. Bluetooth is slow, so for the whole card take the card out. See [`docs/ble.md`](docs/ble.md).
+
 This runs through cool-eva's own `src/db.ts`, so it needs a cool-eva checkout with its dependencies installed (`../cool-eva`, or set `COOL_EVA_DIR`).
 
 ## Phone dashboard (Bluetooth)
@@ -185,7 +187,8 @@ emcool ships its own phone dashboard in [`dashboard/`](dashboard/) — a static 
 1. Set `BLE_SECRET` from the serial console (see [Settings](#settings)) and `restart`.
 2. Enter the same secret in the dashboard's menu under *Bluetooth*.
    - The live tiles, the status sheet and the Faults tab work. The Faults tab shows stored codes only with `OBD_ENABLED` on.
-   - The parameters page works, as do service mode's reads with `SERVICE_MODE_ENABLED` on and its writes with `SERVICE_WRITE_ENABLED` on. The dashboard's other requests answer "not on emcool yet". What differs from cool-eva's server, the memory it takes, and what has been verified are in [`docs/ble.md`](docs/ble.md).
+   - The parameters page works, as do service mode's reads with `SERVICE_MODE_ENABLED` on and its writes with `SERVICE_WRITE_ENABLED` on.
+   - The sheet's *Download recent ride log* downloads the newest part of the ride log (see [Ride log](#ride-log)). The dashboard's other requests answer "not on emcool yet". What differs from cool-eva's server, the memory it takes, and what has been verified are in [`docs/ble.md`](docs/ble.md).
 
 ## Checks
 
