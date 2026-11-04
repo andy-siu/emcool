@@ -2,10 +2,10 @@
 
 // Everything emcool says over OBD, in one place for the decode task to drive: the poller, the
 // trouble-code reader it uses, the stored-codes state behind /stored-dtcs, the poller's hold,
-// and the one-shot E-LOCK read. cool-eva wires these up in src/index.ts when OBD_ENABLED.
+// and the one-shot E-LOCK read. It exists only with OBD_ENABLED.
 //
-// Routing, as cool-eva's: 0x7E0-0x7EF and 0x790 are the diagnostic replies and are never
-// passed to the broadcast decoders, whether or not OBD is on.
+// Routing: 0x7E0-0x7EF and 0x790 are the diagnostic replies and are never passed to the
+// broadcast decoders, whether or not OBD is on.
 
 #include <cstdint>
 #include <optional>
@@ -35,8 +35,7 @@ class ObdStack {
         elock_(bus, recorder, order),
         elockEnabled_(elockEnabled) {}
 
-  // Starts polling, and the E-LOCK read if it's on: cool-eva's startObdPoller(500) and
-  // readKeysPairedOnce(), in that order.
+  // Starts polling, and the E-LOCK read if it's on, in that order.
   void start(Now now);
   // A diagnostic reply (isDiagnosticReply).
   void handleFrame(std::uint32_t id, std::span<const std::uint8_t> data, Now now);

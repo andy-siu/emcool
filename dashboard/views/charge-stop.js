@@ -179,7 +179,7 @@ async function performChargeStop() {
     // before the response — so this is NOT "nothing happened". Stopping is benign, but the
     // message says the honest thing anyway.
     message.val =
-      `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "This does NOT guarantee nothing was sent — check the dash.";
     console.warn("charge-stop: request failed", error);
   } finally {

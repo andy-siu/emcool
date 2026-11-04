@@ -80,7 +80,7 @@ export function FanControl() {
     }
     return div(
       h2({ class: "sheet-heading" }, "Cooling fan"),
-      div({ class: "sheet-heading-note" }, "Drives the loop's fan off the Pi's own GPIO. Never touches the bike."),
+      div({ class: "sheet-heading-note" }, "Drives the loop's fan off emcool's own GPIO. Never touches the bike."),
       FaultNote(),
       Situation(),
       Reason(),
@@ -425,7 +425,7 @@ async function postFanCommand(command, isSuperseded) {
     // happens before the response — so this is NOT "nothing happened". Say so, and let
     // the live signals above be the thing that settles it.
     message.val =
-      `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "This does NOT guarantee the fan was left alone — watch the line above.";
     lastCommandOk.val = false;
     console.warn("fan: command failed", error);

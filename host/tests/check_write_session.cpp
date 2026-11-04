@@ -1,6 +1,6 @@
 // Replays tools/generate-golden-write-session.mts through the C++ WriteSession: given the same
 // scripted replies at the same milliseconds, it must transmit the same frames at the same times and
-// resolve to the same outcome cool-eva's own write-session.ts did. This is the stateful half of
+// resolve to the same outcome the reference's own write-session.ts did. This is the stateful half of
 // stage 4 — the session timing, the compare-and-swap, the unlock handshake, the read-back.
 //
 //   check_write_session <golden file>
@@ -295,7 +295,7 @@ TableTypeReport confirmedReport() {
 void runBlock(const Block& block) {
   if (block.planfail) {
     // planWrite refuses before any session; just confirm the C++ planner refuses with the same reason.
-    // emcool names the file write_targets where cool-eva says src/vcu/write-targets.ts (see check_write).
+    // emcool names the file write_targets where the reference says src/vcu/write-targets.ts (see check_write).
     const WritePlanOutcome planned = planWrite(gNames, block.name, block.value, block.previous);
     std::string reason = planned.ok ? std::string("UNEXPECTEDLY OK") : planned.reason;
     const std::string from = "written down with its reasoning in write_targets.";
@@ -605,6 +605,6 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "check_write_session: %d failures\n", failures);
     return 1;
   }
-  std::fprintf(stderr, "check_write_session: %d scenarios, frames and outcomes match cool-eva; 0 failures\n", ran);
+  std::fprintf(stderr, "check_write_session: %d scenarios, frames and outcomes match the reference; 0 failures\n", ran);
   return 0;
 }

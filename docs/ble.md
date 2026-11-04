@@ -1,8 +1,8 @@
 # The phone dashboard over Bluetooth
 
-emcool serves its phone dashboard over Bluetooth LE. The framing and session follow cool-eva's `public/lib/ble-wire.js` (described in cool-eva `docs/ble-server.md`), with one deliberate change: emcool renamed the handshake salts (`emcool/hello`, `emcool/session`) and the request header (`X-Emcool`) so the stack is its own. Open the dashboard in Bluefy on iOS or Chrome on Android. The dashboard has no Wi-Fi path; the optional Wi-Fi ([`wifi.md`](wifi.md)) serves only the console and the ride log.
+emcool serves its phone dashboard over Bluetooth LE. The handshake salts are `emcool/hello` and `emcool/session`, and a request that changes something carries an `X-Emcool` header. Open the dashboard in Bluefy on iOS, or Chrome on Android. The dashboard has no Wi-Fi path; the optional Wi-Fi ([`wifi.md`](wifi.md)) serves only the console and the ride log.
 
-The dashboard itself now lives in this repo at [`../dashboard/`](../dashboard/) — a static site copied from cool-eva's `public/` and rebranded to emcool, paired with this firmware's wire protocol. See its [README](../dashboard/README.md) for how to serve it.
+The dashboard is the static site in [`../dashboard/`](../dashboard/), hosted on GitHub Pages ([`github-pages.md`](github-pages.md)). See its [README](../dashboard/README.md) for how to serve it.
 
 Code:
 
@@ -20,36 +20,45 @@ emcool> set BLE_SECRET "a phrase you can type on a phone"
 emcool> restart
 ```
 
-With no secret, the bike doesn't advertise, and the boot log says `Bluetooth is off: no link secret`. On the phone, enter the same secret in the dashboard's menu under *Bluetooth* and tap *Connect*. cool-eva's [`docs/connecting-over-bluetooth.md`](https://github.com/andy-siu/cool-eva/blob/main/docs/connecting-over-bluetooth.md) has the phone-side steps.
+With no secret, the bike doesn't advertise, and the boot log says `Bluetooth is off: no link secret`.
 
-The bike advertises as **emcool** (`set BLE_NAME …` changes this). The phone finds it by cool-eva's service UUID, not by name, so a Pi running cool-eva would appear in the same list.
+On the phone, within about 10 m of the bike:
 
-The secret lives in NVS, not in the firmware image or the build directory. The console never prints it back. Anyone with the board and a flasher could still read NVS, which is the same exposure as cool-eva's `/etc/default/cool-eva` on the Pi's SD card. ESP32 flash encryption would close that hole, but it can't be undone and complicates reflashing.
+1. Open the dashboard's GitHub Pages URL ([`github-pages.md`](github-pages.md)) in Bluefy on iOS or Chrome on Android. On a Mac, use Chrome or Edge. Safari has no Web Bluetooth.
+2. Tap the **☰** menu. *Bluetooth* is its first section.
+3. Enter the same secret and tap *Connect*.
+4. Pick **emcool** from the chooser. Allow Bluetooth if the browser asks; Android may ask for the *Nearby devices* permission.
+
+Don't pair the bike in the phone's Bluetooth settings: the dashboard makes the connection, and the secret authorises it. The browser remembers the secret but not the bike. After a reload, tap *Connect* in the header and pick it again, because a page may only open the chooser in answer to a tap. Load the page while you have signal; once it's open, it needs none.
+
+The bike advertises as **emcool** (`set BLE_NAME …` changes this). The phone finds it by its service UUID (`7c0e0001-5f3a-4c8e-9d2b-c00e7a000001`), not by name.
+
+The secret lives in NVS, not in the firmware image or the build directory. The console never prints it back. Anyone with the board and a flasher could still read NVS. ESP32 flash encryption would close that hole, but it can't be undone and complicates reflashing.
 
 ## What works
 
-- **The handshake and sealing.** These are cool-eva's: an HMAC proof of the secret, a per-session AES-256-GCM key, a counter per direction with replays dropped, and a 2 s cooldown after a wrong secret. The firmware runs published test vectors through its crypto at boot (RFC 4231 for HMAC-SHA256, GCM test cases 13 and 14), and won't advertise if any fail.
-- **The live stream.** `SUBSCRIBE` gets a full snapshot, then patches every 100 ms and a fresh snapshot every 5 s, as on cool-eva.
-- **`GET /status`.** It returns cool-eva's `StatusPayload` shape, so the dashboard's sheet works unchanged:
+- **The handshake and sealing.** An HMAC proof of the secret, a per-session AES-256-GCM key, a counter per direction with replays dropped, and a 2 s cooldown after a wrong secret. The firmware runs published test vectors through its crypto at boot (RFC 4231 for HMAC-SHA256, GCM test cases 13 and 14), and won't advertise if any fail.
+- **The live stream.** `SUBSCRIBE` gets a full snapshot, then patches every 100 ms and a fresh snapshot every 5 s.
+- **`GET /status`.** It returns the `StatusPayload` shape the dashboard's sheet reads:
   - **groups:** per-group live counts.
   - **log:** the ride-log parts on the card, at their allocated size.
   - **disk:** the card's free and total space.
   - **waypoints:** always zero, since waypoints were dropped with location logging.
-- **The Faults tab's three endpoints.** None of them touches the bus; like cool-eva's, they serve what is already known.
-  - **`GET /dtc-table`** and **`GET /fault-infokeys`:** Energica's code table (25 KB) and per-fault shortlists (12 KB), byte for byte cool-eva's. They're generated from cool-eva's own `buildPayload()` by `tools/generate-diagnostic-tables.mts` and served straight from flash, whether or not OBD is on. They're what names the active hub codes (`dtc_CCCC_S`) the bike broadcasts.
-  - **`GET /stored-dtcs`:** the OBD trouble-code lists as the poller last read them, in cool-eva's `TroubleCodeSnapshot` shape. With `OBD_ENABLED` off, every list says `not-read`, as cool-eva's does. See [`obd.md`](obd.md).
-- **Service mode's endpoints,** in cool-eva's shapes. See [`service-mode.md`](service-mode.md).
-  - **`/vcu-read`** (GET, POST, DELETE) and **`/vcu-probe`** (POST): answered by the diagnostics task, which owns the bus. The server waits for the answer without holding up the stream, for up to cool-eva's three minutes.
-  - **Header checks:** a POST needs `X-Cool-Eva: service-mode`, as cool-eva's does.
+- **The Faults tab's three endpoints.** None of them touches the bus; they serve what is already known.
+  - **`GET /dtc-table`** and **`GET /fault-infokeys`:** Energica's code table (25 KB) and per-fault shortlists (12 KB). `tools/generate-diagnostic-tables.mts` generates them from the reference implementation, and they're served straight from flash, whether or not OBD is on. They're what names the active hub codes (`dtc_CCCC_S`) the bike broadcasts.
+  - **`GET /stored-dtcs`:** the OBD trouble-code lists as the poller last read them, in the `TroubleCodeSnapshot` shape. With `OBD_ENABLED` off, every list says `not-read`. See [`obd.md`](obd.md).
+- **Service mode's endpoints.** See [`service-mode.md`](service-mode.md).
+  - **`/vcu-read`** (GET, POST, DELETE) and **`/vcu-probe`** (POST): answered by the diagnostics task, which owns the bus. The server waits for the answer without holding up the stream, for up to three minutes.
+  - **Header checks:** a POST needs `X-Emcool: service-mode`.
   - **`/vcu-params`** and **`/vcu-backup`:** read straight off the card, a row at a time.
-  - **Freeze frames and the expected-fault list:** `/lifetime-read` and `/freeze-frame-read` (POST, `X-Cool-Eva: service-mode`); `/lifetime-stats` and `/freeze-frames`; `/expected-faults` (GET, and POST with `X-Cool-Eva: expected-faults`). All answered by the diagnostics task.
-  - **`/vcu-write`** (GET, POST): the write engine, with `SERVICE_WRITE_ENABLED`. GET returns the allowlist, the gate and the journal and touches nothing, behind no header. POST does one thing to the bike and wants `X-Cool-Eva: service-write` — **deliberately a different value** from the read path's `service-mode`, so a caller that only knows about reads cannot reach a write. See [`service-mode.md`](service-mode.md).
-  - **`/charge-auto`** (GET, POST): the automatic charge-current controller, with `CHARGE_AUTO_ENABLED`. GET shows what it is doing (no header); POST `?mode=automatic|off` turns it on or off, behind `X-Cool-Eva: charge-auto`. Answered by the diagnostics task, which owns the controller.
+  - **Freeze frames and the expected-fault list:** `/lifetime-read` and `/freeze-frame-read` (POST, `X-Emcool: service-mode`); `/lifetime-stats` and `/freeze-frames`; `/expected-faults` (GET, and POST with `X-Emcool: expected-faults`). All answered by the diagnostics task.
+  - **`/vcu-write`** (GET, POST): the write engine, with `SERVICE_WRITE_ENABLED`. GET returns the allowlist, the gate and the journal and touches nothing, behind no header. POST does one thing to the bike and wants `X-Emcool: service-write` — **deliberately a different value** from the read path's `service-mode`, so a caller that only knows about reads cannot reach a write. See [`service-mode.md`](service-mode.md).
+  - **`/charge-auto`** (GET, POST): the automatic charge-current controller, with `CHARGE_AUTO_ENABLED`. GET shows what it is doing (no header); POST `?mode=automatic|off` turns it on or off, behind `X-Emcool: charge-auto`. Answered by the diagnostics task, which owns the controller.
 - **`GET /dl`: the ride log off the card.** The sheet's *Download recent ride log* button, in Bluefy on iOS or Chrome on Android, and on a Mac in Chrome or Edge (Safari has no Web Bluetooth).
   - **What it sends:** the newest parts, whole, until the next would take it past `?mb=` megabytes (default 16, at most 256). At least one part always goes. They come oldest first, each cut where its records end, so a part's zero-filled tail never goes over the radio. `?boot=12` limits it to `RIDES/00012`.
   - **What you get:** one file, named for the first and last part it holds (`emcool-00012.3-00014.1.log`). Records frame themselves, so the parts laid end to end read like the card's own files. Import it the same way: `node tools/import-ride-log.mts emcool-00012.3-00014.1.log --out rides.db`.
   - **The part being written** goes only as far as the writer has fsynced. The part it's preparing next, all zeros, is left out.
-  - **How fast:** the link compresses the log about 3.6× (measured on the corpus), so 16 MB is about 4.5 MB over the air. Bluetooth 4.2's real rate on this board hasn't been measured. At cool-eva's guessed 24 kB/s that's about three minutes. The phone holds the file in memory until it's saved, which is why there's a cap. For the whole card, take the card out.
+  - **How fast:** the link compresses the log about 3.6× (measured on the corpus), so 16 MB is about 4.5 MB over the air. Bluetooth 4.2's real rate on this board hasn't been measured. At a guessed 24 kB/s that's about three minutes. The phone holds the file in memory until it's saved, which is why there's a cap. For the whole card, take the card out.
   - **The live stream keeps going.** While both have something to send, a download and the stream each keep a message slot, so the dashboard never thinks the link has died during a long download.
   - **Planning reads the card** a step at a time: one directory listing, or one part measured by bisecting for its last record (about 14 sector reads for an 8 MB part). So the link task never waits long.
   - **If something goes wrong partway,** the response ends with an error and the dashboard says it failed, never handing over a short file as whole. That covers a card pulled or a file read failing. If the phone goes away, the bike lets go of the file.
@@ -57,17 +66,17 @@ The secret lives in NVS, not in the firmware image or the build directory. The c
   - **Who can download:** only a phone holding the link secret, like every other request. The log isn't encrypted on the card or in the file.
 - **Everything else** answers 404, with a body saying the endpoint isn't on emcool yet. That covers fan control. The dashboard shows the error where it would show the result.
 
-## How it differs from cool-eva's server
+## How the server is built
 
-- **No HTTP tunnel.** cool-eva replays each Bluetooth request into its own HTTP server. emcool has no HTTP server, so requests are answered directly (`DashboardEndpoints`).
-- **Response bodies are read a piece at a time.** cool-eva sends a body in 4 KB messages, and so does emcool, but it never holds a whole one: static bodies come out of flash, and `/stored-dtcs` is written out again for each piece from a copy of the lists taken when the request arrived, so the pieces always agree.
+- **Requests are answered directly** by `DashboardEndpoints`, with no HTTP server in between.
+- **Response bodies are read a piece at a time.** A body goes in 4 KB messages, and the server never holds a whole one: static bodies come out of flash, and `/stored-dtcs` is written out again for each piece from a copy of the lists taken when the request arrived, so the pieces always agree.
 - **Snapshots go in chunks.** A snapshot is about 25 KB of JSON, and emcool's messages are capped at about 4.5 KB to fit the ESP32's RAM.
-  - This is safe because the dashboard's store (`public/lib/store.js` `apply()`) folds every message in key by key, snapshot or patch alike.
+  - This is safe because the dashboard's store (`dashboard/lib/store.js` `apply()`) folds every message in key by key, snapshot or patch alike.
   - One cost: the pack-resistance estimate pairs `pack_v` with `pack_a` only within one message, so a snapshot chunk that splits them gives it no pair. Patches, which carry each 0x200 frame's values together, still do.
-- **Real flow control instead of a guessed pace.** cool-eva paces BlueZ notifications at a guessed 24 kB/s.
+- **Real flow control, not a guessed pace.**
   - NimBLE has real flow control: when its buffers are full, there's no buffer to be had, and the frame waits.
   - The server builds outbound messages lazily, one of three slots at a time, as notifications drain. So the radio sets the pace, and nothing is queued that has nowhere to go.
-- **No shedding.** cool-eva drops patches while its queue is deep. Here a slow link leaves changes marked in the store, and the next patch carries their latest values, so nothing goes stale and nothing is lost.
+- **No shedding.** No patch is dropped. A slow link leaves changes marked in the store, and the next patch carries their latest values, so nothing goes stale and nothing is lost.
 - **Compression.** ESP-IDF's ROM compressor needs about 165 KB of state, so outbound messages are compressed by a small encoder of its own (`deflate.cpp`): one fixed-Huffman block with LZ77 over a 4 KB window, or a stored block when that's smaller. Inbound messages, which the phone compresses with CompressionStream, go through the ROM's `tinfl`.
 
 ## Memory
@@ -91,12 +100,12 @@ With Bluetooth on, the static-data region is too small for them. The 10 s status
 **Verified on the laptop** by `tools/check.sh`:
 
 - **`check_ble_wire`.** The crypto matches the published vectors. The deflate encoder round-trips through zlib across sizes and shapes; a deliberately broken distance code fails 1,207 of those checks. The JSON reader rejects malformed and hostile input. Framing works at MTUs from 23 to 512. The handshake works from the phone's side, including a wrong secret, the cooldown, a replay, a recorded HELLO and a sealed envelope with no session.
-- **`tools/check-ble.mts`.** The C++ server is driven by cool-eva's own `ble-wire.js`, the code the phone runs, so WebCrypto and CompressionStream sit on the other end. It checks:
+- **`tools/check-ble.mts`.** The C++ server is driven by the dashboard's own `dashboard/lib/ble-wire.js`, the code the phone runs, so WebCrypto and CompressionStream sit on the other end. It checks:
   - **Handshake:** the WELCOME opens with the phone's key, and the server nonce rotates afterwards.
-  - **Snapshots:** every snapshot equals the server's live state exactly, value and timestamp, with cool-eva's units and groups. This holds at MTU 185 and at MTU 23 (20-byte notifications).
+  - **Snapshots:** every snapshot equals the server's live state exactly, value and timestamp, with the reference implementation's units and groups. This holds at MTU 185 and at MTU 23 (20-byte notifications).
   - **Patches:** they carry the latest values, including after a link that drained nothing for a second.
-  - **Requests:** `/status` has the right shape and counts. `/dtc-table` and `/fault-infokeys` are byte-identical to cool-eva's, over seven and three 4 KB pieces. `/stored-dtcs`, after a 60-code mode 03 reply, equals what cool-eva's own `stored-codes.ts` serves for that reply, apart from the read's time. 404 and 400 come back as expected.
-  - **`/dl`:** served from the ride log the corpus run wrote, it holds exactly the newest parts' records, byte for byte. The laptop's reader gets the same readings from it as from those parts' files, and it imports through cool-eva's `db.ts`. Also checked:
+  - **Requests:** `/status` has the right shape and counts. `/dtc-table` and `/fault-infokeys` are byte-identical to the reference implementation's, over seven and three 4 KB pieces. `/stored-dtcs`, after a 60-code mode 03 reply, equals what the reference implementation serves for that reply, apart from the read's time. 404 and 400 come back as expected.
+  - **`/dl`:** served from the ride log the corpus run wrote, it holds exactly the newest parts' records, byte for byte. The laptop's reader gets the same readings from it as from those parts' files, and it imports into `rides.db`. Also checked:
     - its name, `?boot=`, and the refusals (bad `mb=` or `boot=`, POST, a boot that isn't there)
     - 503 with no card configured
     - at one notification per 10 ms, the stream's messages keep arriving during the body, with no gap near the dashboard's 12 s limit

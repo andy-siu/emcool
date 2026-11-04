@@ -1,9 +1,8 @@
 #pragma once
 
-// Where service mode keeps its freeze-frame readings and the expected-fault list, ported from
-// cool-eva src/vcu/lifetime-store.ts, freeze-frame-store.ts and expected-faults.ts, with the
-// bodies of /lifetime-stats, /freeze-frames and /expected-faults. Small files, kept as cool-eva
-// keeps them (JSON, here on one line):
+// Where service mode keeps its freeze-frame readings and the expected-fault list, with the
+// bodies of /lifetime-stats, /freeze-frames and /expected-faults. Small files, kept as JSON on
+// one line:
 //   lifetime.json, lifetime-<ISO>.json            the latest lifetime read, and every read
 //   freeze-frames.json, freeze-frames-<ISO>.json  the same for the stored freeze frames
 //   expected-faults.json                          the codes this bike is expected to have
@@ -21,7 +20,7 @@ namespace emcool::vcu {
 
 inline constexpr const char* kLifetimeHowToRead =
     "menu → Service mode → \"Read the lifetime battery statistics\", parked, with the drive down or plugged in";
-// cool-eva's names a script run with its service stopped; emcool has no service to stop.
+// The JSON field is named for a script run with the service stopped; emcool has no service to stop.
 inline constexpr const char* kLifetimeHowToReadWithServiceStopped =
     "set OBD_ENABLED 1 and SERVICE_MODE_ENABLED 1 on the serial console, restart, and read it from the dashboard";
 inline constexpr const char* kFreezeFramesHowToRead =

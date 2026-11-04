@@ -77,7 +77,7 @@ void writeNullOr(text::TextBuffer& out, const DtcTableEntry* entry, std::string_
   }
 }
 
-// cool-eva TroubleCodeRow: the code with Energica's row folded in, or nulls where the table
+// The dashboard's TroubleCodeRow: the code with Energica's row folded in, or nulls where the table
 // doesn't list it. An empty obdCode is the freeze frame's "none stored".
 void writeRow(text::TextBuffer& out, std::uint16_t raw, std::string_view obdCode) {
   const DtcTableEntry* entry = obdCode.empty() ? nullptr : lookupByObdCode(obdCode);

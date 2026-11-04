@@ -54,7 +54,7 @@ async function load() {
 /** @param {VcuParamsResponse} payload */
 function show(payload) {
   if (payload.state === "never-read") {
-    statusLine.textContent = `No parameters have been read on this Pi yet (looked in ${payload.directory}).`;
+    statusLine.textContent = `No parameters have been read on emcool yet (looked in ${payload.directory}).`;
     summary.textContent = payload.hint;
     return;
   }

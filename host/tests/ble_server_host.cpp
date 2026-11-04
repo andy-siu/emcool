@@ -1,4 +1,4 @@
-// The Bluetooth server on the host, for tools/check-ble.mts to drive with cool-eva's own
+// The Bluetooth server on the host, for tools/check-ble.mts to drive with the dashboard's own
 // phone-side protocol code. The radio is replaced by packets on stdin/stdout, each
 // [type u8][length u32 BE][payload]:
 //

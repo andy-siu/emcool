@@ -47,9 +47,9 @@ Types: **flag** is `0`/`1`; **integer** is a whole number in a range; **text**/*
 
 | Setting | Type | Default | Range | Applies | What it does |
 | --- | --- | --- | --- | --- | --- |
-| `BLE_SECRET` | secret | *not set* | 12–128 chars | restart | The phone dashboard's link secret (cool-eva's `BLE_SECRET`). Unset keeps Bluetooth off entirely. |
+| `BLE_SECRET` | secret | *not set* | 12–128 chars | restart | The phone dashboard's link secret. Unset keeps Bluetooth off entirely. |
 | `BLE_NAME` | text | `emcool` | 1–29 chars | restart | The name the phone's device list shows. The dashboard finds the bike by its service UUID, not this. |
-| `CUSTOM_BMS_CONFIG` | flag | `0` | — | restart | `1` only if the BMS runs the custom LiBAL config (cool-eva's `CUSTOM_BMS_CONFIG`), for working out which frame carries the true pack temperature. The frames still win. |
+| `CUSTOM_BMS_CONFIG` | flag | `0` | — | restart | `1` only if the BMS runs the custom LiBAL config, for working out which frame carries the true pack temperature. The frames still win. |
 | `OBD_ENABLED` | flag | `0` | — | restart | `1` to poll OBD-II and read trouble codes. This puts the CAN controller on the bus as an active node; off, emcool is listen-only and doesn't even acknowledge frames. |
 | `ELOCK_ENABLED` | flag | `0` | — | restart | `1` to read `keys_paired` from the E-LOCK once at startup. Needs `OBD_ENABLED`. |
 | `SERVICE_MODE_ENABLED` | flag | `0` | — | restart | `1` to let the dashboard **read** the VCU's calibration parameters, lifetime stats and freeze frames, while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`service-mode.md`](service-mode.md). |
@@ -63,7 +63,7 @@ Types: **flag** is `0`/`1`; **integer** is a whole number in a range; **text**/*
 
 ### The transmitting flags, in dependency order
 
-Everything that puts a frame on the bike's bus is off by default — unlike cool-eva, where `OBD_ENABLED` and `ELOCK_ENABLED` default on. Each layer needs the one before it:
+Everything that puts a frame on the bike's bus is off by default. Each layer needs the one before it:
 
 ```
 OBD_ENABLED=1                 the CAN controller becomes an active node; polls OBD, reads codes

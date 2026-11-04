@@ -1,4 +1,4 @@
-// Drives cool-eva's own OBD code — src/can/obd.ts, obd-dtc.ts, obd-hold.ts, elock.ts, iso-tp.ts
+// Drives the reference's own OBD code — src/can/obd.ts, obd-dtc.ts, obd-hold.ts, elock.ts, iso-tp.ts
 // and src/diagnostics/obd-dtc.ts, stored-codes.ts, dtc-table.ts — and writes what it did, for
 // host/tests/check_obd.cpp to replay through the C++ port.
 //
@@ -6,7 +6,7 @@
 // - the pure functions, exhaustively or by fuzzing: formatObdDtc and the table lookup for all
 //   65 536 codes, every NRC's description, random ISO-TP frame sequences, random replies
 //   through decodeObdDtcResponse
-// - scenarios: the poller (and the E-LOCK read) started as cool-eva's index.ts starts them,
+// - scenarios: the poller (and the E-LOCK read) started as the reference's index.ts starts them,
 //   against a scripted ECU on a fake clock — PIDs answered, late, short or not at all;
 //   trouble-code lists as single frames, multi-frame transfers that complete, stall, skip a
 //   sequence number, restart or overflow, refusals and silence; flow control the poller must
@@ -14,13 +14,13 @@
 //   refused, released, or outstay the 15 s cap. Every frame sent, signal recorded and line
 //   logged is written with its millisecond, and /stored-dtcs' body at random moments.
 //
-// Each scenario gets fresh module instances (a resolve hook tags cool-eva's imports with the
-// run number), and cool-eva's record() is instrumented by a load hook to report each call.
+// Each scenario gets fresh module instances (a resolve hook tags the reference's imports with the
+// run number), and the reference's record() is instrumented by a load hook to report each call.
 //
-//   node tools/generate-golden-obd.mts <cool-eva checkout> <output file>
+//   node tools/generate-golden-obd.mts <reference checkout> <output file>
 //
 // Timing rules, which check_obd.cpp follows too: time is whole milliseconds; within one
-// millisecond, scheduled actions run first, then cool-eva's due timers, then the frames that
+// millisecond, scheduled actions run first, then the reference's due timers, then the frames that
 // arrive in it. setTimeout keeps Node's rule that a delay under 1 ms is 1 ms.
 //
 // Lines (fields are space-separated; a trailing text field may contain spaces):
@@ -32,7 +32,7 @@
 //   run <n> <elock 0|1> <wall clock base ms> <end ms>
 //   a <ms> hold <wait ms> <max hold ms> <reason> | a <ms> release | a <ms> snapshot
 //   r <ms> <id hex> <data hex>                a frame arriving
-//   t <ms> <id hex> <data hex> <ok|fail>      a frame cool-eva sent (fail: send threw)
+//   t <ms> <id hex> <data hex> <ok|fail>      a frame the reference sent (fail: send threw)
 //   s <ms> <key> <value>                      record(key, value)
 //   l <ms> <I|W|E> <text>                     a log line (its first argument)
 //   j <ms> <json>                             JSON.stringify(troubleCodeSnapshot())
@@ -43,12 +43,12 @@ import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const [coolEvaDirectory, outputPath] = process.argv.slice(2);
-if (!coolEvaDirectory || !outputPath) {
-  process.stderr.write("usage: node tools/generate-golden-obd.mts <cool-eva checkout> <output file>\n");
+const [referenceDirectory, outputPath] = process.argv.slice(2);
+if (!referenceDirectory || !outputPath) {
+  process.stderr.write("usage: node tools/generate-golden-obd.mts <reference checkout> <output file>\n");
   process.exit(2);
 }
-const srcRoot = pathToFileURL(resolve(coolEvaDirectory, "src")).href + "/";
+const srcRoot = pathToFileURL(resolve(referenceDirectory, "src")).href + "/";
 
 let generation = 0;
 registerHooks({
@@ -66,7 +66,7 @@ registerHooks({
     if (url.startsWith(srcRoot + "can/signals.ts")) {
       const source = String(result.source);
       const marker = "export function record(key: string, value: number, ts: number = Date.now()): void {";
-      if (!source.includes(marker)) throw new Error("cool-eva's record() has changed shape; update the hook");
+      if (!source.includes(marker)) throw new Error("the reference's record() has changed shape; update the hook");
       return { ...result, source: source.replace(marker, `${marker} (globalThis as any).__emcoolRecorded(key, value);`) };
     }
     return result;

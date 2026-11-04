@@ -1,7 +1,6 @@
 #pragma once
 
-// The transport half of reading the VCU, ported from cool-eva src/vcu/kwp-client.ts and
-// src/vcu/multiframe-transfer.ts: put a request on the bus (segmented if it's long), answer the
+// The transport half of reading the VCU: put a request on the bus (segmented if it's long), answer the
 // micro's flow control and ask for its consecutive frames, keep the 10 81 session alive (the micros
 // close it after ~2.5 s idle, separately for A8 and A9), and give up on time. Every byte it sends is
 // built by codec.hpp; it can't express a write.
@@ -89,7 +88,7 @@ class MultiFrameTransfer : public std::enable_shared_from_this<MultiFrameTransfe
 // A one-off read: any target, bank and index.
 struct VcuProbeOutcome : VcuReadOutcome {};
 
-// How a multi-frame request came out (cool-eva VcuMultiFrameOutcome).
+// How a multi-frame request came out.
 struct VcuMultiFrameOutcome {
   enum class Status : std::uint8_t { kReply, kNoResponse, kAbandoned, kNoSession, kCancelled, kNotSent };
   Status status = Status::kNotSent;

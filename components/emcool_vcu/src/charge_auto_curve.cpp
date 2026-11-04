@@ -42,7 +42,7 @@ double leastSquaresSlopePerMinute(const std::vector<TemperatureSample>& window) 
   double variance = 0;
   for (const TemperatureSample& sample : window) {
     covariance += (static_cast<double>(sample.atMs) - meanAt) * (sample.celsius - meanCelsius);
-    // cool-eva writes `(sample.atMs - meanAt) ** 2`; std::pow(.,2) matches V8's ** last bit.
+    // std::pow(.,2), not x * x: it matches V8's `** 2` to the last bit.
     variance += std::pow(static_cast<double>(sample.atMs) - meanAt, 2);
   }
   return variance == 0 ? 0 : (covariance / variance) * 60000.0;

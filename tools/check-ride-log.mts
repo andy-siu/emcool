@@ -6,18 +6,18 @@
 //   2. Simulated power cuts and card damage — truncation at random points, random sectors
 //      overwritten with garbage, zeros or a stale copy, a torn final record — lose only the
 //      records they touch, and never produce a wrong reading.
-//   3. Importing into a fresh rides.db through cool-eva's own db.ts stores every reading.
+//   3. Importing into a fresh rides.db stores every reading.
 //
 // With --rotated the card filled during the run and old parts were deleted, so (1) becomes:
 // what remains is exactly the newest readings — a contiguous tail of the expected list,
 // nothing missing in between — and (3) imports that tail.
 //
-//   node tools/check-ride-log.mts <corpus dir> <expected.jsonl> <cool-eva checkout> [--rotated]
+//   node tools/check-ride-log.mts <corpus dir> <expected.jsonl> <reference checkout> [--rotated]
 
 import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 
 import { importRideLog } from "./import-ride-log.mts";
@@ -39,9 +39,9 @@ interface ExpectedReading {
   trust: string;
 }
 
-const [corpusDirectory, expectedPath, coolEvaDirectory, mode] = process.argv.slice(2);
-if (!corpusDirectory || !expectedPath || !coolEvaDirectory || (mode !== undefined && mode !== "--rotated")) {
-  console.error("usage: node tools/check-ride-log.mts <corpus dir> <expected.jsonl> <cool-eva checkout> [--rotated]");
+const [corpusDirectory, expectedPath, referenceDirectory, mode] = process.argv.slice(2);
+if (!corpusDirectory || !expectedPath || !referenceDirectory || (mode !== undefined && mode !== "--rotated")) {
+  console.error("usage: node tools/check-ride-log.mts <corpus dir> <expected.jsonl> <reference checkout> [--rotated]");
   process.exit(2);
 }
 const rotated = mode === "--rotated";
@@ -166,14 +166,12 @@ for (let fileIndex = 0; fileIndex < blobs.length; fileIndex += 7) {
 }
 console.log(`check-ride-log: ${truncations} truncations and ${corruptions} damaged sectors lost only what they touched`);
 
-// 3. Import through cool-eva's db.ts.
+// 3. Import into rides.db.
 const workDirectory = await mkdtemp(join(tmpdir(), "emcool-import-"));
 try {
   const databasePath = join(workDirectory, "rides.db");
-  const summary = await importRideLog([join(corpusDirectory, "RIDES")], databasePath, coolEvaDirectory, () => {});
-  const requireFromCoolEva = createRequire(resolve(coolEvaDirectory, "package.json"));
-  const Database = requireFromCoolEva("better-sqlite3");
-  const database = new Database(databasePath, { readonly: true });
+  const summary = await importRideLog([join(corpusDirectory, "RIDES")], databasePath, () => {});
+  const database = new DatabaseSync(databasePath, { readOnly: true });
   const stored = database.prepare("SELECT COUNT(*) AS count FROM reading").get() as { count: number };
   if (stored.count !== expected.length || summary.readings !== expected.length) {
     fail(`rides.db holds ${stored.count} readings (import reported ${summary.readings}), expected ${expected.length}`);
@@ -197,8 +195,8 @@ try {
   if (sample.length !== 4) {
     fail(`rides.db sample found ${sample.length} of 4 rows`);
   }
-  // Units and groups come from the metadata records on the card; they must be cool-eva's.
-  const registry = await import(pathToFileURL(join(coolEvaDirectory, "src/can/registry.ts")).href);
+  // Units and groups come from the metadata records on the card; they must be the reference's.
+  const registry = await import(pathToFileURL(join(referenceDirectory, "src/can/registry.ts")).href);
   const registryByKey = new Map(
     (registry.SIGNALS as { key: string; unit: string; group: string }[]).map(signal => [signal.key, signal])
   );
@@ -207,11 +205,11 @@ try {
     const stored = selectSignal.get(key) as { unit: string; grp: string } | undefined;
     const wanted = registryByKey.get(key);
     if (stored?.unit !== wanted?.unit || stored?.grp !== wanted?.group) {
-      fail(`rides.db ${key} metadata is ${JSON.stringify(stored)}, cool-eva's registry says ${wanted?.unit}/${wanted?.group}`);
+      fail(`rides.db ${key} metadata is ${JSON.stringify(stored)}, the reference's registry says ${wanted?.unit}/${wanted?.group}`);
     }
   }
   database.close();
-  console.log(`check-ride-log: imported ${stored.count} readings into rides.db through cool-eva's db.ts`);
+  console.log(`check-ride-log: imported ${stored.count} readings into rides.db`);
 } finally {
   await rm(workDirectory, { recursive: true, force: true });
 }

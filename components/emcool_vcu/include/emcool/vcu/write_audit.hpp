@@ -1,8 +1,8 @@
 #pragma once
 
-// The service-write audit journal, ported from cool-eva src/vcu/write-audit.ts: every write
-// attempt appended to service-writes.jsonl, and the last few read back for the page. The recovery
-// of records a power cut tore (leading NUL bytes) is ported too.
+// The service-write audit journal: every write attempt appended to service-writes.jsonl, and the
+// last few read back for the page. The recovery of records a power cut tore (leading NUL bytes)
+// is handled too.
 
 #include <cstdint>
 #include <optional>
@@ -27,7 +27,7 @@ enum class AuditAction : std::uint8_t {
 };
 const char* auditActionName(AuditAction action);
 
-// A field that may be absent, null, a number or a string (cool-eva's `number | string | null`).
+// A field that may be absent, null, a number or a string (`number | string | null`).
 struct AuditValue {
   enum class Kind : std::uint8_t { kAbsent, kNull, kNumber, kString };
   Kind kind = Kind::kAbsent;

@@ -195,7 +195,7 @@ function ProgressNote() {
       case "idle":
         return div(
           { style: `color:${MUTED}` },
-          "No read has been started since the Pi last booted. Takes well under a minute; the bike has to be awake, parked and out of drive, and the read stops by itself if that changes."
+          "No read has been started since emcool last started. Takes well under a minute; the bike has to be awake, parked and out of drive, and the read stops by itself if that changes."
         );
       case "running":
         return div(
@@ -259,7 +259,7 @@ function ExportButton() {
       () => {
         const rows = state.val?.export.rows ?? 0;
         if (rows === 0) {
-          return "⬇  Export — nothing read on this Pi yet";
+          return "⬇  Export — nothing read on emcool yet";
         }
         return `⬇  Export ${rows} parameters as vcu_backup.csv`;
       }
@@ -320,7 +320,7 @@ async function sendVcuRead(method) {
   } catch (error) {
     // Loud. The usual cause is the phone having dropped off the bike's hotspot,
     // and a button that silently does nothing is the worst version of that.
-    message.val = `could not reach the Pi — ${error instanceof Error ? error.message : String(error)}`;
+    message.val = `could not reach emcool — ${error instanceof Error ? error.message : String(error)}`;
     console.warn("service-mode: /vcu-read request failed", error);
   }
 }

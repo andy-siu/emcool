@@ -154,7 +154,7 @@ export function toggleAction(currentMode, reason, floor_a) {
     return {
       label: "↩️  Take the current back",
       mode: "automatic",
-      note: `You set the current yourself, so the Pi stopped managing it. ${floor}.`,
+      note: `You set the current yourself, so emcool stopped managing it. ${floor}.`,
     };
   }
   if (currentMode === "automatic") {
@@ -165,7 +165,7 @@ export function toggleAction(currentMode, reason, floor_a) {
     };
   }
   return {
-    label: "Let the Pi manage the current",
+    label: "Let emcool manage the current",
     mode: "automatic",
     note: `${floor}, and it stops the pack reaching the temperature where the bike halves the current.`,
   };
@@ -279,7 +279,7 @@ async function toggle(wanted) {
     latestRead += 1;
     apply(payload);
   } catch (error) {
-    failure.val = `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}.`;
+    failure.val = `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}.`;
     console.warn("charge-auto: toggle failed", error);
   } finally {
     busy.val = false;

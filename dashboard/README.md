@@ -1,27 +1,32 @@
 # emcool dashboard
 
-The phone dashboard for emcool — a static, build-free web app (VanJS, no bundler) that talks to the bike over Web Bluetooth. Copied from cool-eva's `public/` and rebranded to emcool; the wire protocol was renamed to match emcool's firmware (see below), so this copy pairs with **this** repo's firmware, not cool-eva's.
+The phone dashboard for emcool: a static web app with no build step (VanJS, no bundler) that talks to the bike over Web Bluetooth.
 
 ## Serving it
 
-It is plain static files — host them anywhere that serves a directory over HTTPS (Web Bluetooth needs a secure context):
+It's plain static files. Host them anywhere that serves a directory over HTTPS, since Web Bluetooth needs a secure context:
 
-- **GitHub Pages:** this repo ships a workflow that publishes `dashboard/` to Pages — turn it on with **Settings → Pages → Source → GitHub Actions**. Full steps in [`../docs/github-pages.md`](../docs/github-pages.md). Open the resulting URL in **Bluefy** on iOS or **Chrome** on Android.
-- **Locally:** any static server over HTTPS (or `http://localhost`, which counts as secure). For example `python3 -m http.server` then browse `http://localhost:8000`, though some browsers want real HTTPS for Bluetooth.
+- **GitHub Pages:** this repo has a workflow that publishes `dashboard/` to Pages. Turn it on with **Settings → Pages → Source → GitHub Actions**; the full steps are in [`../docs/github-pages.md`](../docs/github-pages.md). Open the resulting URL in:
+  - **Bluefy** on iOS (Safari and Chrome on iOS have no Web Bluetooth)
+  - **Chrome** on Android
+  - **Chrome** or **Edge** on a Mac (Safari has no Web Bluetooth)
+- **Locally:** any static server over HTTPS, or `http://localhost`, which counts as secure. For example, run `python3 -m http.server` and browse to `http://localhost:8000`, though some browsers want real HTTPS for Bluetooth.
 
-There is no server component here and the ESP32 serves nothing over HTTP — the bike link is Bluetooth only. The pages fetch the bike's endpoints (`/status`, `/vcu-read`, `/vcu-write`, `/charge-auto`, …) by tunnelling HTTP-shaped requests over the BLE link, which the firmware answers.
+There's no server component. The dashboard fetches the bike's endpoints (`/status`, `/dl`, `/vcu-read`, `/vcu-write`, `/charge-auto`, …) by sending HTTP-shaped requests over the Bluetooth link, which the firmware answers. The bike's optional Wi-Fi serves the console and the ride log, never this dashboard.
 
 ## Connecting
 
-Set a `BLE_SECRET` on the bike (see [`../docs/setup.md`](../docs/setup.md)), enter the same phrase in the dashboard's menu under **Bluetooth**, and tap **Connect**. The handshake and framing are in `lib/ble-wire.js`.
+1. Set a `BLE_SECRET` on the bike (see [`../docs/setup.md`](../docs/setup.md)) and restart it.
+2. Open the dashboard, then the menu, and enter the same phrase under **Bluetooth**.
+3. Tap **Connect** and pick **emcool** from the browser's list.
 
-## What was renamed from cool-eva
+The handshake and framing are in `lib/ble-wire.js`. Both ends must agree on these:
 
-Branding — page titles, the PWA manifest, the header label, the CSS banner — all now say **emcool**. Two things are wire protocol and were renamed **in lockstep with the firmware**, so the two ends still agree:
+- the request header **`X-Emcool`**, whose values (`service-mode`, `service-write`, `charge-auto`, `expected-faults`, `fan`) say what a request that changes something is for
+- the handshake's HMAC labels **`emcool/hello`** and **`emcool/session`**
 
-- the request header **`X-Emcool`** (was `X-Cool-Eva`) — its values (`service-mode`, `service-write`, `charge-auto`, `expected-faults`, `fan`) are unchanged;
-- the handshake HMAC salts **`emcool/hello`** and **`emcool/session`** (were `cool-eva/*`), in `lib/ble-wire.js`.
+`tools/check-ble.mts` runs the firmware's Bluetooth server, built for the Mac, with this `lib/ble-wire.js` as the phone side. That proves the two still agree.
 
-Client-only names — the `emcool.ble-secret` / `emcool.lightHealthyMax` localStorage keys and the `emcool.celog` download filename — were rebranded too; they touch nothing on the bike.
+The phone keeps its preferences in `localStorage` under `emcool.*` keys: the link secret, theme, units, and the light limit. None of these touch the bike.
 
-`host/tests` → `tools/check-ble.mts` drives the firmware's C++ BLE server with **this** `lib/ble-wire.js` as the phone side, so the rename is proven to still handshake. `vendor/` is VanJS, MIT-licensed, unchanged.
+`vendor/` is VanJS, MIT-licensed, unchanged.

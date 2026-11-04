@@ -99,7 +99,7 @@ export function BleSection() {
       h2({ class: "sheet-heading" }, "Bluetooth"),
       div(
         { class: "action-note caution" },
-        "This browser has no Web Bluetooth. On iPhone use the emcool app or Bluefy; on Android, Chrome."
+        "This browser has no Web Bluetooth. On iPhone use Bluefy; on Android or a Mac, Chrome."
       )
     );
   }
@@ -126,16 +126,16 @@ export function BleSection() {
         type: "password",
         name: "secret",
         autocomplete: "current-password",
-        placeholder: "BLE secret (BLE_SECRET on the Pi)",
+        placeholder: "BLE secret (BLE_SECRET on emcool)",
         value: storedSecret(),
       }),
       button({ class: "action", type: "submit" }, () =>
-        bleStatus.val === "connected" ? "Connected — choose another Pi" : "Connect to the Pi"
+        bleStatus.val === "connected" ? "Connected — choose another emcool" : "Connect to emcool"
       )
     ),
     () =>
       secretWanted.val && bleStatus.val !== "refused"
-        ? div({ class: "action-note caution" }, "Enter the Pi's BLE secret above, then tap Connect to the Pi.")
+        ? div({ class: "action-note caution" }, "Enter emcool's BLE secret above, then tap Connect to emcool.")
         : div(
             { class: bleStatus.val === "refused" ? "action-note failure" : "action-note" },
             describe(bleStatus.val, bleDetail.val)
@@ -156,7 +156,7 @@ function describe(status, detail) {
     case "connected":
       return detail ? `Connected to ${detail}.` : "Connected.";
     case "refused":
-      return `Refused by the Pi: ${detail}. Correct the secret above and tap Connect again.`;
+      return `Refused by emcool: ${detail}. Correct the secret above and tap Connect again.`;
     case "lost":
       return detail ? `Link lost: ${detail}. Reconnecting while this page is open.` : "Link lost. Reconnecting.";
   }

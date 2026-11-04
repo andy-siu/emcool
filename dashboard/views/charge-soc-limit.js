@@ -303,7 +303,7 @@ async function post(query, kind) {
     // ⚠️ A request that did not come back may still have reached the bike — the frame goes out
     // before the response — so this is NOT "nothing happened". Read it back before retrying.
     message.val =
-      `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "This does NOT guarantee nothing was sent — read the limit before trying again.";
     console.warn("charge-soc-limit: request failed", error);
   } finally {

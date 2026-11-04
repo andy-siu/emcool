@@ -1,4 +1,4 @@
-// Replays the runs written by tools/generate-golden-pack-temperature.mts — cool-eva's own
+// Replays the runs written by tools/generate-golden-pack-temperature.mts — the reference's own
 // pack-temperature routing on scripted 0x200/0x660 sequences — through the C++ decoder and
 // PackTemperatureRouter, and requires the same values for every frame and the same number of
 // errors, warnings and info lines for every run.
@@ -55,7 +55,7 @@ int main(int argumentCount, char** arguments) {
       const emcool::LogCounts now = emcool::logCountsFor("bms");
       EMCOOL_CHECK(now.error - atRunStart.error == errors && now.warning - atRunStart.warning == warnings &&
                        now.info - atRunStart.info == infos,
-                   "run %d logged %u/%u/%u (errors/warnings/infos), cool-eva %u/%u/%u", run,
+                   "run %d logged %u/%u/%u (errors/warnings/infos), the reference %u/%u/%u", run,
                    now.error - atRunStart.error, now.warning - atRunStart.warning, now.info - atRunStart.info, errors,
                    warnings, infos);
       continue;

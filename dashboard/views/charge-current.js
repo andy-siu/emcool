@@ -149,7 +149,7 @@ function Situation() {
     return div(
       { style: `color:${MUTED}` },
       `Live ${type.toUpperCase()} charge · ceiling ${ceiling} A. Whole amps, 1…${ceiling}. `,
-      "The Pi picks AC/DC and the ceiling from the live bus — this echoes them."
+      "emcool picks AC/DC and the ceiling from the live bus — this echoes them."
     );
   });
 }
@@ -233,7 +233,7 @@ function SetButton() {
     ),
     div({ class: "action-note", style: `color:${MUTED}` }, () =>
       commandable()
-        ? "Event frame with no reply — the Pi watches the bike's own charge request and says below whether it took. A full battery caps what actually flows."
+        ? "Event frame with no reply — emcool watches the bike's own charge request and says below whether it took. A full battery caps what actually flows."
         : ""
     )
   );
@@ -374,7 +374,7 @@ async function performChargeCurrent() {
     // out before the response — so this is NOT "nothing happened". Lowering the current is
     // benign and overridable on the bike, but the message says the honest thing anyway.
     message.val =
-      `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "This does NOT guarantee nothing was sent — check the dash.";
     console.warn("charge-current: request failed", error);
   } finally {

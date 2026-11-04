@@ -1,13 +1,12 @@
 #pragma once
 
-// One phone's authenticated session over the link, ported from cool-eva
-// src/ble-server/session.ts. The handshake (cool-eva docs/ble-server.md §"Why seal"):
+// One phone's authenticated session over the link. The handshake:
 //
 //   1. The phone reads `info`: { version, serverNonce }.
 //   2. It sends a clear HELLO { version, clientNonce, proof }, where
-//      proof = HMAC-SHA256(secret, "cool-eva/hello" ‖ serverNonce ‖ clientNonce).
+//      proof = HMAC-SHA256(secret, "emcool/hello" ‖ serverNonce ‖ clientNonce).
 //   3. A matching proof (compared in constant time) starts a session keyed by
-//      HMAC-SHA256(secret, "cool-eva/session" ‖ …) and is answered with a sealed WELCOME, which
+//      HMAC-SHA256(secret, "emcool/session" ‖ …) and is answered with a sealed WELCOME, which
 //      is the bike proving it knows the secret too. The server nonce then rotates, so a
 //      recorded HELLO is useless.
 //

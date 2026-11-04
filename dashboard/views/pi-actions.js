@@ -139,7 +139,7 @@ async function performCanRestart() {
     canRestartFailed.val = !reply.ok;
   } catch (error) {
     console.warn("can-restart: request failed", error);
-    canRestartMessage.val = "Restart request failed — is the Pi reachable?";
+    canRestartMessage.val = "Restart request failed — is emcool reachable?";
     canRestartFailed.val = true;
   } finally {
     canRestarting.val = false;
@@ -158,7 +158,7 @@ async function performUpdate() {
     updateFailed.val = !reply.ok;
   } catch (error) {
     console.warn("update: request failed", error);
-    updateMessage.val = "Update request failed — is the Pi reachable?";
+    updateMessage.val = "Update request failed — is emcool reachable?";
     updateFailed.val = true;
   } finally {
     updating.val = false;

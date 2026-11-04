@@ -223,14 +223,14 @@ void BleServer::queueRequest(std::string_view header) {
                 request.method.data(), request.method.size());
   copyTruncated(path != nullptr && path->type == ble::JsonType::kString ? path->text : "", request.path.data(),
                 request.path.size());
-  request.coolEva[0] = '\0';
+  request.emcoolHeader[0] = '\0';
   if (const ble::JsonMember* headers = reader.find("headers"); headers != nullptr && headers->type == ble::JsonType::kObject) {
     ble::JsonObjectReader headerReader;
     char headerScratch[512];
     if (headerReader.read(headers->text, headerScratch)) {
       for (const ble::JsonMember& member : headerReader.members()) {
         if (member.type == ble::JsonType::kString && equalsIgnoringCase(member.key, "x-emcool")) {
-          copyTruncated(member.text, request.coolEva.data(), request.coolEva.size());
+          copyTruncated(member.text, request.emcoolHeader.data(), request.emcoolHeader.size());
         }
       }
     }
@@ -297,7 +297,7 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
       } else {
         badPath_ = false;
         const std::optional<HttpResponse> response =
-            requests_.begin({request.method.data(), request.path.data(), request.coolEva.data()}, nowMonotonicMs);
+            requests_.begin({request.method.data(), request.path.data(), request.emcoolHeader.data()}, nowMonotonicMs);
         if (response) {
           response_ = *response;
           responseStage_ = ResponseStage::kHead;
@@ -309,7 +309,7 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
     }
     if (responseStage_ == ResponseStage::kWaiting) {
       std::optional<HttpResponse> response = requests_.poll(nowMonotonicMs);
-      // cool-eva's tunnel gives a handler three minutes.
+      // A handler gets three minutes.
       if (!response && nowMonotonicMs - waitingSinceMs_ > kRequestTimeoutMs) {
         logWarning(kTag, "request %lld had no answer after %lld s", static_cast<long long>(responseId_),
                    static_cast<long long>(kRequestTimeoutMs / 1000));

@@ -1,34 +1,33 @@
 # emcool
 
-[cool-eva](https://github.com/andy-siu/cool-eva) ported to an ESP32: telemetry for a watercooled Energica Eva Ribelle, read straight off the bike's CAN bus. cool-eva is TypeScript on a Raspberry Pi; emcool is C++ on ESP-IDF.
+Telemetry for an Energica electric motorcycle, on an ESP32 plugged into its CAN bus. emcool decodes every frame on the bus into live values, logs them to a microSD card, and serves a phone dashboard over Bluetooth. With the settings for them turned on, it also polls OBD-II, reads and writes the VCU's parameters in service mode, controls the DC charge current to keep the pack cool, and serves its console and ride log over Wi-Fi. It's C++ on ESP-IDF.
 
 ## Status
 
-**Fifth milestone.** The firmware does the following, and the host checks below pass:
+**Every planned stage is built**, and the laptop checks below pass. The firmware:
 
-- listens to the CAN bus in listen-only mode, unless you turn on a feature that transmits
-- decodes every frame with a port of cool-eva's decoders into live state
-- with `OBD_ENABLED` on, polls OBD-II and reads the stored trouble codes, as cool-eva does
-- with `SERVICE_MODE_ENABLED` on too, reads the VCU's calibration parameters, the lifetime battery statistics and the stored freeze frames from the dashboard's service mode, while the bike is parked
-- with `SERVICE_WRITE_ENABLED` on as well, writes allowlisted VCU parameters, sets the service point, syncs the bike's clock, clears trouble codes, commands or stops the charge current, sets the charge limit and resets the VCU — the one switch that lets a web page change the bike, off by default
-- with `CHARGE_AUTO_ENABLED` on too, runs the automatic charge-current controller: it watches the pack temperature during a DC fast charge and eases the current to hold the pack near 54 °C, commanding on a 60 s timer
-- records the bike's active faults as the hub mirrors them onto CAN
-- steps its clock to GPS time behind cool-eva's corroboration gate
-- logs every change to the microSD card, deleting the oldest logs when it fills
-- serves its phone dashboard (in `dashboard/`) over Bluetooth, including the Faults tab's code tables and stored codes
-- prints status lines to the serial console every 10 s
+- **Reads the bus** in listen-only mode: it doesn't even acknowledge frames unless a setting asks it to transmit.
+- **Decodes every frame** into live values: over 500 named signals.
+- **Steps its clock to GPS time**, once five GPS readings agree with each other and with the last time it trusted.
+- **Logs every change to the microSD card**, deleting the oldest logs when the card fills.
+- **Records the bike's active faults** as the Energica Connectivity Hub mirrors them onto the bus.
+- **Serves the phone dashboard over Bluetooth**: live tiles, faults, parameters, service mode, and downloading the ride log.
+- **Prints a status report** to the serial console every 10 s.
+- With **`OBD_ENABLED`**, polls OBD-II and reads the stored trouble codes.
+- With **`SERVICE_MODE_ENABLED`** too, reads the VCU's calibration parameters, the lifetime battery statistics and the stored freeze frames, while the bike is parked.
+- With **`SERVICE_WRITE_ENABLED`** as well, writes allowlisted VCU parameters, sets the service point, syncs the bike's clock, clears trouble codes, commands or stops the charge current, sets the charge limit and resets the VCU. This is the one switch that lets a web page change the bike, so it's off by default.
+- With **`CHARGE_AUTO_ENABLED`** on top, runs the automatic charge-current controller. During a DC fast charge it eases the current to hold the pack near 54 °C, on a 60 s timer.
+- With **`WIFI_SSID`** and **`ADMIN_PASSWORD`**, joins that Wi-Fi network. It serves the console on port 23 and the ride log as a web page on port 80.
 
-None of it has run on the board yet: the card, radio and transmit code is compiled, not exercised.
+**Not built:** fan control, the coolant-temperature probes (pins are reserved below), and a direct link to the Connectivity Hub.
 
-Not yet ported:
-
-- **The rest:** ride log download, fan control, the coolant probes, and the Energica Connectivity Hub link.
+**Not yet run on the board.** Everything is compiled, and the laptop checks drive most of it, but the CAN controller, the card, Bluetooth and Wi-Fi haven't run on real hardware.
 
 ## Hardware
 
 **Board:** Copperhill / SK Pang ESP32 CAN-BUS board, rev B ([schematic](https://copperhilltech.com/content/ESP32_CAN_rev_B.pdf)).
 
-- ESP32-WROOM-32: 520 KB SRAM, 4 MB flash, no PSRAM.
+- ESP32-WROOM-32: 520 KB SRAM, 4 MB flash, no PSRAM. Bluetooth 4.2 and 2.4 GHz Wi-Fi.
 - MCP2562 CAN transceiver, with TXD on GPIO25 and RXD on GPIO26. Those are the firmware defaults.
 - A CP2104 USB-C serial bridge, for `idf.py flash monitor`.
 
@@ -47,7 +46,7 @@ Pin 1 is CAN_**L**: the schematic crosses the two lines before the connector.
 
 - **Take the terminator out.** The board's 120 Ω terminator, R4, is switched in by jumper JP1. The bike's bus is already terminated at both ends, and a third resistor at the OBD port drops it from 60 Ω to 40 Ω. Remove the JP1 jumper.
   - To check, measure between CAN_H and CAN_L on J3 with the board unpowered and disconnected. About 120 Ω means the terminator is still in; open circuit means it is out.
-- **Power it over USB-C rather than J3's +12V.** J3 pin 4 feeds an NCV4264-2 5 V regulator, which onsemi rates at 100 mA. The 3.3 V regulator, an MIC5504 rated at 300 mA, runs off that same 5 V rail, so everything on the board would share 100 mA. Bluetooth alone needs more than that: the ESP32 datasheet (v5.3, Table 5-4) gives 130 mA typical to transmit and 95–100 mA to receive.
+- **Power it over USB-C rather than J3's +12V.** J3 pin 4 feeds an NCV4264-2 5 V regulator, which onsemi rates at 100 mA. The 3.3 V regulator, an MIC5504 rated at 300 mA, runs off that same 5 V rail, so everything on the board would share 100 mA. Bluetooth alone needs more than that: the ESP32 datasheet (v5.3, Table 5-4) gives 130 mA typical to transmit and 95–100 mA to receive. Wi-Fi needs more again.
   - Feed USB-C from a 12 V → 5 V USB adapter instead, and leave J3 pin 4 unconnected.
   - With USB power, J3 only needs pins 1–3.
 
@@ -91,11 +90,13 @@ Needs ESP-IDF v6.1.
 idf.py build flash monitor
 ```
 
-The CAN and microSD pins default to this board's (GPIO25/26, and the SPI header). For a different board, change them under `idf.py menuconfig` → emcool. Setting a pin to -1 turns that part off.
+- **Pins:** the CAN and microSD pins default to this board's (GPIO25/26, and the SPI header). For a different board, change them under `idf.py menuconfig` → emcool. Setting a pin to -1 turns that part off.
+- **Build options:** these live in `sdkconfig.defaults`. The generated `sdkconfig` isn't tracked, so after changing the defaults, delete `sdkconfig` and the build regenerates it.
+- **Optimised for size:** the firmware is built with `-Os`, not `-Og`, because Bluetooth and Wi-Fi together don't fit otherwise. It's 1.74 MB of the 1.875 MB app slot.
 
 ## Settings
 
-Per-bike settings live in the ESP32's NVS, emcool's counterpart of cool-eva's `/etc/default/cool-eva`. They survive reflashing and firmware updates; only `idf.py erase-flash` clears them. Set them from the serial console that `idf.py monitor` opens. [`docs/setup.md`](docs/setup.md) is the complete reference — every console command and every setting with its type, default, range and dependencies; the summary here covers the common ones.
+Per-bike settings live in the ESP32's NVS. They survive reflashing and firmware updates; only `idf.py erase-flash` clears them. Set them from the serial console that `idf.py monitor` opens, or over Wi-Fi once it's set up. [`docs/setup.md`](docs/setup.md) is the complete reference: every console command and every setting, with its type, default, range and dependencies.
 
 ```
 emcool> show
@@ -106,55 +107,74 @@ emcool> restart
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `BLE_SECRET` | not set | The phone dashboard's link secret, as cool-eva's `BLE_SECRET`: 12–128 characters. Unset keeps Bluetooth off. |
+| `BLE_SECRET` | not set | The phone dashboard's link secret, 12–128 characters. Unset keeps Bluetooth off. |
 | `BLE_NAME` | `emcool` | The name in the phone's device list. |
-| `CUSTOM_BMS_CONFIG` | `0` | `1` if the BMS runs the custom LiBAL config, as cool-eva's `CUSTOM_BMS_CONFIG`. |
-| `OBD_ENABLED` | `0` | `1` to poll OBD-II and read trouble codes, as cool-eva's `OBD_ENABLED`. This puts the CAN controller on the bus as an active node. See [Transmitting](#transmitting). |
-| `ELOCK_ENABLED` | `0` | `1` to read `keys_paired` from the E-LOCK once at startup, as cool-eva's `ELOCK_ENABLED`. Needs `OBD_ENABLED`. |
-| `SERVICE_MODE_ENABLED` | `0` | `1` to let the dashboard read the VCU's calibration parameters, as cool-eva's `SERVICE_MODE_ENABLED`. Only while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
-| `SERVICE_WRITE_ENABLED` | `0` | `1` to let the dashboard **write** to the VCU (`/vcu-write`), as cool-eva's `SERVICE_WRITE_ENABLED`. The one switch that lets a web page change the bike, so off by default even though it is a transmitting setting like the rest. Needs `OBD_ENABLED` and `SERVICE_MODE_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
-| `CHARGE_AUTO_ENABLED` | `0` | `1` for the automatic charge-current controller, as cool-eva's `CHARGE_AUTO_ENABLED`. It commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`docs/service-mode.md`](docs/service-mode.md). |
-| `WIFI_SSID` | not set | The Wi-Fi network to join. With `ADMIN_PASSWORD` set too, the bike serves this console on port 23 and the ride log on port 80. See [Wi-Fi](#wi-fi). |
-| `WIFI_PASSWORD` | not set | That network's password, 8–63 characters; unset for an open network. |
+| `CUSTOM_BMS_CONFIG` | `0` | `1` if the BMS runs the custom LiBAL config. |
+| `OBD_ENABLED` | `0` | `1` to poll OBD-II and read trouble codes. This puts the CAN controller on the bus as an active node. See [Transmitting](#transmitting). |
+| `ELOCK_ENABLED` | `0` | `1` to read `keys_paired` from the E-LOCK once at startup. Needs `OBD_ENABLED`. |
+| `SERVICE_MODE_ENABLED` | `0` | `1` to let the dashboard read the VCU's calibration parameters, only while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
+| `SERVICE_WRITE_ENABLED` | `0` | `1` to let the dashboard **write** to the VCU (`/vcu-write`). The one switch that lets a web page change the bike. Needs `OBD_ENABLED` and `SERVICE_MODE_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
+| `CHARGE_AUTO_ENABLED` | `0` | `1` for the automatic charge-current controller. It commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`docs/service-mode.md`](docs/service-mode.md). |
+| `WIFI_SSID` | not set | The Wi-Fi network to join, 2.4 GHz. With `ADMIN_PASSWORD` set too, the bike serves the console on port 23 and the ride log on port 80. See [Wi-Fi](#wi-fi). |
+| `WIFI_PASSWORD` | not set | That network's password, 8–63 characters. Unset for an open network. |
 | `ADMIN_PASSWORD` | not set | What the Wi-Fi console and the ride-log page ask for, 12–128 characters. Unset keeps Wi-Fi off. |
 | `STATUS_REPORT` | `1` | Whether the console prints the periodic status report. Applies at once. |
 | `STATUS_INTERVAL_S` | `10` | Seconds between status reports, 5–3600. Applies at once. |
 
+The console's commands:
+
+| Command | What it does |
+| --- | --- |
+| `show` | Every setting, its value, and whether a change is waiting for a restart. |
+| `set NAME VALUE` | Saves a setting. Quote values with spaces. |
+| `unset NAME` | Puts a setting back to its default. |
+| `status [on \| off \| every SECONDS]` | Prints a status report now, or changes how often it prints. |
+| `network` | The Wi-Fi network joined and its signal, and the address, netmask, gateway and DNS server it handed out. |
+| `restart` | Reboots, so saved settings take effect. |
+
 How the console behaves:
 
 - **Restart to apply.** Settings are read at boot, so a change takes effect at `restart`. `show` marks any change still waiting for one. The two status settings are the exception and apply at once.
-- **The secret is never printed back.** `show` reports only whether it's set and its length. Quote values that contain spaces.
+- **Secrets are never printed back.** `show` reports only whether a secret or password is set, and its length.
 - **Names ignore case.** Flags take `1`/`0`, `on`/`off`, `true`/`false` or `yes`/`no`.
 
-**What `CUSTOM_BMS_CONFIG` does.** It tells emcool which BMS config to expect when it works out which frame carries the true pack temperature (`batt_temp_lo`/`batt_temp_hi`), ported from cool-eva's `src/can/pack-temperature.ts`. The frames still win.
+**What `CUSTOM_BMS_CONFIG` does.** It tells emcool which BMS config to expect when it works out which frame carries the true pack temperature (`batt_temp_lo`/`batt_temp_hi`). The frames still win.
 
 - **Set to 1 on a custom-config pack:** the true temperatures come from the long 0x660 frame from the first one.
 - **Left at 0 on a custom-config pack:** the routing still switches to 0x660 when the first long one arrives, and logs an error saying to set it. But if 0x200 was already flowing for 5 s by then, a few lowered readings will have been logged as the true temperature first.
 - **Set to 1 on a stock pack:** the true temperatures are never logged, and a warning says so.
 
-The values loaded at boot are in the first lines of the console output. cool-eva's other environment variables come back with the features they configure.
+The values loaded at boot are in the first lines of the console output.
 
 ### Transmitting
 
-emcool sends nothing on the bike's bus unless a setting asks it to, and every such setting defaults to `0`. Some of cool-eva's, such as `OBD_ENABLED`, default to on.
+emcool sends nothing on the bike's bus unless a setting asks it to, and every such setting defaults to `0`.
 
-With every transmitting setting at `0`, the CAN controller is listen-only: it doesn't even acknowledge frames. Setting `OBD_ENABLED 1` and restarting makes it an active node, as cool-eva's `can0` is. It acknowledges frames, polls mode 01 PIDs at 2 Hz, and reads the stored trouble codes about once a minute.
+With every transmitting setting at `0`, the CAN controller is listen-only: it doesn't even acknowledge frames. Setting `OBD_ENABLED 1` and restarting makes it an active node. It acknowledges frames, polls mode 01 PIDs at 2 Hz, and reads the stored trouble codes about once a minute. What goes on the bus, what gets recorded, and what has been verified are in [`docs/obd.md`](docs/obd.md).
 
-What goes on the bus, what gets recorded, and what has been verified are in [`docs/obd.md`](docs/obd.md).
+Each layer needs the one before it:
 
-With `SERVICE_MODE_ENABLED 1` as well, the dashboard's service mode can sweep the VCU's calibration parameters, or probe one, while the bike is safe to service. It only reads. The snapshots it keeps on the card are described in [`docs/service-mode.md`](docs/service-mode.md).
+```
+OBD_ENABLED=1                 the CAN controller becomes an active node; polls OBD, reads codes
+  └ SERVICE_MODE_ENABLED=1    the dashboard may READ the VCU (parameters, lifetime, freeze frames)
+      └ SERVICE_WRITE_ENABLED=1    the dashboard may CHANGE the bike (/vcu-write)  ⚠️ off on purpose
+          └ CHARGE_AUTO_ENABLED=1  the controller commands the charge current on its own
+```
 
-With `SERVICE_WRITE_ENABLED 1` on top of those, the dashboard can also **change** the bike: write an allowlisted calibration parameter, set the service point, sync the bike's clock, clear the stored trouble codes, command or stop the charge current, set the charge limit, or reset the VCU. This is the only setting that lets a web page change the motorcycle, so it is off by default and loud in the journal when on — unlike cool-eva, every emcool transmitting setting is off by default, and this one would be off even if they were not. Every write goes behind the same safety gate as the reads, behind its own `X-Emcool: service-write` header (deliberately not the read path's `service-mode`), and is journalled to `service-writes.jsonl`. The allowlist, the five gates and the per-action confirmations are in [`docs/service-mode.md`](docs/service-mode.md).
+- **`SERVICE_MODE_ENABLED`:** the dashboard's service mode can sweep the VCU's calibration parameters, or probe one, while the bike is safe to service. It only reads. The snapshots it keeps on the card are described in [`docs/service-mode.md`](docs/service-mode.md).
+- **`SERVICE_WRITE_ENABLED`:** the dashboard can also **change** the bike: write an allowlisted calibration parameter, set the service point, sync the bike's clock, clear the stored trouble codes, command or stop the charge current, set the charge limit, or reset the VCU. It's off by default and says so loudly in the log when on. Every write goes behind the same safety gate as the reads, behind its own `X-Emcool: service-write` header (deliberately not the read path's `service-mode`), and is recorded in `service-writes.jsonl`.
+- **`CHARGE_AUTO_ENABLED`:** during a DC fast charge, the controller watches the pack temperature and, on a 60 s timer, eases the current up or down to hold the pack near 54 °C without crossing 55 °C. It commands through the write engine, so it needs `SERVICE_WRITE_ENABLED`, and it stands down the moment a current is set by hand. `/charge-auto` turns it on or off and shows what it is doing and why.
 
-With `CHARGE_AUTO_ENABLED 1` as well, the automatic charge-current controller runs: during a DC fast charge it watches the pack temperature and, on a 60 s timer, eases the current up or down to hold the pack near 54 °C without crossing 55 °C — the same thermal control law as cool-eva's, commanding through the write engine above (so it needs `SERVICE_WRITE_ENABLED` to actuate, and stands down the moment a current is set by hand). `/charge-auto` turns it on or off and shows what it is doing and why. It is the most autonomous feature here; see [`docs/service-mode.md`](docs/service-mode.md).
+The allowlist, the safety gates and the per-action confirmations are in [`docs/service-mode.md`](docs/service-mode.md).
 
 ### The status report
 
-Every 10 s the console prints five lines, emcool's stand-in for watching cool-eva's journal:
+Every 10 s the console prints six lines:
 
 - **can:** frames per second, drops, bus state, and free memory now and at its lowest
 - **ride log:** whether the card is mounted, the boot and part being written, the write rate, losses and rotations, and the clock's trust
 - **bluetooth:** advertising or connected, the packet size, and notifications per second
+- **wifi:** off, or the address, the console's and page's use, and reconnects
 - **obd:** off and listen-only, or the poller's round, frames sent and any never acknowledged, the stored codes' state, and whether something holds the poller
 - **live:** a few current values, without position
 
@@ -171,36 +191,50 @@ These apply at once and are saved as `STATUS_REPORT` and `STATUS_INTERVAL_S`, so
 
 ## Ride log
 
-Readings go to `RIDES/<boot>/PART<n>.LOG` on a FAT32 microSD card, in cool-eva's segment format as plain text, minus location. When the card fills, the oldest parts are deleted to make room, first in, first out. Nothing else on the card is ever touched. The format, what a power cut costs and what has been verified are in [`docs/ride-log-format.md`](docs/ride-log-format.md). That doc also covers preparing a card: FAT32, and the firmware never formats one.
+Readings go to `RIDES/<boot>/PART<n>.LOG` on a FAT32 microSD card, as plain text, minus location. When the card fills, the oldest parts are deleted to make room, first in, first out. Nothing else on the card is ever touched. The format, what a power cut costs and what has been verified are in [`docs/ride-log-format.md`](docs/ride-log-format.md). That doc also covers preparing a card: FAT32, and the firmware never formats one.
 
-To import the card into the same `rides.db` cool-eva's Grafana dashboards read:
+There are three ways to get it off the bike, and each gives files that import the same way:
+
+- **Take the card out** and read its `RIDES/` folder. This is the way to take everything.
+- **Over Bluetooth**, from the dashboard's menu: *Download recent ride log*, the newest 16 MB or so. Bluetooth is slow, so this is for a recent ride. See [`docs/ble.md`](docs/ble.md).
+- **Over Wi-Fi**, from `http://<bike>/`: every boot and part, much faster. See [`docs/wifi.md`](docs/wifi.md).
+
+To import into `rides.db`, the SQLite file Grafana reads:
 
 ```bash
 node tools/import-ride-log.mts /Volumes/EMCOOL/RIDES --out rides.db
+node tools/import-ride-log.mts emcool-00012.3-00014.1.log --out rides.db
 ```
 
-Or, without taking the card out, download a recent ride over Bluetooth from the dashboard's menu (*Download recent ride log*: the newest 16 MB or so). That gives one `.log` file, which imports the same way: `node tools/import-ride-log.mts emcool-00012.3-00014.1.log --out rides.db`. Bluetooth is slow, so for the whole card take the card out. See [`docs/ble.md`](docs/ble.md).
-
-This runs through cool-eva's own `src/db.ts`, so it needs a cool-eva checkout with its dependencies installed (`../cool-eva`, or set `COOL_EVA_DIR`).
+The import needs only Node 22.13 or newer, which has SQLite built in. It reports damaged records, readings stamped before the clock could be trusted, and any records missing from a session.
 
 ## Wi-Fi
 
-With `WIFI_SSID` and `ADMIN_PASSWORD` set, the bike joins that network (your garage Wi-Fi or a phone hotspot) and serves two things, both behind the admin password:
+With `WIFI_SSID` and `ADMIN_PASSWORD` set, the bike joins that network, such as your garage Wi-Fi or a phone hotspot (2.4 GHz only). It serves two things, both behind the admin password:
 
 - **The console** on port 23: `nc <bike> 23`, with the same commands as the USB console. The log follows it.
-- **The ride log** at `http://<bike>/`: every boot and part, to download in any browser or with `curl -u x:'password' -OJ 'http://<bike>/dl?mb=256'`. The files import with `tools/import-ride-log.mts`.
+- **The ride log** at `http://<bike>/`: every boot and part, to download in any browser, or with `curl -u x:'password' -OJ 'http://<bike>/dl?mb=256'`.
 
-The boot log and the status line give the address. ⚠️ It's all plain text on the network, the password included, so use it on a network you control. Fitting Wi-Fi beside Bluetooth meant building the firmware for size. [`docs/wifi.md`](docs/wifi.md) has the details, the costs and what's verified.
+`network` on either console, the boot log and the status line all give the address. ⚠️ It's all plain text on the network, the password included, so use it on a network you control. [`docs/wifi.md`](docs/wifi.md) has the details, the costs and what's verified.
 
 ## Phone dashboard (Bluetooth)
 
-emcool ships its own phone dashboard in [`dashboard/`](dashboard/) — a static site copied from cool-eva's and rebranded, paired with emcool's wire protocol (the handshake salts and the request header were renamed from cool-eva's, so it talks to this firmware, not cool-eva's). Host it over HTTPS and open it in Bluefy on iOS or Chrome on Android. A [GitHub Pages workflow](.github/workflows/pages.yml) publishes it — see [`docs/github-pages.md`](docs/github-pages.md), [`dashboard/README.md`](dashboard/README.md) and [`docs/ble.md`](docs/ble.md).
+The phone dashboard is in [`dashboard/`](dashboard/): a static web app, published to GitHub Pages by a [workflow](.github/workflows/pages.yml) in this repo. Open it in:
+
+- **Bluefy** on iOS
+- **Chrome** on Android
+- **Chrome** or **Edge** on a Mac
+
+See [`docs/github-pages.md`](docs/github-pages.md), [`dashboard/README.md`](dashboard/README.md) and [`docs/ble.md`](docs/ble.md).
 
 1. Set `BLE_SECRET` from the serial console (see [Settings](#settings)) and `restart`.
-2. Enter the same secret in the dashboard's menu under *Bluetooth*.
+2. Enter the same secret in the dashboard's menu under *Bluetooth*, tap *Connect*, and pick **emcool**.
    - The live tiles, the status sheet and the Faults tab work. The Faults tab shows stored codes only with `OBD_ENABLED` on.
    - The parameters page works, as do service mode's reads with `SERVICE_MODE_ENABLED` on and its writes with `SERVICE_WRITE_ENABLED` on.
-   - The sheet's *Download recent ride log* downloads the newest part of the ride log (see [Ride log](#ride-log)). The dashboard's other requests answer "not on emcool yet". What differs from cool-eva's server, the memory it takes, and what has been verified are in [`docs/ble.md`](docs/ble.md).
+   - *Download recent ride log* downloads the newest part of the ride log.
+   - Fan control answers "not on emcool yet".
+
+[`docs/ble.md`](docs/ble.md) covers the link's security, the memory it takes, and what has been verified.
 
 ## Checks
 
@@ -208,73 +242,71 @@ emcool ships its own phone dashboard in [`dashboard/`](dashboard/) — a static 
 tools/check.sh
 ```
 
-The checks run on the laptop. They need a cool-eva checkout (`../cool-eva`, or set `COOL_EVA_DIR`), Node 22.6+, CMake and Ninja, but not ESP-IDF.
+The checks run on the laptop, not the board. They need Node 22.13+, CMake, Ninja and OpenSSL 3 (Homebrew), but not ESP-IDF.
 
-- **The registry is current.** `components/emcool_signals/src/registry.gen.cpp` is generated from cool-eva's `src/can/registry.ts` by `tools/generate-registry.mts`. Re-run that script when cool-eva's registry changes.
-- **The decoders match cool-eva.** `tools/generate-golden.mts` runs about 200,000 synthetic frames through cool-eva's own `decodeFrame()`. `host/tests/check_decoders.cpp` then requires the C++ to produce the same keys, in the same order, with bit-identical values, and to warn exactly as often.
-  - The corpus covers every 11-bit id at every length, biased payloads that get past each decoder's gates, and GPS sub-frame sequences.
+Most of emcool's logic is checked against a **reference implementation**: an earlier TypeScript version of the same telemetry. Its generators run the reference's own code on scripted input, and the C++ must produce the same output, value for value and often to the millisecond. So the checks also need a checkout of the reference next to this repo (`../cool-eva`, or set `COOL_EVA_DIR`). Nothing on the bike, and nothing in the ride-log import, needs it.
+
+- **The generated tables are current.** The signal registry, Energica's fault-code tables and the 29 VCU parameter tables are generated from the reference by `tools/generate-registry.mts`, `tools/generate-diagnostic-tables.mts` and `tools/generate-vcu-tables.mts`. Each one's `--check` fails if its output is stale.
+- **The decoders match.** About 200,000 synthetic frames go through the reference's decoder. The C++ must produce the same keys, in the same order, with bit-identical values, and warn exactly as often.
+  - The frames cover every 11-bit id at every length, payloads shaped to get past each decoder's checks, and GPS sub-frame sequences.
   - It fails if any decoder key never appears.
-- **No location reaches the ride log.** The decoded corpus goes through the signal store, and the check fails if any signal in `kExcludedFromRideLog` is written.
-- **The pack-temperature routing matches cool-eva.** `tools/generate-golden-pack-temperature.mts` drives cool-eva's own routing on a scripted clock, through 419 runs of 0x200/0x660 sequences:
+- **No location reaches the ride log.** The decoded frames go through the signal store, and the check fails if any position signal is written.
+- **The pack-temperature routing matches,** through 419 runs of 0x200/0x660 sequences:
   - stock and custom configs, with the setting right and wrong
-  - short, long and late 0x660 frames
+  - short, long and late frames
   - echo and clamp faults
-
-  `host/tests/check_pack_temperature.cpp` requires the same values on every frame and the same number of errors, warnings and info lines in every run.
-- **The OBD side matches cool-eva, to the millisecond.** `tools/generate-diagnostic-tables.mts` generates Energica's code table and the two static Faults bodies from cool-eva's own modules, and `--check` fails if they're stale.
-  - `tools/generate-golden-obd.mts` runs cool-eva's own poller, trouble-code reads, hold and E-LOCK read against a scripted ECU on a fake clock: 72 scenarios over four simulated hours.
-  - `host/tests/check_obd.cpp` replays each scenario through the C++. Every millisecond it must send the same frames, record the same signals, log the same lines, and serve the same `/stored-dtcs` body.
-  - It also checks the pure parts exhaustively or by fuzzing: all 65,536 codes, every NRC, and 94,000 ISO-TP frames.
-  - Details, and the mutations it catches, are in [`docs/obd.md`](docs/obd.md).
-- **Service mode matches cool-eva, to the millisecond.** `tools/generate-vcu-tables.mts` generates the 29 parameter tables from cool-eva's catalogue, and `--check` fails if they're stale.
-  - `tools/generate-golden-vcu.mts` and `host/tests/check_vcu.cpp` check the pure parts on random input: codecs, the service gate, rows, the TABLE_TYPE report and diffs.
-  - `tools/generate-golden-service.mts` drives cool-eva's read runner, sweeps and probes, with the OBD poller alongside, against cool-eva's simulated VCU micros.
-  - `host/tests/check_service.cpp` replays each scenario through the C++. Every millisecond must match.
-  - Details are in [`docs/service-mode.md`](docs/service-mode.md).
-- **Numbers and ordering behave as in JavaScript.** `host/tests/check_text.cpp` checks 200,000 doubles are written as Node's `String()` writes them, and `host/tests/check_async.cpp` checks the event loop keeps Node's order.
-- **The settings console behaves.** `host/tests/check_settings.cpp` checks validation, that the secret is never printed, flag spellings, NVS key lengths, restart notices, and that a stored value which no longer validates falls back to its default. It also checks the `status` commands and the report's schedule: off, on, a changed interval, and an on-demand report that leaves the cadence alone.
-- **The signal store follows cool-eva's rules.** `host/tests/check_signals.cpp` checks the deadband gate, non-finite readings, unknown keys and JavaScript-compatible rounding.
-- **The clock gate matches cool-eva.** `tools/generate-golden-clock.mts` drives cool-eva's `GpsClockGate` through 88,000 randomized offers, and `host/tests/check_clock.cpp` requires the same verdict every time.
-  - The scenarios include cold boots at 1970, drift, outliers, week-number rollovers and contested anchors.
-- **The ride log round-trips.** `host/tests/check_ride_log.cpp` checks the sealing rules and the writer's files. It also runs the decoder corpus through the whole C++ pipeline onto disk.
-  - `tools/check-ride-log.mts` then reads it back exactly, simulates power cuts and card damage, and imports it into `rides.db` through cool-eva's `db.ts`.
-  - It runs again on a full card, simulated and then as a real FAT image on macOS. Exactly the newest readings must survive.
-- **The Bluetooth protocol works piece by piece.** `host/tests/check_ble_wire.cpp` checks the crypto against published vectors and the deflate encoder against zlib. It also covers the JSON reader on hostile input, framing, and the handshake, including a wrong secret, the cooldown and replay.
-- **The phone's own code talks to the server.** `tools/check-ble.mts` drives the C++ server, built for the Mac, with cool-eva's `ble-wire.js`, the code the phone runs.
-  - It checks the handshake.
-  - It requires every snapshot to equal live state exactly, at MTU 185 and at MTU 23.
-  - It covers patches, `/status`, tampering, replay, unsubscribe and disconnect.
-  - `/dtc-table` and `/fault-infokeys` must match cool-eva's bodies byte for byte, and `/stored-dtcs` must match what cool-eva's own code serves for the same reply.
-  - The host build needs OpenSSL 3, which Homebrew provides.
+- **The OBD side matches to the millisecond:** the poller, trouble-code reads, the poller's hold and the E-LOCK read, in 72 scenarios over four simulated hours against a scripted ECU. Every millisecond it must send the same frames, record the same signals, log the same lines and serve the same `/stored-dtcs` body. It also checks all 65,536 codes, every NRC and 94,000 ISO-TP frames. Details are in [`docs/obd.md`](docs/obd.md).
+- **Service mode matches to the millisecond.** Its pure parts are checked on random input: codecs, the service gate, rows and diffs. Sweeps and probes, with the OBD poller alongside, run against simulated VCU micros.
+- **The write path matches.** The security key, the reply decoders, the allowlist and gates, and the charge commands are checked on random input. Whole write sessions are compared frame for frame on a scripted bus.
+- **The charge controller matches** bit for bit, and through scripted charges. Details for service mode, writes and the controller are in [`docs/service-mode.md`](docs/service-mode.md).
+- **Numbers and ordering behave as in JavaScript:** 200,000 doubles are written as JavaScript's `String()` writes them, and the event loop keeps Node's order.
+- **The settings and consoles behave:**
+  - validation and secrets never being printed
+  - restart notices and the status report's schedule
+  - Wi-Fi staying off without an admin password
+  - the Wi-Fi console's login, lockout, telnet handling and line editing
+  - HTTP password decoding
+- **The signal store and the clock gate behave.** That covers the deadband, non-finite readings and unknown keys. The clock gate must give the reference's verdict on 88,000 randomized offers, including cold boots at 1970, drift, outliers and week-number rollovers.
+- **The ride log round-trips.** All the decoded frames go through the whole C++ pipeline onto disk, and are read back exactly. Simulated power cuts and card damage lose only the records they touch. The result imports into `rides.db`. It runs again on a full card, simulated and then as a real FAT image on macOS, and exactly the newest readings must survive.
+- **The download is exact.** The ride-log download is checked byte for byte against the writer's real parts:
+  - the live part only to its durable length
+  - a part deleted mid-download
+  - an unmounted card
+- **The Bluetooth link works with the dashboard's own code.** The crypto is checked against published vectors and deflate against zlib. The firmware's server, built for the Mac, is driven by the dashboard's `lib/ble-wire.js`. It checks:
+  - the handshake, tampering and replay
+  - snapshots equal to live state at MTU 185 and 23, and patches
+  - every endpoint's body
+  - `/dl` while the live stream keeps coming
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `components/emcool_can` | Frame decoders and the pack-temperature routing, ported from cool-eva `src/can/`. Pure, and builds on the host too. |
+| `components/emcool_can` | Frame decoders and the pack-temperature routing. Pure, and builds on the laptop too. |
 | `components/emcool_signals` | Signal registry (generated), live state, the deadband gate, and the ride-log exclusions. |
-| `components/emcool_clock` | The GPS clock gate and clock trust, ported from cool-eva `src/gps/clock*.ts`. |
-| `components/emcool_ride_log` | Ride-log segments, the on-card record format and the file writer. Plain POSIX calls, so the host runs the same code. |
-| `components/emcool_ble_wire` | The phone link's wire protocol and session, ported from cool-eva `public/lib/ble-wire.js` and `src/ble-server/session.ts`. Crypto is mbedTLS PSA on the device and OpenSSL on the host. |
-| `components/emcool_ble_server` | The phone link's server: live stream, `/status`, request handling. Ported from cool-eva `src/ble-server/`; transport-free. |
-| `components/emcool_obd` | OBD-II: the PID poller, trouble-code reads over ISO-TP, the poller's hold, the E-LOCK read, and Energica's code table (generated). Ported from cool-eva `src/can/obd*.ts`, `elock.ts`, `iso-tp.ts` and `src/diagnostics/`; transport-free. |
-| `components/emcool_vcu` | Service mode: the KWP2000 client, sweeps and probes, the service gate, the 29 parameter tables (generated), the snapshots on the card, the write engine (allowlist, table gate, write session, service actions, clear-DTCs, charge current/stop/SOC-limit, audit journal) and the automatic charge-current controller. Ported from cool-eva `src/vcu/` and `src/charge/`; transport-free. |
-| `components/emcool_async` | An event loop with Node's ordering rules, and C++20 coroutines on it, for porting cool-eva's async code. |
+| `components/emcool_clock` | The GPS clock gate and clock trust. |
+| `components/emcool_ride_log` | Ride-log segments, the on-card record format, the file writer, and the download. Plain POSIX calls, so the laptop runs the same code. |
+| `components/emcool_ble_wire` | The phone link's wire protocol and session. Crypto is mbedTLS PSA on the device and OpenSSL on the laptop. |
+| `components/emcool_ble_server` | The phone link's server: live stream, request handling, the endpoints. Transport-free. |
+| `components/emcool_obd` | OBD-II: the PID poller, trouble-code reads over ISO-TP, the poller's hold, the E-LOCK read, the hub's fault list, and Energica's code table (generated). Transport-free. |
+| `components/emcool_vcu` | Service mode: the KWP2000 client, sweeps and probes, the service gate, the 29 parameter tables (generated), the snapshots on the card, the write engine and the automatic charge-current controller. Transport-free. |
+| `components/emcool_async` | An event loop with Node's ordering rules, and C++20 coroutines on it. |
 | `components/emcool_text` | Allocation-free text and JSON building, a window at a time for bodies bigger than any buffer. |
-| `components/emcool_settings` | The per-bike settings and the console commands that change them; NVS on the device. |
-| `components/emcool_log` | Logging through ESP_LOG on the device and stderr on the host. |
-| `main` | Firmware: CAN receive and transmit, the decode, diagnostics, ride-log and Bluetooth tasks, the microSD mount, NimBLE, NVS settings and the serial console, the clock step and the status report. |
-| `host` | Host build of the components, plus the checks. |
+| `components/emcool_settings` | The per-bike settings, the console commands, and the Wi-Fi console's login and line handling. |
+| `components/emcool_log` | Logging through ESP_LOG on the device and stderr on the laptop. |
+| `main` | Firmware: CAN receive and transmit, the decode, diagnostics, ride-log and Bluetooth tasks, the microSD mount, NimBLE, Wi-Fi and its servers, NVS settings and the serial console, the clock step and the status report. |
+| `dashboard` | The phone dashboard: a static web app published to GitHub Pages. |
+| `host` | Laptop build of the components, plus the checks. |
 | `tools` | Generators, the ride-log reader and import, and `check.sh`. |
-| `docs` | Design notes: `ride-log-format.md`, `ble.md`, `obd.md`, `service-mode.md`. |
+| `docs` | `setup.md`, `ride-log-format.md`, `ble.md`, `wifi.md`, `obd.md`, `service-mode.md`, `github-pages.md`. |
 
 ## Decisions
 
-- **The ride log is plain text on a FAT32 microSD card**, unlike cool-eva's encrypted log. Position, heading and altitude are never written to it; the list is in `components/emcool_signals/include/emcool/signals/ride_log_policy.hpp`.
-- **The phone dashboard is Bluetooth only.** It stays cool-eva's, loaded from the iOS app or GitHub Pages. The Bluetooth protocol is byte-compatible with cool-eva's `public/lib/ble-wire.js`, and `tools/check-ble.mts` holds it to that.
-- **Wi-Fi is for the laptop, and off by default.** It serves the console and the ride log, never the dashboard. It's a station only, never an access point, and it's plain text behind one admin password. See [`docs/wifi.md`](docs/wifi.md).
-- **Nothing goes on the bus unless a setting asks for it.** Every transmitting feature defaults to off, even where cool-eva's defaults to on. With all of them off, the CAN controller is listen-only.
+- **The ride log is plain text on a FAT32 microSD card.** Position, heading and altitude are never written to it; the list is in `components/emcool_signals/include/emcool/signals/ride_log_policy.hpp`.
+- **The phone dashboard is Bluetooth only,** loaded from GitHub Pages. Every message on the link is sealed with a key derived from the shared secret, because the link can change the bike.
+- **Wi-Fi is for the laptop, and off by default.** It serves the console and the ride log, never the dashboard. It's a station only, never an access point, and it's plain text behind one admin password.
+- **Nothing goes on the bus unless a setting asks for it.** Every transmitting feature defaults to off. With all of them off, the CAN controller is listen-only.
 
 ## License
 
-AGPL-3.0, the same as cool-eva, because the decoders and the generated registry are a port of cool-eva's code. See `LICENSE`.
+AGPL-3.0. See `LICENSE`.

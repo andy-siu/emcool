@@ -1,7 +1,7 @@
 #pragma once
 
-// Decides which frame may write batt_temp_lo / batt_temp_hi, the TRUE pack temperature. A port
-// of cool-eva src/can/pack-temperature.ts, the one config-dependent step in decoding:
+// Decides which frame may write batt_temp_lo / batt_temp_hi, the TRUE pack temperature, the
+// one config-dependent step in decoding:
 //
 // - On a stock Energica the truth is 0x200 b0/b3, which the decoder emits as *_vcu.
 // - With the custom LiBAL BMS config flashed, those bytes are the VCU's lowered view, and the
@@ -14,8 +14,7 @@
 // Until one of those holds, the keys are not emitted at all. A gap reads as "not known yet";
 // a lowered value under the true key would read as a plunge no one could tell from a failing
 // sensor. CUSTOM_BMS_CONFIG says which config to expect, but the frames win: the setting only
-// decides the case the bus can't answer, and which mismatch gets warned about. cool-eva
-// docs/can-decode-findings.md § "0x200 / 0x660" has the configs and the evidence.
+// decides the case the bus can't answer, and which mismatch gets warned about.
 
 #include <cstdint>
 #include <optional>

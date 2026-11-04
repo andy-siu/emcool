@@ -1,7 +1,7 @@
 #pragma once
 
-// The bytes of a VCU parameter read, ported from cool-eva src/vcu/param-codec.ts, the framing half
-// of src/vcu/multiframe-codec.ts, and src/diagnostics/extended-iso-tp.ts. Pure.
+// The bytes of a VCU parameter read, the multi-frame services' framing, and extended-addressing
+// ISO-TP. Pure.
 //
 // KWP2000 over ISO-TP with EXTENDED addressing: byte 0 of every frame is an address (0xA8 or 0xA9
 // out, 0xF1 — the tester — back), so a frame carries 6 payload bytes, not 7. Requests go to
@@ -33,7 +33,7 @@ std::optional<Micro> microNamed(std::string_view name);  // "A8" or "A9", any ca
 int recordLengthFor(StorageType type);
 const char* storageTypeName(StorageType type);
 
-// "0A FF 3C": cool-eva's toHex.
+// "0A FF 3C": upper case with spaces.
 std::string toHex(std::span<const std::uint8_t> bytes);
 
 // --- Requests -------------------------------------------------------------------------------
@@ -124,7 +124,7 @@ struct VcuMultiFrameReply {
 };
 VcuMultiFrameReply decodeMultiFrameReply(std::span<const std::uint8_t> payload, int expectedService);
 
-// --- The multi-frame services (multiframe-codec.ts) -----------------------------------------
+// --- The multi-frame services ---------------------------------------------------------------
 //
 // Two, both reads: `17 <component>` ReadDTCInformation for one freeze frame, and `18 02 FF FF`
 // ReadDTCByStatus for the list of components that have one. Like the parameter requests, the
@@ -165,7 +165,7 @@ struct ExtendedIsoTpResult {
 
 class ExtendedIsoTpReassembler {
  public:
-  // cool-eva's default cap is 64; a parameter read uses 32, the multi-frame services 256.
+  // 64 by default; a parameter read uses 32, the multi-frame services 256.
   explicit ExtendedIsoTpReassembler(int maxPayloadBytes = 64);
   ExtendedIsoTpResult push(std::span<const std::uint8_t> frame);
   void reset();

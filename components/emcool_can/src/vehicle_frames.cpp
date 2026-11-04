@@ -1,7 +1,6 @@
 #include "decoders.hpp"
 
-// The small vehicle-frame decoders, each a direct port of its own cool-eva module
-// (named above it), where the evidence for every field is kept.
+// The small vehicle-frame decoders.
 
 namespace emcool::can {
 
@@ -15,7 +14,6 @@ bool isSaturated(unsigned raw) { return raw == 0 || raw >= kSaturatedHigh; }
 
 }  // namespace
 
-// src/can/cluster-range.ts
 void decodeClusterRangeFrame(FrameBytes data, DecodedValues& out) {
   if (data.size() < 8) {
     return;
@@ -23,7 +21,7 @@ void decodeClusterRangeFrame(FrameBytes data, DecodedValues& out) {
   out.push("range_can_km", u16le(data[2], data[3]));
 }
 
-// src/can/consumption.ts — each pair is withheld together if either half is saturated.
+// Each pair is withheld together if either half is saturated.
 void decodeConsumptionFrame(FrameBytes data, DecodedValues& out) {
   if (data.size() < 8) return;
   const unsigned instantKmPerKwh = u16le(data[0], data[1]);
@@ -40,7 +38,6 @@ void decodeConsumptionFrame(FrameBytes data, DecodedValues& out) {
   }
 }
 
-// src/can/drive.ts
 void decodeDriveTorqueFrame(FrameBytes data, DecodedValues& out) {
   if (data.size() < 4) return;
   out.push("drive_torque_cmd_nm", i16le(data[0], data[1]) / 10.0);
@@ -59,7 +56,6 @@ void decodeRedundantSpeedFrame(FrameBytes data, DecodedValues& out) {
   out.push("speed_redundant_b_raw", u16le(data[2], data[3]));
 }
 
-// src/can/psu.ts
 void decodePsuFrame(FrameBytes data, DecodedValues& out) {
   if (data.size() < 6) return;
   out.push("psu_12v_mv", u16le(data[0], data[1]));
@@ -67,7 +63,7 @@ void decodePsuFrame(FrameBytes data, DecodedValues& out) {
   out.push("psu_12v_load_ma", u16le(data[4], data[5]));
 }
 
-// src/can/vcu-digitals.ts — 0x102 b0, the handlebar SWITCHES (b2 carries the lamp outputs).
+// 0x102 b0, the handlebar SWITCHES (b2 carries the lamp outputs).
 void decodeHandlebarSwitches(std::uint8_t handlebar, DecodedValues& out) {
   out.push("btn_mode_left", bit(handlebar, 0));
   out.push("btn_mode_right", bit(handlebar, 1));
@@ -78,7 +74,7 @@ void decodeHandlebarSwitches(std::uint8_t handlebar, DecodedValues& out) {
   out.push("btn_indicator_cancel", bit(handlebar, 5));
 }
 
-// src/can/vcu-digitals.ts — 0x102 b3.
+// 0x102 b3.
 void decodeVehicleFlagsByte3(std::uint8_t byte3, DecodedValues& out) {
   out.push("fast_dc_contactor", bit(byte3, 0));
   out.push("cruise_active", bit(byte3, 1));
@@ -90,7 +86,6 @@ void decodeVehicleFlagsByte3(std::uint8_t byte3, DecodedValues& out) {
   out.push("mag_good", bit(byte3, 6));
 }
 
-// src/can/vcu-flags.ts
 void decodeVcuFlagsFrame(FrameBytes data, DecodedValues& out) {
   if (data.size() < 8) return;
   out.push("vcu_flags_low", u32le(data, 0));
@@ -109,8 +104,8 @@ void decodeVcuFlagsFrame(FrameBytes data, DecodedValues& out) {
   out.push("vcu_err_leak_detect", bit(data[6], 0));
 }
 
-// src/can/vehicle-status.ts — the VCU's own state machine. The same two state words also
-// arrive over BLE as `vehicle_state`/`vehicle_substate`; these carry `_can`.
+// The VCU's own state machine. The same two state words also arrive over BLE
+// as `vehicle_state`/`vehicle_substate`; these carry `_can`.
 void decodeVehicleStatusFrame(FrameBytes data, DecodedValues& out) {
   if (data.size() < 8) return;
   const std::uint8_t flags = data[3];

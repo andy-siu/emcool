@@ -1,10 +1,10 @@
 #pragma once
 
-// The live telemetry the phone dashboard subscribes to, as cool-eva src/ws.ts DashboardMessage
+// The live telemetry the phone dashboard subscribes to, as the dashboard's DashboardMessage
 // JSON: {"type":"snapshot"|"patch","ts":…,"signals":{"key":{"value","unit","group","ts"}}}.
-// cool-eva sends a whole snapshot as one message; here one is ~25 KB of JSON against ~4.5 KB
-// messages, so it goes in chunks. That is safe because the dashboard's store (cool-eva
-// public/lib/store.js apply()) folds every message in key by key, snapshot or patch alike.
+// A whole snapshot is ~25 KB of JSON against ~4.5 KB messages, so it goes in chunks. That is
+// safe because the dashboard's store (dashboard/lib/store.js apply()) folds every message in
+// key by key, snapshot or patch alike.
 // The one thing a chunk boundary can cost: the pack-resistance estimate pairs pack_v with
 // pack_a only within one message, so a snapshot that splits them gives it no pair — patches,
 // which carry each 0x200 frame's values together, still do.

@@ -1,17 +1,16 @@
 #pragma once
 
-// The bike's end of the phone link, ported from cool-eva src/ble-server/server.ts and
-// stream.ts: frames in from the rx characteristic, a session per authenticated phone, the
-// live telemetry stream, and requests answered by a RequestHandler. Transport-free: the
-// firmware's NimBLE glue (and the host harness) deliver writes and pull notifications, and
-// every method is called from one task.
+// The bike's end of the phone link: frames in from the rx characteristic, a session per
+// authenticated phone, the live telemetry stream, and requests answered by a RequestHandler.
+// Transport-free: the firmware's NimBLE glue (and the host harness) deliver writes and pull
+// notifications, and every method is called from one task.
 //
 // Outbound work is generated lazily, a slot at a time, as notifications drain: response
 // pieces first, then snapshot chunks, then patches. So the radio's real pace — NimBLE has
-// genuine flow control where cool-eva's BlueZ had to be paced by a guess — is what sets how
-// fast the snapshot goes, and nothing is built that has nowhere to go. cool-eva drops patches
-// while its queue is deep; here a slow link instead leaves changes marked in the store, and
-// the next patch carries their latest values, so nothing is shed and nothing goes stale.
+// genuine flow control, so no pacing has to be guessed — is what sets how fast the
+// snapshot goes, and nothing is built that has nowhere to go. Patches aren't dropped
+// while a queue is deep; a slow link instead leaves changes marked in the store, and the
+// next patch carries their latest values, so nothing is shed and nothing goes stale.
 
 #include <array>
 #include <cstddef>
@@ -45,7 +44,7 @@ class BleServer {
   static constexpr std::int64_t kHeartbeatMs = 5000;
   static constexpr std::size_t kOutboundSlots = 3;
   static constexpr std::size_t kMaxQueuedRequests = 8;
-  // cool-eva sends response bodies in pieces of at most this much, each its own message.
+  // Response bodies go in pieces of at most this much, each its own message.
   static constexpr std::size_t kResponseChunkBytes = 4 * 1024;
   static constexpr std::uint16_t kDefaultAttMtu = 23;
   static constexpr std::int64_t kRequestTimeoutMs = 180000;
@@ -86,8 +85,8 @@ class BleServer {
     std::int64_t id;
     std::array<char, 8> method;
     std::array<char, 128> path;
-    // The X-Cool-Eva header's value, which says what a state-changing request is for.
-    std::array<char, 24> coolEva;
+    // The X-Emcool header's value, which says what a state-changing request is for.
+    std::array<char, 24> emcoolHeader;
   };
 
   // kWaiting: the handler will answer later (a probe, say), and is asked each tick.

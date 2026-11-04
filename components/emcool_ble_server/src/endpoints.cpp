@@ -24,9 +24,9 @@ struct GroupCount {
   bool onDemandOnly;
 };
 
-// cool-eva onDemandOnlyGroups(): a group whose every signal is written only on request reads
-// 0 live at rest, and anything filtering on live == 0 to find a dead source would fire on it
-// forever — so it is left out of the summary.
+// A group whose every signal is written only on request reads 0 live at rest, and anything
+// filtering on live == 0 to find a dead source would fire on it forever — so it is left out
+// of the summary.
 std::size_t collectGroups(GroupCount (&groups)[kMaxGroups]) {
   std::size_t count = 0;
   for (const signals::SignalDef& signal : signals::signalRegistry()) {
@@ -147,7 +147,7 @@ std::optional<HttpResponse> DashboardEndpoints::service(const HttpRequest& reque
     const char* type = status == 200 ? "text/csv; charset=utf-8" : kText;
     return fromParts(status, type, std::move(backup));
   }
-  const bool serviceMode = request.coolEva == vcu::kServiceModeHeaderValue;
+  const bool serviceMode = request.emcoolHeader == vcu::kServiceModeHeaderValue;
   const std::string needsServiceMode = "starting a read needs the x-emcool: service-mode header\n";
   ServiceRequest submitted{ServiceRequest::Kind::kReadState, {}, {}, {}, {}, {}, {}, {}};
   if (route == "/lifetime-read" || route == "/freeze-frame-read") {
@@ -161,14 +161,14 @@ std::optional<HttpResponse> DashboardEndpoints::service(const HttpRequest& reque
     if (!serviceMode) return fromText(403, kText, needsServiceMode);
     submitted.kind = lifetime ? ServiceRequest::Kind::kLifetimeRead : ServiceRequest::Kind::kFreezeFrameRead;
   } else if (route == "/lifetime-stats" || route == "/freeze-frames") {
-    // Files, not the bus; cool-eva serves them to any method.
+    // Files, not the bus; served to any method.
     submitted.kind = route == "/lifetime-stats" ? ServiceRequest::Kind::kLifetimeStats : ServiceRequest::Kind::kFreezeFrames;
   } else if (route == "/expected-faults") {
     if (method == "GET") {
       submitted.kind = ServiceRequest::Kind::kExpectedFaults;
     } else if (method != "POST") {
       return fromText(405, kText, "use GET to read the expected-fault list and POST to change it\n");
-    } else if (request.coolEva != "expected-faults") {
+    } else if (request.emcoolHeader != "expected-faults") {
       return fromText(403, kText, "changing the list needs the x-emcool: expected-faults header\n");
     } else {
       submitted.kind = ServiceRequest::Kind::kSetExpectedFault;
@@ -181,7 +181,7 @@ std::optional<HttpResponse> DashboardEndpoints::service(const HttpRequest& reque
     if (method == "GET") {
       submitted.kind = ServiceRequest::Kind::kChargeAutoStatus;
     } else if (method == "POST") {
-      if (request.coolEva != "charge-auto")
+      if (request.emcoolHeader != "charge-auto")
         return fromText(403, kText, "A POST here wants the x-emcool: charge-auto header\n");
       submitted.kind = ServiceRequest::Kind::kChargeAutoSet;
       submitted.target = queryValue(query, "mode");  // the mode, carried in `target`
@@ -194,7 +194,7 @@ std::optional<HttpResponse> DashboardEndpoints::service(const HttpRequest& reque
     if (method == "GET") {
       submitted.kind = ServiceRequest::Kind::kWriteStatus;
     } else if (method == "POST") {
-      if (request.coolEva != "service-write")
+      if (request.emcoolHeader != "service-write")
         return fromText(403, kText, "writing needs the x-emcool: service-write header\n");
       submitted.kind = ServiceRequest::Kind::kWritePerform;
     } else {

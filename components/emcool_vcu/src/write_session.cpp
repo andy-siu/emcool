@@ -200,7 +200,7 @@ async::Task<bool> WriteSession::openSession(Micro micro) {
       isSessionOpened(result.frame.payload);
 }
 
-// A raw record read by identifier (no interpretation). cool-eva readIdentifier.
+// A raw record read by identifier (no interpretation).
 namespace {
 struct IdentifierRead {
   bool ok = false;

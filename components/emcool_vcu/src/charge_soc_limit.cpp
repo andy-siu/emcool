@@ -9,7 +9,7 @@
 
 // The bike's "stop charging at N %" setting over the 0x120 dash-command channel — the one write
 // action with a REAL read-back, because the channel answers a read with the VCU's stored value
-// rather than an echo. Ported from cool-eva src/vcu/charge-soc-limit.ts.
+// rather than an echo.
 
 namespace emcool::vcu {
 

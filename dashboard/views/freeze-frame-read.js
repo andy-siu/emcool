@@ -103,7 +103,7 @@ async function performFreezeFrameRead() {
     // implying nothing happened.
     console.warn("freeze-frame-read: request failed", error);
     message.val =
-      `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "The read may have completed anyway; the Faults tab shows the age of what is stored.";
   } finally {
     busy.val = false;

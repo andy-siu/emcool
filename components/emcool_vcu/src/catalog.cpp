@@ -60,7 +60,7 @@ const VcuParameterTable* parameterTableFor(int tableType) {
 bool isTableTypeIndex(int index) { return index == kTableTypeIndices[0] || index == kTableTypeIndices[1]; }
 
 std::string describeTableType(double raw) {
-  // cool-eva's >> and & work on the value as a 32-bit integer.
+  // As JavaScript's >> and & do, work on the value as a 32-bit integer.
   const auto integer = static_cast<std::int64_t>(raw);
   const auto bits = static_cast<std::int32_t>(static_cast<std::uint32_t>(static_cast<std::uint64_t>(integer)));
   const int family = (bits >> 12) & 0xf;
@@ -110,12 +110,12 @@ ParameterNames::Selection ParameterNames::select(int tableType) {
   }
   const VcuParameterTable* table = parameterTableFor(tableType);
   if (table == nullptr) {
-    // cool-eva points at its extract script; on emcool a new table comes from cool-eva, regenerated.
+    // A new table comes in through tools/generate-vcu-tables.mts, not an extract script.
     const std::string message = "vcu-table: ⚠️  this bike reports " + describeTableType(tableType) +
                                 ", which this software does not carry — keeping " +
                                 describeTableType(active_->tableType) +
-                                "'s names, which may be WRONG for this bike. Add the table to cool-eva (its README: "
-                                "\"Adding your bike's VCU parameter table\") and run tools/generate-vcu-tables.mts. "
+                                "'s names, which may be WRONG for this bike. Add the table as docs/service-mode.md "
+                                "(\"Parameter tables\") describes and run tools/generate-vcu-tables.mts. "
                                 "Carried: " +
                                 knownTableTypesText() + ".";
     logWarning(kTag, "%s", message.c_str() + std::strlen("vcu-table: "));
@@ -157,7 +157,8 @@ std::optional<TableTypeVerdict> ParameterNames::checkTableType(int index, double
       "'s and may belong to a different parameter — routing and record widths are the same across all of Energica's "
       "tables, so a wrong name still reads and still writes cleanly. On 20 of the 28 tables shipped in 2024, ids 70–94 "
       "are a regen curve rather than the battery cell block, so this is not a small difference. Do not write anything "
-      "by name until the table is added: add it to cool-eva (see its README) and run tools/generate-vcu-tables.mts. "
+      "by name until the table is added: add it as docs/service-mode.md's Parameter tables section describes and "
+      "run tools/generate-vcu-tables.mts. "
       "Carried today: " +
       knownTableTypesText() + ".";
   return TableTypeVerdict{index, parameter->micro, value, false, message};

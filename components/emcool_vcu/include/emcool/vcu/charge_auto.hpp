@@ -1,15 +1,13 @@
 #pragma once
 
-// The automatic charge-current controller, ported from cool-eva src/charge/auto.ts: the sample
-// buffers, the 60 s tick, the rider-override standdown, the mode and reason, and the records. Its
-// decision is charge_auto_curve.hpp's pure decideChargeCurrent; this is the stateful shell that
-// feeds it live signals and acts on it.
+// The automatic charge-current controller: the sample buffers, the 60 s tick, the rider-override
+// standdown, the mode and reason, and the records. Its decision is charge_auto_curve.hpp's pure
+// decideChargeCurrent; this is the stateful shell that feeds it live signals and acts on it.
 //
-// cool-eva subscribes to signal changes via onChange; emcool feeds the three signals it watches
-// (batt_temp_hi, soc, dc_charge_limit_selected_a) and charge_manager_state in through observe*()
-// from the decode path, exactly as the ack-watch is fed. The tick runs on the diagnostics loop. It
-// commands through a sink, which the diagnostics task backs with the write runner's charge-current
-// (origin=automatic).
+// emcool feeds the three signals it watches (batt_temp_hi, soc, dc_charge_limit_selected_a) and
+// charge_manager_state in through observe*() from the decode path, exactly as the ack-watch is
+// fed. The tick runs on the diagnostics loop. It commands through a sink, which the diagnostics
+// task backs with the write runner's charge-current (origin=automatic).
 
 #include <cstdint>
 #include <functional>
@@ -42,7 +40,7 @@ struct ChargeCommandResult {
 };
 using ChargeCommandSink = std::function<async::Task<ChargeCommandResult>(int amps)>;
 
-// What the controller reads from live state (cool-eva's latestValue/ageMs), and the monotonic now.
+// What the controller reads from live state (latestValue/ageMs), and the monotonic now.
 struct ChargeAutoReaders {
   std::function<std::optional<double>(std::string_view key)> latestValue;
   std::function<std::optional<double>(std::string_view key)> ageMs;
@@ -65,7 +63,7 @@ class ChargeAutomatic {
   // A manual one stands the controller down for this charge.
   void noteChargeCurrentOutgoing(int amps, bool manual);
 
-  // The signals cool-eva's onChange feeds. Called from the decode path on the owning loop.
+  // The watched signals, as they arrive. Called from the decode path on the owning loop.
   void observeTemperature(double celsius);
   void observeSoc(double percent);
   void observeSelectedCurrent(double amps);        // dc_charge_limit_selected_a — a rider setpoint?

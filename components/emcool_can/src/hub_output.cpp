@@ -4,7 +4,7 @@
 #include "emcool/can/gps.hpp"
 
 // 0x410 message type 3: the dash's speed and the motor's torque, with power derived from
-// torque × rpm. Ported from cool-eva src/can/hub-output.ts and src/hub/output.ts.
+// torque × rpm.
 
 namespace emcool::can {
 

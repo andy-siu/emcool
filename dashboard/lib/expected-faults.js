@@ -121,7 +121,7 @@ export async function setExpectedFault(component, symptom, expected) {
     console.warn("expected-faults: could not save the change", error);
     expectedFaultsError.val = {
       key,
-      message: `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. The change may have saved anyway.`,
+      message: `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. The change may have saved anyway.`,
     };
   } finally {
     writing.val = "";

@@ -31,7 +31,7 @@
 namespace emcool::ride_log {
 
 inline constexpr std::uint64_t kMegabyte = 1024 * 1024;
-// Roughly the last 40 minutes of riding (cool-eva's 120-170 readings a second), and about a quarter
+// Roughly the last 40 minutes of riding (at 120-170 readings a second), and about a quarter
 // of that over the air once the link has compressed it.
 inline constexpr std::uint64_t kDefaultDownloadBytes = 16 * kMegabyte;
 // The most one download carries: the phone holds all of it in memory before it saves it.

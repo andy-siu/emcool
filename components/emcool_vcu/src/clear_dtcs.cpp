@@ -11,9 +11,9 @@
 #include "emcool/vcu/write_session.hpp"
 
 // OBD Mode 04, and the read-back that is the only thing separating "the bike said 44" from "the
-// bike erased its fault memory". Ported from cool-eva src/vcu/clear-dtcs.ts. The poller is parked
-// first (nothing is sent if it will not park) and the gate is re-checked twice inside the hold,
-// because the watchdog cannot cover a pre-frame window with nothing in flight to abort.
+// bike erased its fault memory". The poller is parked first (nothing is sent if it will not
+// park) and the gate is re-checked twice inside the hold, because the watchdog cannot cover a
+// pre-frame window with nothing in flight to abort.
 
 namespace emcool::vcu {
 

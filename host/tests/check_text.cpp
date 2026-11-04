@@ -1,5 +1,5 @@
 // TextBuffer writes numbers exactly as JavaScript does, so a body emcool builds can equal
-// cool-eva's JSON.stringify byte for byte: tools/generate-golden-numbers.mts supplies the doubles
+// JavaScript's JSON.stringify byte for byte: tools/generate-golden-numbers.mts supplies the doubles
 // and Node's String() of each. Also the JSON string escapes, and windows onto a longer text.
 //
 //   check_text <golden numbers>

@@ -1,10 +1,10 @@
 #pragma once
 
 // The live value of every signal, and the log-on-change gate in front of the ride log.
-// A port of cool-eva src/can/signals.ts recordArrival(): every reading refreshes live state
-// and its arrival time; only a change past the signal's deadband is passed to the ride log
-// and marked changed for the phone's live stream (cool-eva's onChange). Not thread-safe:
-// the firmware guards it with one mutex shared by the decode task and the Bluetooth task.
+// Every reading refreshes live state and its arrival time; only a change past the signal's
+// deadband is passed to the ride log and marked changed for the phone's live stream. Not
+// thread-safe: the firmware guards it with one mutex shared by the decode task and the
+// Bluetooth task.
 
 #include <array>
 #include <bitset>

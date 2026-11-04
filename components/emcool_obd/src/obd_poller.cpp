@@ -19,7 +19,7 @@ struct PidDef {
 
 constexpr int kDiagnostic = ObdPoller::kDiagnosticRoundDivisor;
 
-// cool-eva's PIDS, in its order.
+// The PIDs, in the order they are polled.
 constexpr std::array<PidDef, 15> kPids = {{
     {0x0d, 0},           // speed_kmh
     {0x0c, 0},           // motor_rpm
@@ -110,7 +110,7 @@ void ObdPoller::codeReadDone(DtcReadOutcome result, Now now) {
   switch (codeStep_) {
     case CodeStep::kStored:
       storedDtcReads_ += 1;
-      // Pending and permanent have never answered on cool-eva's bike, so they're asked rarely.
+      // Pending and permanent have never answered on this bike, so they're asked rarely.
       if (storedDtcReads_ % kSilentModeReadEvery != 1 || hold_.parkedForHold(now.monotonicMs)) {
         endRound(now);
         return;
@@ -132,8 +132,8 @@ void ObdPoller::codeReadDone(DtcReadOutcome result, Now now) {
 
 void ObdPoller::endRound(Now now) { sleepFor(std::max<std::int64_t>(0, intervalMs_ - (now.monotonicMs - roundStartedMs_)), now); }
 
-// cool-eva sleeps with setTimeout, which Node never runs sooner than 1 ms; so a round that
-// overran its interval still leaves a 1 ms gap here, as there.
+// A round that overran its interval still leaves a 1 ms gap, as Node's setTimeout never runs
+// sooner than 1 ms.
 void ObdPoller::sleepFor(std::int64_t delayMs, Now now) {
   wakeAt_ = order_.at(now.monotonicMs + std::max<std::int64_t>(1, delayMs));
   phase_ = Phase::kSleeping;

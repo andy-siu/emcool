@@ -15,30 +15,30 @@ constexpr const char* kTag = "settings";
 
 constexpr SettingSpec kSpecs[] = {
     {"BLE_SECRET", "ble_secret", SettingType::kSecret, "", 12, 128, false,
-     "The phone dashboard's link secret, as cool-eva's BLE_SECRET. 12-128 characters; unset keeps Bluetooth off."},
+     "The phone dashboard's link secret, 12-128 characters. Unset keeps Bluetooth off."},
     // The scan response has room for a 29-byte name.
     {"BLE_NAME", "ble_name", SettingType::kText, "emcool", 1, 29, false,
      "The name the phone's device list shows. The dashboard finds the bike by its service UUID, not this."},
     {"CUSTOM_BMS_CONFIG", "custom_bms", SettingType::kFlag, "0", 0, 0, false,
-     "1 only if the BMS runs the custom LiBAL config, as cool-eva's CUSTOM_BMS_CONFIG. The frames still win."},
-    // Everything that puts frames on the bike's bus is off until asked for; cool-eva has
-    // OBD_ENABLED and ELOCK_ENABLED on unless set to 0.
+     "1 only if the BMS runs the custom LiBAL config, for working out which frame carries the true pack temperature. "
+     "The frames still win."},
+    // Everything that puts frames on the bike's bus is off until asked for.
     {"OBD_ENABLED", "obd_enabled", SettingType::kFlag, "0", 0, 0, false,
-     "1 to poll OBD-II (speed, rpm, temperatures, 12 V, trouble codes) as cool-eva's OBD_ENABLED. Off, "
+     "1 to poll OBD-II (speed, rpm, temperatures, 12 V, trouble codes). Off, "
      "emcool only listens: the CAN controller doesn't even acknowledge frames."},
     {"ELOCK_ENABLED", "elock_enabled", SettingType::kFlag, "0", 0, 0, false,
-     "1 to read keys_paired from the E-LOCK once at startup, as cool-eva's ELOCK_ENABLED. Needs OBD_ENABLED."},
+     "1 to read keys_paired from the E-LOCK once at startup. Needs OBD_ENABLED."},
     {"SERVICE_MODE_ENABLED", "service_mode", SettingType::kFlag, "0", 0, 0, false,
-     "1 to let the dashboard read the VCU's calibration parameters (Menu → Service mode), as cool-eva's "
-     "SERVICE_MODE_ENABLED, only while the bike is parked and out of drive. Needs OBD_ENABLED."},
+     "1 to let the dashboard read the VCU's calibration parameters (Menu → Service mode), only while the bike is "
+     "parked and out of drive. Needs OBD_ENABLED."},
     {"SERVICE_WRITE_ENABLED", "service_write", SettingType::kFlag, "0", 0, 0, false,
      "1 to let the dashboard WRITE to the VCU (/vcu-write: allowlisted parameters, set service point, sync the "
-     "clock, clear DTCs, charge current/stop, SOC limit, reset), as cool-eva's SERVICE_WRITE_ENABLED. Off by default "
+     "clock, clear DTCs, charge current/stop, SOC limit, reset). Off by default "
      "and the only transmitting switch so on purpose: a web page can change the bike. Needs OBD_ENABLED and "
      "SERVICE_MODE_ENABLED."},
     {"CHARGE_AUTO_ENABLED", "charge_auto", SettingType::kFlag, "0", 0, 0, false,
-     "1 to let the automatic charge-current controller command the bike's charge current on a timer, as cool-eva's "
-     "CHARGE_AUTO_ENABLED. Needs SERVICE_WRITE_ENABLED — it commands writes. The most autonomous feature here."},
+     "1 to let the automatic charge-current controller command the bike's charge current on a timer. Needs "
+     "SERVICE_WRITE_ENABLED — it commands writes. The most autonomous feature here."},
     // Wi-Fi: off until WIFI_SSID and ADMIN_PASSWORD are both set. The bike joins that network and serves the
     // console on port 23 and the ride log on port 80, both behind ADMIN_PASSWORD.
     {"WIFI_SSID", "wifi_ssid", SettingType::kText, "", 0, 32, false,

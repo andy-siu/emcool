@@ -1,14 +1,13 @@
 #pragma once
 
-// ISO 15765-2 (ISO-TP) receive-side reassembly, ported from cool-eva src/can/iso-tp.ts: the
-// 39 stored trouble codes don't fit one frame, so the bike answers mode 03 as a first frame
-// plus consecutive frames. Pure: frames in, a payload out; sending the flow control the first
-// frame asks for is the caller's job.
+// ISO 15765-2 (ISO-TP) receive-side reassembly: the 39 stored trouble codes don't fit one
+// frame, so the bike answers mode 03 as a first frame plus consecutive frames. Pure: frames
+// in, a payload out; sending the flow control the first frame asks for is the caller's job.
 //
 // Each push() says what happened. A transfer that goes wrong is abandoned and reset, rather
 // than handing back a payload with a hole in it; a frame that can't belong to any transfer
-// is ignored and left the state alone. As in cool-eva, every push counts towards the frame
-// cap, including ones that are ignored.
+// is ignored and left the state alone. Every push counts towards the frame cap, including
+// ones that are ignored.
 
 #include <array>
 #include <cstddef>
@@ -32,7 +31,7 @@ struct IsoTpResult {
 
 class IsoTpReassembler {
  public:
-  // cool-eva's cap: 1 KB is far above any reply this bike gives, and keeps a malicious or
+  // 1 KB is far above any reply this bike gives, and keeps a malicious or
   // corrupted first frame from claiming 4 KB.
   static constexpr std::size_t kMaxPayloadBytes = 1024;
   static constexpr std::size_t kMaxFrames = (kMaxPayloadBytes - 6 + 6) / 7 + 1;

@@ -40,7 +40,7 @@ Then connect to the bike:
 1. Set a `BLE_SECRET` on the bike from the serial console (see [`setup.md`](setup.md)) and `restart`.
 2. In the dashboard's menu under **Bluetooth**, enter the same phrase and tap **Connect**.
 
-The page talks to the bike directly over Bluetooth LE — GitHub Pages only hosts the files, and nothing about the ride (or the bike's data) goes to GitHub. See [`ble.md`](ble.md) for the protocol and [`../dashboard/README.md`](../dashboard/README.md) for what the copy changed from cool-eva.
+The page talks to the bike directly over Bluetooth LE — GitHub Pages only hosts the files, and nothing about the ride (or the bike's data) goes to GitHub. See [`ble.md`](ble.md) for the protocol and [`../dashboard/README.md`](../dashboard/README.md) for the dashboard itself.
 
 ## Why not "deploy from a branch"?
 

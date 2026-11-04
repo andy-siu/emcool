@@ -1,9 +1,8 @@
 #pragma once
 
-// Did a charge-current command take? Ported from cool-eva src/charge/acknowledge.ts: pure — the
-// commanded amps, when it was sent, and the samples of the bike's charge request around then, in;
-// a verdict out. A reduction is the only thing that proves a command took, because the station
-// caps what actually flows.
+// Did a charge-current command take? Pure — the commanded amps, when it was sent, and the samples
+// of the bike's charge request around then, in; a verdict out. A reduction is the only thing that
+// proves a command took, because the station caps what actually flows.
 
 #include <cstdint>
 #include <string>

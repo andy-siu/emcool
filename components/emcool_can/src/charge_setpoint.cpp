@@ -1,7 +1,7 @@
 #include "decoders.hpp"
 
 // 0x121, the dash's charge commands. EVENTS, not streams: they fire only when the rider moves
-// the dial. Ported from cool-eva src/can/charge-setpoint.ts and src/can/charge-soc-limit.ts.
+// the dial.
 
 namespace emcool::can {
 

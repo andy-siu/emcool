@@ -1,10 +1,10 @@
 # Service mode: reading the VCU's parameters
 
-emcool's port of cool-eva's service-mode reads:
+emcool's service mode reads:
 - **The sweep:** reads every calibration parameter off the VCU's two micros, A9 and A8, into a snapshot the dashboard's parameters page shows and exports.
 - **The probe:** reads one identifier from any bank.
 
-The code is in `components/emcool_vcu/`. It's ported from cool-eva's `src/vcu/` (`kwp-client`, `multiframe-transfer`, `param-codec`, `multiframe-codec`, `param-table`, `table-catalog`, `a8-firmware-rows`, `snapshot`, `snapshot-store`, `sweep`, `sweep-targets`, `probe`, `read-runner`, `service-gate`, `charge-session`, `bus-lease`, `backup-csv`), `src/diagnostics/extended-iso-tp.ts`, and the `/vcu-read`, `/vcu-probe`, `/vcu-params` and `/vcu-backup` handlers.
+The code is in `components/emcool_vcu/`.
 
 The read side only reads. Its encoders build five requests and check the service byte against that list again:
 - `10 81`, `3E` and `22 hi lo`, for the parameters
@@ -14,7 +14,7 @@ Writing is a separate engine behind its own switch — see [Writing to the VCU](
 
 ## Freeze frames and the lifetime statistics
 
-Two more reads come with service mode. Both are ported from cool-eva's `lifetime-read`, `freeze-frame-read`, `freeze-frame-list`, `lifetime-store`, `freeze-frame-store` and `src/diagnostics/freeze-frame.ts` and `lifetime-*.ts`.
+Two more reads come with service mode.
 
 - **The lifetime statistics** (`/lifetime-read`, then `/lifetime-stats`) read freeze-frame components 51 and 52 off the A8. These are the odometer, SOH and cells, then the charge counters.
 - **The stored freeze frames** (`/freeze-frame-read`, then `/freeze-frames`) are what the VCU recorded when each stored code set:
@@ -23,9 +23,9 @@ Two more reads come with service mode. Both are ported from cool-eva's `lifetime
 
 Both park the OBD poller and run under the same gate as a probe.
 
-Freeze frames are decoded with Energica's 120-field infokey table and per-fault shortlists. `tools/generate-diagnostic-tables.mts` generates them from cool-eva. Readings no sensor could give are rejected, not shown.
+Freeze frames are decoded with Energica's 120-field infokey table and per-fault shortlists. `tools/generate-diagnostic-tables.mts` generates them from the reference implementation. Readings no sensor could give are rejected, not shown.
 
-The readings are kept beside the snapshots, as cool-eva keeps them:
+The readings are kept beside the snapshots:
 - **Files:** `lifetime.json` and `freeze-frames.json` for the latest, and `lifetime-<ISO>.json` and `freeze-frames-<ISO>.json` for every read.
 - **Replacing:** a read that answered less than the stored one doesn't replace it.
 
@@ -33,7 +33,7 @@ The readings are kept beside the snapshots, as cool-eva keeps them:
 
 ## Turning it on
 
-Off by default. cool-eva allows it unless `SERVICE_MODE_ENABLED=0`.
+Off by default.
 
 ```
 emcool> set OBD_ENABLED 1            the bus must be active
@@ -44,11 +44,11 @@ emcool> restart
 - **With `SERVICE_MODE_ENABLED` 0:**
   - The dashboard still shows the last snapshot and exports it.
   - Starting a read or a probe answers 403.
-- **With `OBD_ENABLED` 0:** a read is refused as cool-eva's is, because the bus is listen-only.
+- **With `OBD_ENABLED` 0:** a read is refused, because the bus is listen-only.
 
 ## When it reads
 
-Only while the bike is safe to service. That's cool-eva's service gate, every reading fresh:
+Only while the bike is safe to service. That's the service gate, every reading fresh:
 - **Stopped:** `speed_can_kmh`, `motor_rpm_can` and `moving` all read 0, and the OBD speed agrees when there is one.
 - **Out of drive:** `go`, `go_request` and `throttle_on` all read 0.
 - **Not energized:** `energized` reads 0, unless a charge is live.
@@ -63,21 +63,28 @@ In `/sdcard/vcu-params/`:
 
 | File | What |
 | --- | --- |
-| `sweep.partial.jsonl` | Every row as it's read, `{"at":…, …row}`. This is cool-eva's resume file, so a stopped sweep picks up where it left off. emcool also writes each snapshot from it, so a sweep never holds its 302 rows in memory. |
-| `<ISO time>.jsonl` | Each snapshot: a header line, then one row per line, each written as cool-eva's `JSON.stringify` writes a row. Never rewritten. |
-| `latest.txt` | The name of the snapshot the dashboard is shown. This is cool-eva's `latest.json`, kept as a pointer so the phone never reads a file that's being replaced. A sweep moves it only if it read at least as much as the last. |
+| `sweep.partial.jsonl` | Every row as it's read, `{"at":…, …row}`. This is the resume file, so a stopped sweep picks up where it left off. emcool also writes each snapshot from it, so a sweep never holds its 302 rows in memory. |
+| `<ISO time>.jsonl` | Each snapshot: a header line, then one row per line, each written as JavaScript's `JSON.stringify` writes a row. Never rewritten. |
+| `latest.txt` | The name of the snapshot the dashboard is shown. It's a pointer, so the phone never reads a file that's being replaced. A sweep moves it only if it read at least as much as the last. |
 
-cool-eva keeps a snapshot as one JSON document. emcool keeps JSON lines, because a 100 KB document doesn't fit the ESP32's heap. The dashboard's bodies are written out a row at a time, in cool-eva's shape, and the rows are re-named from the parameter table the bike reports, as cool-eva does when it loads one.
+A snapshot is kept as JSON lines, not one JSON document, because a 100 KB document doesn't fit the ESP32's heap. The dashboard's bodies are written out a row at a time. When a snapshot is loaded, its rows are re-named from the parameter table the bike reports.
 
 ## Parameter tables
 
-cool-eva's catalogue of 29 tables comes with emcool. It's generated by `tools/generate-vcu-tables.mts` from cool-eva's own `parameterTableFor()`; 21 tables are distinct, about 70 KB of flash.
+emcool carries a catalogue of 29 tables. `tools/generate-vcu-tables.mts` generates it from the reference implementation's table catalogue; 21 tables are distinct, about 70 KB of flash.
 
 The bike's own TABLE_TYPE (indices 276 and 277) picks which table names the parameters:
 - **At startup:** from the latest snapshot.
 - **After each sweep:** from what the sweep read.
 
-A table emcool doesn't carry is reported, never guessed. To add one, add it to cool-eva, as its README describes, and run the generator.
+A table emcool doesn't carry is reported, never guessed. Until it's added, the names shown may be wrong for the bike, and the table-type gate refuses parameter writes. To add one, extract it from an Energica service-tool install with the reference implementation's extract script, run on the tool's main executable (the diagnostic application, not its installer). The script merges the new tables into the reference's catalogue. Then re-run the generator, which rewrites `components/emcool_vcu/src/tables.gen.cpp`, and rebuild:
+
+```bash
+# in the reference checkout (COOL_EVA_DIR, default ../cool-eva)
+node --experimental-strip-types scripts/extract-vcu-tables.ts /path/to/service-tool.exe
+# then in emcool
+node tools/generate-vcu-tables.mts "${COOL_EVA_DIR:-../cool-eva}"
+```
 
 ## How it runs
 
@@ -85,14 +92,14 @@ Everything that transmits runs in the diagnostics task: the OBD poller and servi
 
 The Bluetooth task hands it the dashboard's requests and collects each answer when it's ready. So a probe that takes seconds never holds up the live stream, and a slow card never holds up decoding.
 
-The loop keeps Node's ordering rules, which is what lets cool-eva's async TypeScript port as C++20 coroutines that read like the original:
+The loop keeps Node's ordering rules, which is what lets the service code run as C++20 coroutines that match the TypeScript reference step for step:
 - Timers fire in due order, and in the order they were set when due together.
 - A delay under 1 ms is 1 ms.
 - Microtasks run after each timer or frame.
 
 ## Writing to the VCU
 
-A separate engine, ported from cool-eva's `src/vcu/write-codec.ts`, `write-targets.ts`, `write-session.ts`, `write-runner.ts`, `write-audit.ts`, `table-gate.ts`, `service-actions.ts`, `clear-dtcs.ts` and `charge-soc-limit.ts`, and the `/vcu-write` handler. It is the first thing in emcool that can **change** the motorcycle, so it is a separate switch and a separate door from the reads.
+A separate engine, behind `/vcu-write`. It is the first thing in emcool that can **change** the motorcycle, so it is a separate switch and a separate door from the reads.
 
 ### Off by default — and this one stays off even where the others wouldn't
 
@@ -105,7 +112,7 @@ emcool> restart
 
 Every emcool transmitting setting defaults to `0`. `SERVICE_WRITE_ENABLED` is the one that would still be off even if they didn't: it is what lets the phone change a calibration EEPROM, stamp the service record, or clear the fault memory. With it on, the boot journal says so, loudly, at `WARN`.
 
-The POST wants `X-Cool-Eva: service-write` — **deliberately not** the read path's `service-mode`. Neither value is a secret; making them different means a caller that only knows about reads cannot reach a write by accident. `GET /vcu-write` needs no header: it returns the allowlist, the gate, whether the bike's clock is fit to copy, and the last few journal lines, and touches nothing.
+The POST wants `X-Emcool: service-write` — **deliberately not** the read path's `service-mode`. Neither value is a secret; making them different means a caller that only knows about reads cannot reach a write by accident. `GET /vcu-write` needs no header: it returns the allowlist, the gate, whether the bike's clock is fit to copy, and the last few journal lines, and touches nothing.
 
 ### What it can do
 
@@ -119,7 +126,7 @@ Each action is one row in the request parser, and several carry a `confirm=` tok
 - **`charge-soc-limit` / `charge-soc-limit-read`** — set or read the "stop charging at N %" limit on `0x2C`; the one action with a real read-back off the VCU's own store.
 - **`reset-vcu`** — restart both micros (`11 02`), refused mid-charge.
 
-The **automatic** charge-current controller (cool-eva's `src/charge/auto.ts`, the 60 s loop that commands current from an SoC/temperature curve) is a separate `CHARGE_AUTO_ENABLED` stage and is not ported yet; the manual commands above are.
+The **automatic** charge-current controller is a separate `CHARGE_AUTO_ENABLED` stage. See [Automatic charging](#automatic-charging).
 
 ### The five locks, in order
 
@@ -131,11 +138,11 @@ The **automatic** charge-current controller (cool-eva's `src/charge/auto.ts`, th
 
 Behind all five, per action: a read of the current value, a compare-and-swap against what the caller believed, and a read-back. The security key is the VCU family's own algorithm (bit-swap then `+0xC1A0BABE`), computed from the seed and never supplied by a caller.
 
-Every attempt — refused, accepted, read-back-mismatch, all of it — is appended to `service-writes.jsonl` on the card, in cool-eva's shape, and the last twelve lines ride on the GET status. The reader recovers records a power cut tore, as cool-eva's does.
+Every attempt — refused, accepted, read-back-mismatch, all of it — is appended to `service-writes.jsonl` on the card, and the last twelve lines ride on the GET status. The reader recovers records a power cut tore.
 
 ## Automatic charging
 
-With `CHARGE_AUTO_ENABLED 1` (and `SERVICE_WRITE_ENABLED 1`, since it commands writes), a controller runs that commands the DC charge current on its own during a fast charge. Ported from cool-eva's `src/charge/auto.ts`, `auto-curve.ts`, `rate.ts`, `step.ts`, `pace.ts` and `soc.ts`, and the `/charge-auto` handler.
+With `CHARGE_AUTO_ENABLED 1` (and `SERVICE_WRITE_ENABLED 1`, since it commands writes), a controller runs that commands the DC charge current on its own during a fast charge. `/charge-auto` controls it.
 
 ```
 emcool> set OBD_ENABLED 1
@@ -149,15 +156,15 @@ It is the most autonomous feature here — it actuates the bike with nobody pres
 
 - **The control law** aims the pack at 54 °C and never crosses 55 °C. Every 60 s it estimates the heating rate from a 10-minute window of pack temperatures (a least-squares slope, bounded by how long the reading has been silent), predicts the temperature 12 minutes out, and steps the current up when there is headroom or down when the pack is closing on the target — in clamped amps, never below a 35 A floor. When it has no trend yet it holds, or eases down blindly if it arrived hot. When the pack's own SoC taper will take the current away before heat could, it holds rather than fighting it.
 - **It stands down for the rider.** A charge current set by hand — seen as a `dc_charge_limit_selected_a` that is neither the ceiling nor the value the controller last sent — stops it for the rest of that charge. So does any manual `/vcu-write` charge command. A new charge session (a change in `charge_manager_state`) forgets the standdown and the history and starts fresh.
-- **`/charge-auto`** turns it on or off (`POST ?mode=automatic|off`, behind `X-Cool-Eva: charge-auto`) and reports, on GET, what it is doing and the plain-English reason — which no header needs.
+- **`/charge-auto`** turns it on or off (`POST ?mode=automatic|off`, behind `X-Emcool: charge-auto`) and reports, on GET, what it is doing and the plain-English reason — which no header needs.
 
-The decision is a pure function (`decideChargeCurrent`); the controller around it is the stateful shell. ⚠️ A fused multiply-add would change the last bit of the least-squares slope and break parity with cool-eva's JavaScript, so the whole `emcool_vcu` component is built with `-ffp-contract=off`.
+The decision is a pure function (`decideChargeCurrent`); the controller around it is the stateful shell. ⚠️ A fused multiply-add would change the last bit of the least-squares slope and break parity with the reference implementation's JavaScript, so the whole `emcool_vcu` component is built with `-ffp-contract=off`.
 
 ## Verified, and not
 
 **Verified on the laptop** by `tools/check.sh`:
 
-- **The pure parts.** `tools/generate-golden-vcu.mts` runs cool-eva's own code on random input, and `host/tests/check_vcu.cpp` requires the same output from the C++:
+- **The pure parts.** `tools/generate-golden-vcu.mts` runs the reference implementation on random input, and `host/tests/check_vcu.cpp` requires the same output from the C++:
   - 38,675 extended-addressing ISO-TP frames
   - 7,000 replies through the parameter and multi-frame codecs
   - 4,000 records interpreted
@@ -171,14 +178,14 @@ The decision is a pure function (`decideChargeCurrent`); the controller around i
   - 5,000 freeze-frame replies and their 18,000 formatted values
   - 1,500 lifetime summaries
   - 2,000 `18` lists and the components a read would ask about
-- **Service mode itself.** `tools/generate-golden-service.mts` runs cool-eva's read runner, sweeps and probes, with its OBD poller alongside, against cool-eva's own simulated VCU micros on a fake clock. Its 24 scenarios cover:
+- **Service mode itself.** `tools/generate-golden-service.mts` runs the reference implementation's read runner, sweeps and probes, with its OBD poller alongside, against its simulated VCU micros on a fake clock. Its 24 scenarios cover:
   - complete, cancelled and resumed sweeps
   - an unsafe bike, and stale broadcasts
   - silent micros, and refused, silent and wrong-width indices
   - lapsed sessions, and both sides of the 1.5 s session limit
   - carried, uncarried and split TABLE_TYPEs
   - probes of every bank, including refused ones
-  - lifetime and freeze-frame reads against micros holding freeze frames, run through cool-eva's own HTTP handlers, and the files they leave
+  - lifetime and freeze-frame reads against micros holding freeze frames, run through the reference's HTTP handlers, and the files they leave
   - the expected-fault list
 
   `host/tests/check_service.cpp` replays each through the C++. Every millisecond it must send the same frames, log the same lines, and give the same answers to `/vcu-read`, `/vcu-params`, `/vcu-backup` and probes. The checks run clean under AddressSanitizer too.
@@ -194,7 +201,7 @@ The decision is a pure function (`decideChargeCurrent`); the controller around i
   - one attempt per freeze-frame component instead of two
   - the lifetime file replaced by a read that answered only as much
   - padding read as a listed component
-- **The write path's pure parts.** `tools/generate-golden-write.mts` runs cool-eva's own write code on random input, and `host/tests/check_write.cpp` requires the same output:
+- **The write path's pure parts.** `tools/generate-golden-write.mts` runs the reference implementation's write code on random input, and `host/tests/check_write.cpp` requires the same output:
   - 4,000 security keys (seeds with the sign bit set included — a wrong key spends a lockout attempt)
   - 10,000 security/write/routine/clear-DTC replies decoded
   - 3,000 service stamps, 3,000 clock verdicts, 3,000 RTC-sync frames both directions
@@ -203,9 +210,9 @@ The decision is a pure function (`decideChargeCurrent`); the controller around i
   - 3,000 `/vcu-write` request parses and the UTC-minute window
   - 2,000 charge-current command frames and the charge-stop frame
   - 3,000 charge-acknowledge verdicts and their messages (did the command take, was it station-limited, superseded, …)
-- **The write session on the wire.** `tools/generate-golden-write-session.mts` drives cool-eva's own `writeParameter`, `readServiceStamp`, `resetVcu`, `clearStoredDtcs`, and `createVcuWriteRunner`'s `charge-current`/`charge-stop`, against a scripted bus on a fake clock, and `host/tests/check_write_session.cpp` replays the identical scripted replies through the C++ `WriteSession`/`VcuWriteRunner`: every frame it transmits, at every millisecond, and the outcome it resolves to, must match — the session open, the compare-and-swap, the seed→key unlock, the `2E` write and read-back, all five write outcome paths, and the charge commands' session predicate, ceiling selection (incl. the AC fallback) and response.
+- **The write session on the wire.** `tools/generate-golden-write-session.mts` drives the reference implementation's `writeParameter`, `readServiceStamp`, `resetVcu`, `clearStoredDtcs`, and `createVcuWriteRunner`'s `charge-current`/`charge-stop`, against a scripted bus on a fake clock, and `host/tests/check_write_session.cpp` replays the identical scripted replies through the C++ `WriteSession`/`VcuWriteRunner`: every frame it transmits, at every millisecond, and the outcome it resolves to, must match — the session open, the compare-and-swap, the seed→key unlock, the `2E` write and read-back, all five write outcome paths, and the charge commands' session predicate, ceiling selection (incl. the AC fallback) and response.
 - **The write path's tests can fail.** Mutating the security key (`+1`) turns 4,000 pure keys red and puts the wrong bytes in the `27 02` frame the session check watches; mutating the AC ceiling fallback turns the charge-current frame and message red.
-- **The automatic controller.** `tools/generate-golden-charge-auto.mts` runs cool-eva's own `decideChargeCurrent`, `estimateHeatingRate`, `estimateSocRate` and `sessionAheadMinutes` on 18,000 random inputs, and `host/tests/check_charge_auto.cpp` requires the same decision and the same rate to the last bit. `tools/generate-golden-charge-auto-loop.mts` then drives cool-eva's own `startChargeAutomatic` — the stateful controller — through six scripted charges (warming, rider standdown, disabled, session restart, manual standdown, hot arrival) with 60 s ticks on a fake clock, and the check replays each through the C++ `ChargeAutomatic`: the currents it commands and the mode/reason/commanded-amps it reports must match at every step. Mutating the 54 °C target turns 81 decisions red.
+- **The automatic controller.** `tools/generate-golden-charge-auto.mts` runs the reference implementation's `decideChargeCurrent`, `estimateHeatingRate`, `estimateSocRate` and `sessionAheadMinutes` on 18,000 random inputs, and `host/tests/check_charge_auto.cpp` requires the same decision and the same rate to the last bit. `tools/generate-golden-charge-auto-loop.mts` then drives the reference's `startChargeAutomatic` — the stateful controller — through six scripted charges (warming, rider standdown, disabled, session restart, manual standdown, hot arrival) with 60 s ticks on a fake clock, and the check replays each through the C++ `ChargeAutomatic`: the currents it commands and the mode/reason/commanded-amps it reports must match at every step. Mutating the 54 °C target turns 81 decisions red.
 - **The phone's side.** `tools/check-ble.mts` checks over the real protocol:
   - service requests answered later, as the diagnostics task answers them
   - the service-mode header check, and the separate `service-write` header: `/vcu-write` refuses a POST with no header, and with the *read* header, and reaches the desk only with its own — for `read-service-stamp` and for `charge-current`
@@ -213,5 +220,5 @@ The decision is a pure function (`decideChargeCurrent`); the controller around i
 
 **Not verified yet** (nothing has run on the ESP32):
 
-- **Against the real VCU.** The requests are byte-identical to cool-eva's, and cool-eva's simulated micro models what's been captured from the bike. ⚠️ No write has gone to a real bike from emcool; the write path is proven only against cool-eva's own code and scripted buses.
+- **Against the real VCU.** The requests are byte-identical to the reference implementation's, and its simulated micro models what's been captured from the bike. ⚠️ No write has gone to a real bike from emcool; the write path is proven only against the reference implementation and scripted buses.
 - **The card under a sweep.** Rows written while the ride log is writing, and how long `writeSnapshot()` takes on a real card.

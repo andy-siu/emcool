@@ -13,7 +13,7 @@ namespace {
 
 constexpr int kObdClearDtcsMode = 0x04;
 
-// cool-eva's `0x${n.toString(16)}` — lower-case, no padding. (Its toHex, by contrast, is upper.)
+// JavaScript's `0x${n.toString(16)}` — lower-case, no padding. (toHex, by contrast, is upper.)
 std::string hex(int value) {
   char text[16];
   std::snprintf(text, sizeof text, "0x%x", value);

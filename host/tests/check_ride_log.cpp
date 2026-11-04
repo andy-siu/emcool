@@ -278,7 +278,7 @@ void checkNumbersRoundTrip() {
     buffer.appendNumber(value);
     text[buffer.length()] = '\0';
     const double parsed = std::strtod(text, nullptr);
-    // -0 is written "0", as cool-eva's JSON.stringify writes it; everything else keeps its sign.
+    // -0 is written "0", as JavaScript's JSON.stringify writes it; everything else keeps its sign.
     const bool negativeZero = value == 0 && std::signbit(value);
     EMCOOL_CHECK(!buffer.overflowed() && parsed == value &&
                      (negativeZero ? std::string(text) == "0" : std::signbit(parsed) == std::signbit(value)),

@@ -1,6 +1,6 @@
 // Replays tools/generate-golden-charge-auto.mts through the C++ port: the automatic-charge control
 // law (decideChargeCurrent) and its support (estimateHeatingRate, estimateSocRate,
-// sessionAheadMinutes) must produce byte-identical JSON to cool-eva's own code.
+// sessionAheadMinutes) must produce byte-identical JSON to the reference's own code.
 //
 //   check_charge_auto <golden file>
 
@@ -415,7 +415,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::fprintf(stderr,
-               "check_charge_auto: %d pure lines + %d controller scenarios match cool-eva; 0 failures\n", ran,
+               "check_charge_auto: %d pure lines + %d controller scenarios match the reference; 0 failures\n", ran,
                loopScenarios);
   return 0;
 }

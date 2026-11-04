@@ -5,9 +5,8 @@
 //
 // LISTEN-ONLY unless a transmitting setting is on (OBD_ENABLED): no transmission of any kind —
 // not even the ACK bit or an error frame — so the bike's bus cannot tell this node is there.
-// With transmitting on, the controller is an ordinary node, as cool-eva's ACTIVE can0 is: it
-// acknowledges every frame, and sends what the OBD side asks it to, retrying a frame until it
-// is acknowledged.
+// With transmitting on, the controller is an ordinary, ACTIVE node: it acknowledges every
+// frame, and sends what the OBD side asks it to, retrying a frame until it is acknowledged.
 
 #include <array>
 #include <atomic>
@@ -27,7 +26,7 @@ struct ReceivedFrame {
   std::uint8_t length;
   std::uint8_t data[8];
   // When the interrupt took it, on the monotonic clock: how late our flow control was is measured
-  // from here, as cool-eva measures it from the kernel's stamp.
+  // from here.
   std::int64_t arrivedUs;
 };
 

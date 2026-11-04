@@ -186,14 +186,14 @@ let attemptedSecret = "";
 const listenedCharacteristics = new WeakSet();
 
 /**
- * What the iOS app (ios/) installs before any module runs: Web Bluetooth over
- * CoreBluetooth, and a native share sheet for saved files. Absent in a browser.
+ * What a native iOS wrapper may install as `emcoolNative` before any module runs: Web
+ * Bluetooth over CoreBluetooth, and a native share sheet for saved files. Absent in a browser.
  * @typedef {{ platform: "ios", saveFile: (name: string, bytes: Bytes, mimeType: string) => Promise<void> }} NativeShell
  */
 
 /** @returns {NativeShell | undefined} */
 export function nativeShell() {
-  return /** @type {{ coolEvaNative?: NativeShell }} */ (/** @type {unknown} */ (globalThis)).coolEvaNative;
+  return /** @type {{ emcoolNative?: NativeShell }} */ (/** @type {unknown} */ (globalThis)).emcoolNative;
 }
 
 /**
@@ -245,7 +245,7 @@ export function onBleStatus(listener) {
 export async function chooseAndConnect() {
   const bluetooth = webBluetooth();
   if (bluetooth === undefined) {
-    throw new Error("This browser has no Web Bluetooth. On iPhone use the emcool app or Bluefy; on Android, Chrome.");
+    throw new Error("This browser has no Web Bluetooth. On iPhone use Bluefy; on Android or a Mac, Chrome.");
   }
   const device = await bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
   if (link.device !== device) {
@@ -357,7 +357,7 @@ function ensureSession() {
 async function handshake() {
   const device = link.device;
   if (device === null || device.gatt === undefined) {
-    throw new Error("no Pi chosen — tap Connect first");
+    throw new Error("no bike chosen — tap Connect first");
   }
   const secret = storedSecret();
   if (secret === "") {
@@ -367,7 +367,7 @@ async function handshake() {
     throw new Error("no secret entered");
   }
   if (secret === refusedSecret) {
-    throw new Error("the Pi refused this secret; enter the right one");
+    throw new Error("emcool refused this secret; enter the right one");
   }
   setStatus("connecting", "");
   try {
@@ -388,7 +388,7 @@ async function handshake() {
       JSON.parse(new TextDecoder().decode(new Uint8Array(infoView.buffer, infoView.byteOffset, infoView.byteLength)))
     );
     if (info.version !== PROTOCOL_VERSION) {
-      throw new Error(`the Pi speaks protocol ${info.version}, this page ${PROTOCOL_VERSION} — update one of them`);
+      throw new Error(`emcool speaks protocol ${info.version}, this page ${PROTOCOL_VERSION} — update one of them`);
     }
     const clientNonce = randomNonce();
     const key = await deriveSessionKey(secret, info.serverNonce, clientNonce);
@@ -436,7 +436,7 @@ function receiveNotification(event) {
   // Serialised: counters must be checked in arrival order, and openEnvelope is async.
   link.readChain = link.readChain
     .then(() => receiveEnvelope(envelope))
-    .catch(error => console.error("ble: could not handle a message from the Pi", error));
+    .catch(error => console.error("ble: could not handle a message from emcool", error));
 }
 
 /** @param {Bytes} envelope */
@@ -451,10 +451,10 @@ async function receiveEnvelope(envelope) {
         refusedSecret = attemptedSecret;
       }
       setStatus("refused", reason);
-      link.handshake?.reject(new Error(`the Pi refused the connection: ${reason}`));
+      link.handshake?.reject(new Error(`emcool refused the connection: ${reason}`));
       link.handshake = null;
       if (link.session !== null) {
-        linkLost(`the Pi ended the session: ${reason}`);
+        linkLost(`emcool ended the session: ${reason}`);
       }
     }
     return;
@@ -508,7 +508,7 @@ function dispatch(message) {
       // A head with no body yet is still an answer (a 502 from loopback, say); an error
       // after some body is a truncated file, which must never be handed over as whole.
       if (pending.status === null || (header.error !== undefined && pending.receivedBytes > 0)) {
-        pending.reject(new Error(header.error ?? "the Pi ended the response before answering"));
+        pending.reject(new Error(header.error ?? "emcool ended the response before answering"));
         return;
       }
       pending.resolve({ status: pending.status, headers: pending.headers, body: concatenate(pending.parts) });

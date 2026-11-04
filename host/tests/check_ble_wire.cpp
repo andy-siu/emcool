@@ -1,7 +1,7 @@
 // The phone link's wire protocol, piece by piece: crypto against published vectors, the
 // deflate encoder against zlib, the JSON reader against good and hostile input, framing,
 // envelopes, and the session handshake played from the phone's side. tools/check-ble.mts then
-// does it all again against cool-eva's own ble-wire.js — the code the phone runs.
+// does it all again against the dashboard's own ble-wire.js — the code the phone runs.
 
 #include <zlib.h>
 

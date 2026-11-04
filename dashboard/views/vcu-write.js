@@ -297,7 +297,7 @@ function Availability() {
       return div(
         div(
           { style: `color:${MUTED}` },
-          "🔒  Writing is off on this Pi. It is off by default — set SERVICE_WRITE_ENABLED=1 in the service's environment to allow it. Reading is unaffected."
+          "🔒  Writing is off on emcool. It is off by default — set SERVICE_WRITE_ENABLED 1 on the bike's console and restart to allow it. Reading is unaffected."
         ),
         RunningVersion(status)
       );
@@ -612,7 +612,7 @@ function ValueNote() {
       known.source === "bus"
         ? `${asShown}${bytes} — read off the bike by this page.`
         : `${known.label ?? known.value}${bytes} — from the parameter sweep ${ageInWords(known.readAt)}` +
-          `${known.complete ? "" : ", which did not finish"}. The Pi re-reads it before writing.`;
+          `${known.complete ? "" : ", which did not finish"}. emcool re-reads it before writing.`;
     return div(`${where} ${range}`);
   });
 }
@@ -778,8 +778,8 @@ function WriteButton() {
     ),
     div({ class: "action-note", style: `color:${MUTED}` }, () =>
       onBike() === null
-        ? "Every write is a compare-and-swap: the Pi re-reads the parameter and refuses if it has moved since it was read."
-        : "The Pi will re-read this parameter, write, and read it back — and say so loudly if the read-back disagrees, or if the bike does not hold what is shown on the left."
+        ? "Every write is a compare-and-swap: emcool re-reads the parameter and refuses if it has moved since it was read."
+        : "emcool will re-read this parameter, write, and read it back — and say so loudly if the read-back disagrees, or if the bike does not hold what is shown on the left."
     )
   );
 }
@@ -1234,7 +1234,7 @@ function summariseAllLights(off, done, skipped, failed, fellBack, unreachable) {
     );
   }
   if (unreachable) {
-    parts.push("Stopped early: the Pi stopped answering. Read the values back before trying again.");
+    parts.push("Stopped early: emcool stopped answering. Read the values back before trying again.");
   }
   if (parts.length === 0) {
     return `Nothing to do — every light was already ${off ? "off" : "restored"}.`;
@@ -1469,7 +1469,7 @@ export const IRREVERSIBLE = [
         confirm: "WIPE the stored codes and their freeze frame",
         noUndo: "The freeze frame goes with the codes.",
         does:
-          "OBD Mode 04 — clears every code the bike currently holds stored. The Pi parks its own OBD " +
+          "OBD Mode 04 — clears every code the bike currently holds stored. emcool parks its own OBD " +
           "polling and reads the counters either side of the frame, so this takes a few seconds.",
         caution: clearCodesCaution,
         outcome: ClearOutcome,
@@ -1620,11 +1620,11 @@ function ClockAction() {
           return "🕒  …";
         }
         if (!clock.trustworthy) {
-          return "🕒  This Pi's clock cannot be copied to the bike";
+          return "🕒  emcool's clock cannot be copied to the bike";
         }
         return armed.val === "action:sync-clock"
           ? `⚠️  Is it ${clock.iso.slice(0, 19).replace("T", " ")} UTC?  Tap again to send`
-          : "🕒  Set the bike's clock from this Pi";
+          : "🕒  Set the bike's clock from emcool";
       }
     ),
     () => {
@@ -1641,7 +1641,7 @@ function ClockAction() {
         // nothing here that cannot be undone. This is red because something is
         // broken, and `no-undo` means one specific thing that this is not.
         return div(
-          div({ class: "action-note", style: `color:${BAD}` }, `The Pi reads ${clock.iso}, and it is not fit to copy:`),
+          div({ class: "action-note", style: `color:${BAD}` }, `emcool reads ${clock.iso}, and it is not fit to copy:`),
           ...clock.reasons.map(reason => div({ class: "action-note", style: `color:${MUTED}` }, `· ${reason}`))
         );
       }
@@ -1840,7 +1840,7 @@ function Journal() {
     div({ class: "action-note" }, () => {
       const recent = state.val?.status.recent ?? [];
       if (recent.length === 0) {
-        return div({ style: `color:${MUTED}` }, "Nothing has been written from this Pi.");
+        return div({ style: `color:${MUTED}` }, "Nothing has been written from emcool.");
       }
       return div(...recent.map(JournalLine));
     })
@@ -2036,7 +2036,7 @@ async function readCurrent() {
     // may not be the number on screen any more.
     armed.val = "";
   } catch (error) {
-    message.val = `could not reach the Pi — ${error instanceof Error ? error.message : String(error)}`;
+    message.val = `could not reach emcool — ${error instanceof Error ? error.message : String(error)}`;
     console.warn("vcu-write: read failed", error);
   } finally {
     busy.val = false;
@@ -2307,8 +2307,8 @@ async function performAction(action, confirmation) {
  */
 function unreachableForARead() {
   return (
-    "Could not reach the Pi, so the stamp was not read. Nothing was sent to the bike and nothing " +
-    "changed — try again when the Pi answers."
+    "Could not reach emcool, so the stamp was not read. Nothing was sent to the bike and nothing " +
+    "changed — try again when emcool answers."
   );
 }
 
@@ -2366,7 +2366,7 @@ async function send(query) {
     // did not come back may still have reached the bike — the frame goes out before
     // the response comes back — so "it failed" would be a claim nothing supports.
     message.val =
-      `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "⚠️ This does NOT mean nothing was written: the request may have reached the bike. Read the value back before trying again.";
     console.warn("vcu-write: request failed", error);
     return null;
@@ -2439,7 +2439,7 @@ export async function fetchStatus(withListing = false, reAsks = 0) {
     // answering a different tableType and a different listing every time then loops for ever; that
     // takes a sweep landing between back-to-back requests, so it is not reachable from a settled
     // bike — which is exactly why it must be loud rather than silent when it happens.
-    message.val = "the Pi keeps renaming its parameter table — reopen the sheet";
+    message.val = "emcool keeps renaming its parameter table — reopen the sheet";
     console.warn(`vcu-write: gave up re-asking for the status after ${reAsks} rounds`);
     return false;
   }

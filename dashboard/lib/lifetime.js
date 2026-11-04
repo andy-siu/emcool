@@ -39,7 +39,7 @@ export async function loadLifetimeStats(force = false) {
   try {
     const response = await request("/lifetime-stats");
     if (!response.ok) {
-      lifetimeError.val = `the Pi answered ${response.status}`;
+      lifetimeError.val = `emcool answered ${response.status}`;
       return;
     }
     lifetimeStats.val = /** @type {LifetimeStatsResponse} */ (await response.json());
@@ -51,7 +51,7 @@ export async function loadLifetimeStats(force = false) {
   } catch (err) {
     // Ordinary when the phone has wandered out of wifi range, and worth saying rather
     // than leaving an empty block that looks like a bike with no statistics.
-    lifetimeError.val = "could not reach the Pi";
+    lifetimeError.val = "could not reach emcool";
     console.warn("lifetime: fetch failed", err);
   }
 }

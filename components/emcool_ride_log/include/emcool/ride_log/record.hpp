@@ -10,7 +10,7 @@
 //   20      4     payload length
 //   24      4     CRC-32 of bytes 0-23 followed by the payload
 //   28      4     zero
-//   32      n     payload: UTF-8 JSON lines, cool-eva's v3 segment body (one header object,
+//   32      n     payload: UTF-8 JSON lines, a v3 segment body (one header object,
 //                 then [ts, key, value, seq] rows)
 //                 zero padding to the next 512-byte sector
 //
@@ -37,7 +37,7 @@ static_assert(kRecordCapacityBytes % kSectorBytes == 0);
 
 struct SessionId {
   std::array<std::uint8_t, 8> bytes;
-  // Lower-case hex, as cool-eva writes its session ids, NUL-terminated.
+  // Lower-case hex, NUL-terminated.
   std::array<char, 17> hex;
 
   static SessionId fromBytes(const std::array<std::uint8_t, 8>& bytes);

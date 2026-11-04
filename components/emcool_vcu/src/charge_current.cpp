@@ -7,10 +7,9 @@
 #include "emcool/vcu/service_gate.hpp"
 #include "emcool/vcu/write_runner.hpp"
 
-// The charge-current command (0x121) and the charge-stop (0x120), ported from cool-eva
-// src/vcu/write-runner.ts performChargeCurrent/performChargeStop and the sendChargeCommand/
-// sendChargeStopCommand of write-session.ts. Both are fire-and-forget event frames with no reply,
-// so "sent" is the strongest claim; the ack-watch reads the bike's answer over the next seconds.
+// The charge-current command (0x121) and the charge-stop (0x120). Both are fire-and-forget event
+// frames with no reply, so "sent" is the strongest claim; the ack-watch reads the bike's answer over
+// the next seconds.
 
 namespace emcool::vcu {
 

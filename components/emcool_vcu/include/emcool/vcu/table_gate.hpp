@@ -1,9 +1,9 @@
 #pragma once
 
-// Whether the bike has named a parameter table this software can write against, ported from
-// cool-eva src/vcu/table-gate.ts. A parameter is written BY INDEX, and an index only means a
-// parameter relative to a table, so a write is refused unless both micros named a carried table
-// AND the allowlist's names mean there what they mean here. Reads are never gated.
+// Whether the bike has named a parameter table this software can write against. A parameter is
+// written BY INDEX, and an index only means a parameter relative to a table, so a write is
+// refused unless both micros named a carried table AND the allowlist's names mean there what
+// they mean here. Reads are never gated.
 
 #include <cstdint>
 #include <optional>

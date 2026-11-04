@@ -1,8 +1,7 @@
 #pragma once
 
-// The 0x120/0x121 dash-command frames, ported from cool-eva src/can/charge-command.ts and
-// src/can/charge-soc-command.ts: the SOC charge-limit write/read (stage 4) and the charge-current
-// command and charge-stop (stage 5).
+// The 0x120/0x121 dash-command frames: the SOC charge-limit write/read (stage 4) and the
+// charge-current command and charge-stop (stage 5).
 
 #include <array>
 #include <cstdint>
@@ -34,7 +33,7 @@ struct ChargeFrame {
 };
 
 // buildChargeCurrentCommand: the 0x120 request-twin commit then the 0x121 command. `error` is set
-// (and the result empty) when the amps/ceiling are out of range, as cool-eva throws.
+// (and the result empty) when the amps/ceiling are out of range.
 std::vector<ChargeFrame> buildChargeCurrentCommand(ChargeMode mode, int selectedAmps, int ceilingAmps,
                                                    std::string& error);
 // buildChargeStopCommand: the one 0x120 request-twin that commits a Mode-stop.

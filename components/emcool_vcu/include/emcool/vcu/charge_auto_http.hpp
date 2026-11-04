@@ -1,7 +1,7 @@
 #pragma once
 
-// The /charge-auto response body, ported from cool-eva src/http/charge-auto.ts: {state, reasonText,
-// floorAmps, message}. The reason text is cool-eva's CHARGE_AUTO_REASON_TEXT table, verbatim.
+// The /charge-auto response body: {state, reasonText, floorAmps, message}. The reason text is the
+// TypeScript reference's, verbatim.
 
 #include <optional>
 #include <string>

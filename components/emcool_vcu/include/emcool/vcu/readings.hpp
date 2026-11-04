@@ -1,15 +1,14 @@
 #pragma once
 
-// Service mode's two freeze-frame reads, ported from cool-eva src/vcu/lifetime-read.ts,
-// freeze-frame-read.ts and freeze-frame-list.ts:
+// Service mode's two freeze-frame reads:
 //   - the lifetime statistics: freeze-frame components 51 and 52 off the A8, each asked twice at
 //     most
 //   - the stored freeze frames: the `18` list of components that hold one, then `17` for each, inside
 //     a 12 s budget so the whole read fits the OBD poller's 15 s hold with room to spare
 // Both run under the read runner, with the bike safe to service and the poller parked.
 //
-// cool-eva also reports the worst event-loop delay seen during the read; emcool has no event loop
-// to sample in that sense, so it says "loop not sampled", as cool-eva does when it has no sample.
+// A read also reports the worst event-loop delay seen during it; emcool has no event loop to
+// sample in that sense, so it says "loop not sampled".
 
 #include <cstdint>
 #include <functional>
@@ -116,7 +115,7 @@ class FreezeFrameRead final : public OneShotRead {
   FreezeFrameReadResult result_;
 };
 
-// One component, asked again on silence or a discarded reply (cool-eva readOneComponent).
+// One component, asked again on silence or a discarded reply.
 struct ComponentRead {
   StoredReply reply;
   VcuMultiFrameOutcome outcome;

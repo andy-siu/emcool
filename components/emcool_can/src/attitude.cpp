@@ -5,7 +5,7 @@
 #include "emcool/log.hpp"
 
 // 0x102 b4-5 / b6-7: the attitude sensor's roll and pitch in 0.1°, NOT the accelerations
-// the .xdbc calls them. Ported from cool-eva src/can/attitude.ts, which has the argument.
+// the .xdbc calls them.
 
 namespace emcool::can {
 
@@ -29,7 +29,7 @@ void noteOutOfRange(const char* key, int decidegrees, AxisRangeWatch& watch, Fra
              "*** 0x102 %s read %d (%.1f°) on %u consecutive frames, outside the ±%.0f° an atan2 can "
              "produce. *** b4-7 are no longer the attitude angles this decoder assumes — most likely "
              "Energica changed 0x102's layout, or the frame is not from the VCU at all. Dropping the "
-             "sample. Frame: %s. See cool-eva src/can/attitude.ts.",
+             "sample. Frame: %s.",
              key, decidegrees, decidegrees / kDecidegreesPerDegree,
              static_cast<unsigned>(watch.consecutiveOutOfRange), kMaxDecidegrees / kDecidegreesPerDegree,
              frameHex);

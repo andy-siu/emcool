@@ -1,4 +1,4 @@
-// Drives cool-eva's own GpsClockGate (src/gps/clock-gate.ts) through randomized clock
+// Drives the reference's own GpsClockGate (src/gps/clock-gate.ts) through randomized clock
 // scenarios and writes every offer with the verdict it produced, for host/tests/check_clock.cpp
 // to replay through the C++ port. Each run starts a fresh gate. The scenarios cover:
 //
@@ -10,7 +10,7 @@
 //
 // The system clock is stepped whenever a verdict says so, as the firmware would.
 //
-//   node tools/generate-golden-clock.mts <cool-eva checkout> <output file>
+//   node tools/generate-golden-clock.mts <reference checkout> <output file>
 //
 // Line format: `<run> <gps epoch s> <system epoch s> <monotonic ms> <step 0|1> <reason>
 // [<step epoch s> <offset s>]`, numbers written by String().
@@ -26,13 +26,13 @@ interface Verdict {
   offsetSeconds?: number;
 }
 
-const [coolEvaDirectory, outputPath] = process.argv.slice(2);
-if (!coolEvaDirectory || !outputPath) {
-  console.error("usage: node tools/generate-golden-clock.mts <cool-eva checkout> <output file>");
+const [referenceDirectory, outputPath] = process.argv.slice(2);
+if (!referenceDirectory || !outputPath) {
+  console.error("usage: node tools/generate-golden-clock.mts <reference checkout> <output file>");
   process.exit(2);
 }
 
-const gateModule = await import(pathToFileURL(join(coolEvaDirectory, "src/gps/clock-gate.ts")).href);
+const gateModule = await import(pathToFileURL(join(referenceDirectory, "src/gps/clock-gate.ts")).href);
 const GpsClockGate = gateModule.GpsClockGate as new () => {
   offer(epochSeconds: number, systemEpochSeconds: number, monotonicMs: number): Verdict;
 };

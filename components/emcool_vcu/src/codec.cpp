@@ -211,7 +211,7 @@ VcuParameterReply decodeParameterReply(std::span<const std::uint8_t> payload, in
 }
 
 VcuParameterValue interpretRecord(std::span<const std::uint8_t> record, const std::optional<RecordEncoding>& encoding) {
-  // In doubles, as cool-eva's reduce() does, so a record wider than 53 bits rounds the same way.
+  // In doubles, as JavaScript does, so a record wider than 53 bits rounds the same way.
   double unsignedValue = 0;
   for (const std::uint8_t byte : record) unsignedValue = unsignedValue * 256 + byte;
   const int bits = static_cast<int>(record.size()) * 8;

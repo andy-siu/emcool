@@ -182,7 +182,7 @@ function announceFanState() {
 export const WIFI_REJOIN_TEXT = /** @type {Record<number, [text: string, tone: "good" | "bad"]>} */ ({
   1: ["Wi-Fi is up — state dumped, link untouched. Hold again to force a rejoin.", "good"],
   2: ["Wi-Fi rejoined.", "good"],
-  3: ["Wi-Fi rejoin failed — the dump is on the Pi.", "bad"],
+  3: ["Wi-Fi rejoin failed — the dump is on emcool.", "bad"],
   4: ["No Wi-Fi profile for that network — state dumped.", "bad"],
 });
 

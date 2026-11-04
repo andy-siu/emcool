@@ -1,10 +1,10 @@
-// Runs cool-eva's own VCU WRITE code on random/scripted input and writes what it returned, for
+// Runs the reference's own VCU WRITE code on random/scripted input and writes what it returned, for
 // host/tests/check_write.cpp to hold the C++ port to. The pure parts of stage 4: the security-key
 // algorithm, the write/routine/security/clear-DTC reply decoders, the service-stamp interpreter,
 // the clock verdict, the RTC-sync frame both directions, the allowlist and planning, the table
 // gate, and the /vcu-write request/status parser.
 //
-//   node tools/generate-golden-write.mts <cool-eva checkout> <output file>
+//   node tools/generate-golden-write.mts <reference checkout> <output file>
 //
 // Each line is `<kind> <fields…>`; JSON fields are JSON.stringify's, byte arrays as hex.
 
@@ -12,12 +12,12 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const [coolEvaDirectory, outputPath] = process.argv.slice(2);
-if (!coolEvaDirectory || !outputPath) {
-  console.error("usage: node tools/generate-golden-write.mts <cool-eva checkout> <output file>");
+const [referenceDirectory, outputPath] = process.argv.slice(2);
+if (!referenceDirectory || !outputPath) {
+  console.error("usage: node tools/generate-golden-write.mts <reference checkout> <output file>");
   process.exit(2);
 }
-const load = (path: string) => import(pathToFileURL(join(coolEvaDirectory, path)).href);
+const load = (path: string) => import(pathToFileURL(join(referenceDirectory, path)).href);
 console.log = console.warn = console.error = () => {};
 
 const writeCodec = await load("src/vcu/write-codec.ts");
@@ -208,7 +208,7 @@ for (let at = 0; at < 2000; at++) {
     report = chance(0.5) ? null : tableReport(pick(known), between(0, 0xffff), []);
   }
   // selectParameterTable may have moved the active table in a previous iteration; reset to default
-  // so the gate's recheck is against a known table, as cool-eva's own runner is at startup.
+  // so the gate's recheck is against a known table, as the reference's own runner is at startup.
   paramTable.selectParameterTable(paramTable.DEFAULT_TABLE_TYPE);
   emit(`GATE ${json(report)} ${json(tableGate.evaluateTableGate(report))}`);
   count("GATE");

@@ -1,9 +1,8 @@
 #pragma once
 
-// What never reaches the ride log on the microSD card. cool-eva sealed its log to a key only
-// the laptop holds; emcool's card is plain text, so anything that says where the bike has
-// been stays off it. These signals still update live state, so the clock and the phone can
-// use them — they are just never written down.
+// What never reaches the ride log on the microSD card. The card is plain text, so anything that
+// says where the bike has been stays off it. These signals still update live state, so the clock
+// and the phone can use them — they are just never written down.
 
 #include <string_view>
 

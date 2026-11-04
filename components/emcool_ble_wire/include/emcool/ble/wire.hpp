@@ -1,9 +1,8 @@
 #pragma once
 
-// The protocol between the phone dashboard and the bike, ported from cool-eva
-// public/lib/ble-wire.js — the module both of cool-eva's ends import — byte for byte, so the
-// phone side (the iOS app, or the GitHub Pages dashboard) needs no change. Layers, outermost
-// first (cool-eva docs/ble-server.md §"Wire format"):
+// The protocol between the phone dashboard and the bike, byte for byte as dashboard/lib/ble-wire.js
+// speaks it, so the phone side (the iOS app, or the GitHub Pages dashboard) needs no change.
+// Layers, outermost first:
 //
 //   frame     [flags: FIRST=1 | LAST=2][messageId u8][payload…], one per GATT value
 //   envelope  [0][message] clear, or [1][counter u64 BE][AES-256-GCM(deflate-raw(message))]
@@ -57,7 +56,7 @@ enum class MessageKind : std::uint8_t {
   kStream = 21,
 };
 
-// In the IV, so the two directions never share one. cool-eva's TO_PI is this end.
+// In the IV, so the two directions never share one. The dashboard's TO_PI is this end.
 enum class Direction : std::uint8_t { kToBike = 1, kToPhone = 2 };
 
 // ------------------------------------------------------------------------------ frames
@@ -147,7 +146,7 @@ using HexDigest = std::array<char, 65>;
 HexNonce randomNonce();
 
 // HMAC-SHA256(secret, label ‖ serverNonce ‖ clientNonce) — the HELLO proof with label
-// "cool-eva/hello", the session's AES key with "cool-eva/session". False when a nonce isn't
+// "emcool/hello", the session's AES key with "emcool/session". False when a nonce isn't
 // lower-case hex.
 bool helloProof(std::string_view secret, std::string_view serverNonceHex, std::string_view clientNonceHex,
                 HexDigest& out);

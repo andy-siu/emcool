@@ -1,7 +1,7 @@
-// Replays the offers written by tools/generate-golden-clock.mts — cool-eva's GpsClockGate
+// Replays the offers written by tools/generate-golden-clock.mts — the reference's GpsClockGate
 // driven through randomized clock scenarios — through the C++ gate, and requires the same
 // verdict every time: step or hold, the reason, and for a step the exact target and offset.
-// Then checks SystemClockSync's trust transitions against cool-eva's clock.ts rules.
+// Then checks SystemClockSync's trust transitions against the reference's clock.ts rules.
 //
 //   check_clock <golden clock file>
 
@@ -92,7 +92,7 @@ int main(int argumentCount, char** arguments) {
 
 namespace {
 
-// cool-eva clock.ts: never-synced until a step succeeds or the clock is found in agreement;
+// The reference's clock.ts: never-synced until a step succeeds or the clock is found in agreement;
 // contested after a failed step or a corroborated time that disagrees with the known-good one.
 void checkTrustTransitions() {
   using emcool::clock::ClockTrust;

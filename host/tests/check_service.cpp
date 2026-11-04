@@ -1,9 +1,9 @@
 // Replays tools/generate-golden-service.mts through the C++ port: the OBD stack and service mode's
 // read runner on one event loop, as on the bike, fed the same frames, gate signals and dashboard
 // actions at the same milliseconds. In every millisecond it must send the same frames, record the
-// same signals, log the same lines and answer the same JSON as cool-eva did.
+// same signals, log the same lines and answer the same JSON as the reference implementation did.
 //
-// The snapshots go to a real directory; cool-eva's went to an in-memory one called /vcu-params, as
+// The snapshots go to a real directory; the reference's went to an in-memory one called /vcu-params, as
 // JSON rather than JSON lines, with latest.json where emcool keeps latest.txt. Those three are
 // translated in what the C++ says before comparing. Log lines are compared without their tags.
 //
@@ -104,14 +104,14 @@ struct Millisecond {
   std::vector<Expected> outputs;
 };
 
-// cool-eva's two pointers at its extract script, as emcool words them — plain in logs, escaped in JSON.
+// The reference's two pointers at its extract script, as emcool words them — plain in logs, escaped in JSON.
 std::string emcoolWording(std::string text) {
   for (const char* quote : {"\"", "\\\""}) {
     text = replaceAll(text,
                       std::string("Add the table with scripts/extract-vcu-tables.ts (README: ") + quote +
                           "Adding your bike's VCU parameter table" + quote + ").",
-                      std::string("Add the table to cool-eva (its README: ") + quote +
-                          "Adding your bike's VCU parameter table" + quote + ") and run tools/generate-vcu-tables.mts.");
+                      std::string("Add the table as docs/service-mode.md (") + quote + "Parameter tables" + quote +
+                          ") describes and run tools/generate-vcu-tables.mts.");
   }
   text = replaceAll(text, "switched off on this Pi (SERVICE_MODE_ENABLED=0)", "switched off on this bike (SERVICE_MODE_ENABLED=0)");
   text = replaceAll(text, "node --experimental-strip-types scripts/read-freeze-frame.ts --lifetime --save",
@@ -119,7 +119,8 @@ std::string emcoolWording(std::string text) {
   return replaceAll(text,
                     "run scripts/extract-vcu-tables.ts against your own service-tool install (see README.md) and send "
                     "the diff.",
-                    "add it to cool-eva (see its README) and run tools/generate-vcu-tables.mts.");
+                    "add it as docs/service-mode.md's Parameter tables section describes and run "
+                    "tools/generate-vcu-tables.mts.");
 }
 
 // A log line as compared: the message without its "tag: ".

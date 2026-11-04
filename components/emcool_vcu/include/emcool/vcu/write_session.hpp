@@ -1,10 +1,10 @@
 #pragma once
 
-// One service-write exchange on the bus, ported from cool-eva src/vcu/write-session.ts: open the
-// 10 81 session, read-before (the compare-and-swap), unlock with SecurityAccess, write 2E and read
-// back; and the service actions — read/set the service stamp (31 FC), clear DTCs (OBD Mode 04),
-// reset both micros (11 02), sync the clock (0x120). Coroutines on emcool::async, like kwp_client:
-// one exchange in flight at a time, 300 ms reply window, 10 ms pace after each.
+// One service-write exchange on the bus: open the 10 81 session, read-before (the
+// compare-and-swap), unlock with SecurityAccess, write 2E and read back; and the service actions —
+// read/set the service stamp (31 FC), clear DTCs (OBD Mode 04), reset both micros (11 02), sync
+// the clock (0x120). Coroutines on emcool::async, like kwp_client: one exchange in flight at a
+// time, 300 ms reply window, 10 ms pace after each.
 
 #include <array>
 #include <cstdint>
@@ -31,8 +31,8 @@ namespace emcool::vcu {
 // asking a still-unlocked micro for a seed returns invalidKey and spends one of ~3 attempts.
 inline constexpr double kSecurityCooldownMs = 4000;
 
-// Per-micro last-authenticated marks (cool-eva's module-global lastAuthenticatedAt), owned by the
-// write runner so a cooldown survives across write() calls but resets cleanly between test runs.
+// Per-micro last-authenticated marks, owned by the write runner so a cooldown survives across
+// write() calls but resets cleanly between test runs.
 class SecurityCooldown {
  public:
   double remainingMs(Micro micro, double nowMs) const;

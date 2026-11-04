@@ -2,8 +2,7 @@
 
 // The hub's GPS multiplex (message type 26): one fix spans three sub-frames — 0x00 latitude
 // plus course/speed, 0x01 longitude plus fix/altitude, 0xFE satellites and UTC — so this is
-// the one decoder that keeps state between frames. Ported from cool-eva src/gps/decode.ts
-// and src/gps/fix-watch.ts; the bit layouts and their evidence are documented there.
+// the one decoder that keeps state between frames.
 
 #include <cstdint>
 

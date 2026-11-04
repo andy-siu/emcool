@@ -1,11 +1,10 @@
 #pragma once
 
-// The OBD-II poller, ported from cool-eva src/can/obd.ts: mode 01 PIDs (speed, rpm, the three
-// temperatures, 12 V, SOH, load, distance) one at a time on the functional address 0x7DF,
-// each waited for up to 200 ms, a round every 500 ms. Every 20th round adds the diagnostic
-// PIDs (MIL, the freeze-frame code, time and distance since clearing); every 120th — about a
-// minute — reads the stored trouble codes, and every tenth of those the pending and permanent
-// ones too.
+// The OBD-II poller: mode 01 PIDs (speed, rpm, the three temperatures, 12 V, SOH, load,
+// distance) one at a time on the functional address 0x7DF, each waited for up to 200 ms, a
+// round every 500 ms. Every 20th round adds the diagnostic PIDs (MIL, the freeze-frame code,
+// time and distance since clearing); every 120th — about a minute — reads the stored trouble
+// codes, and every tenth of those the pending and permanent ones too.
 //
 // It parks for a hold (obd_hold.hpp) at each check: before every PID, before each list read,
 // and at the start of each round.
@@ -48,11 +47,11 @@ class ObdPoller {
   void stop() { phase_ = Phase::kStopped; }
 
   static bool isResponse(std::uint32_t id) { return id >= kResponseLowId && id <= kResponseHighId; }
-  // cool-eva handleResponse(): any frame in 0x7E0-0x7EF. A trouble-code read in progress gets
+  // Any frame in 0x7E0-0x7EF. A trouble-code read in progress gets
   // first look; a mode 01 answer to the PID being waited for is filed.
   void handleResponse(std::uint32_t id, std::span<const std::uint8_t> data, Now now);
   void tick(Now now);
-  // A trouble-code read it started has finished: carry on at once, as cool-eva's await does.
+  // A trouble-code read it started has finished: carry on at once, as an await would.
   void takeReadOutcome(Now now);
   std::optional<Deadline> nextDeadline() const;
 

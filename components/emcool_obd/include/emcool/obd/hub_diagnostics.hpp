@@ -1,7 +1,7 @@
 #pragma once
 
-// The bike's ACTIVE faults, as the Energica Connectivity Hub mirrors them onto CAN 0x410, ported from
-// cool-eva src/can/hub-mirror.ts, src/diagnostics/decode.ts and record.ts. Passive: it only listens.
+// The bike's ACTIVE faults, as the Energica Connectivity Hub mirrors them onto CAN 0x410. Passive: it
+// only listens.
 //
 // 0x410 message type 25 carries the list a page at a time, two 20-bit codes a page — (component,
 // symptom) as Energica's own table keys them, not the 16-bit DTC mode 03 sends. Each complete list
@@ -51,7 +51,7 @@ class DiagnosticListAssembler {
 bool isDiagnosticsMessage(std::span<const std::uint8_t> frame);
 bool isDiagnosticsInfoMessage(std::span<const std::uint8_t> frame);
 
-// handleHubMirrorFrame(), with record.ts' memory of what it has seen and logged.
+// The hub-mirror handler, with a memory of what it has seen and logged.
 class HubDiagnostics {
  public:
   void handle(std::span<const std::uint8_t> frame, SignalRecorder& recorder);

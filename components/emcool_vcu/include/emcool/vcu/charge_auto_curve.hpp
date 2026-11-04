@@ -1,10 +1,9 @@
 #pragma once
 
-// The automatic charge-current decision and its support, ported from cool-eva src/charge/
-// auto-curve.ts, rate.ts, step.ts, pace.ts and soc.ts. Pure: the pack-temperature and SoC sample
+// The automatic charge-current decision and its support. Pure: the pack-temperature and SoC sample
 // histories, the live readings and now, in; a command-or-hold decision out. The control law aims
 // the pack at TARGET_C (54), never past CLIFF_C (55), predicting heat over a REACTION_MIN window and
-// stepping the current in clamped amps. Every threshold's reasoning is in those cool-eva files.
+// stepping the current in clamped amps.
 
 #include <cstdint>
 #include <optional>
@@ -13,7 +12,7 @@
 
 namespace emcool::vcu {
 
-// cool-eva's constants (auto-curve.ts).
+// The control law's constants.
 inline constexpr double kCliffC = 55;
 inline constexpr double kTargetC = 54;
 inline constexpr double kReactionMin = 12;
@@ -25,14 +24,14 @@ inline constexpr double kQuantisationK = 0.5;
 inline constexpr std::int64_t kTemperatureMaxAgeMs = 5000;
 inline constexpr double kAutoChargeManagerStateDc = 0x23;
 inline constexpr std::int64_t kChargeAutoSessionMaxAgeMs = 5000;
-// rate.ts
+// The heating-rate estimate.
 inline constexpr std::int64_t kRateMinSpanMs = 300000;
 inline constexpr int kRateMinDistinct = 3;
 inline constexpr std::int64_t kRateWindowMs = 600000;
-// pack temperature plausibility (fan/curve.ts).
+// Pack temperature plausibility.
 inline constexpr double kPackTemperatureMinC = -30;
 inline constexpr double kPackTemperatureMaxC = 90;
-// soc.ts
+// The SoC estimate.
 inline constexpr std::int64_t kSocMaxAgeMs = 5000;
 inline constexpr std::int64_t kSocWindowMs = kRateWindowMs;
 
@@ -94,7 +93,7 @@ ChargeAutoDecision decideChargeCurrent(const ChargeAutoInput& input);
 bool isPackTemperaturePlausible(std::optional<double> celsius);
 bool isSocPlausible(std::optional<double> percent);
 
-// --- rate.ts, exported for the golden ---------------------------------------------------------
+// --- The heating rate, exported for the golden ------------------------------------------------
 struct HeatingRate {
   enum class Kind : std::uint8_t { kRate, kBounded, kNotRising, kUnknown };
   Kind kind = Kind::kUnknown;
@@ -102,7 +101,7 @@ struct HeatingRate {
 };
 HeatingRate estimateHeatingRate(const std::vector<TemperatureSample>& samples, std::int64_t nowMs);
 double measuredRatePerMinute(const HeatingRate& rate);
-// soc.ts
+// The SoC estimate.
 std::optional<double> sessionAheadMinutes(std::optional<double> socPercent, std::optional<double> socAgeMs,
                                           const std::vector<SocSample>& socSamples, std::optional<double> requestedAmps,
                                           std::int64_t nowMs);

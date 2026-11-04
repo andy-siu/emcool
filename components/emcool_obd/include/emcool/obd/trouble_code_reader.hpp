@@ -1,16 +1,16 @@
 #pragma once
 
-// Reading one trouble-code list over OBD-II, ported from cool-eva src/can/obd-dtc.ts: the
-// request on the functional address 0x7DF, ISO-TP reassembly of the reply, the flow control
-// its first frame asks for, and retries when a transfer stalls.
+// Reading one trouble-code list over OBD-II: the request on the functional address 0x7DF,
+// ISO-TP reassembly of the reply, the flow control its first frame asks for, and retries
+// when a transfer stalls.
 //
 // Four outcomes, kept apart all the way to the screen: answered; silent (nothing came — NOT
 // "no codes"); truncated (a transfer started and stalled, every attempt); not sent (our side,
 // not the bike).
 //
-// Timing, as cool-eva's: 300 ms for the first reply, 400 ms after each first frame for the
-// rest, and up to four retries 120 ms apart, for stalls only — silence and refusals are
-// answers. Worst case about 4 s.
+// Timing: 300 ms for the first reply, 400 ms after each first frame for the rest, and
+// up to four retries 120 ms apart, for stalls only — silence and refusals are answers.
+// Worst case about 4 s.
 
 #include <cstdint>
 #include <optional>
@@ -51,7 +51,7 @@ class TroubleCodeReader {
   // for any other mode) it's refused, and the not-sent outcome returned here instead.
   std::optional<DtcReadOutcome> start(int mode, Now now);
   bool busy() const { return phase_ != Phase::kIdle || outcome_.has_value(); }
-  // cool-eva troubleCodeTransferInFlight(): an attempt is on the bus right now.
+  // An attempt is on the bus right now.
   bool transferInFlight() const { return phase_ == Phase::kAttempt; }
 
   // A frame in 0x7E0-0x7EF. True if it was this read's; false leaves it for the PID poller.

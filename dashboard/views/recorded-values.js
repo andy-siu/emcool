@@ -150,8 +150,8 @@ function Values(key, component, symptom) {
     // saying the first from the second is the screen inventing an answer the bike never
     // gave — the distinction src/diagnostics/stored-codes.ts exists to protect.
     return fetchFailed.val
-      ? Note(`Could not ask the Pi what it has recorded (${fetchFailed.val}). This says nothing about the bike.`)
-      : Note(`No values have been read on this Pi. ${howToRead}.`);
+      ? Note(`Could not ask emcool what it has recorded (${fetchFailed.val}). This says nothing about the bike.`)
+      : Note(`No values have been read on emcool. ${howToRead}.`);
   }
   const record = stored.records.find(candidate => candidate.component === component);
   if (!record) {

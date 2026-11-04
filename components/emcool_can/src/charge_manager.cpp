@@ -2,7 +2,7 @@
 
 // The charge manager's five ids, one ECU's state read together: 0x605 which path the
 // session is on, 0x610 the handshake, 0x615 measures it, 0x620 bounds it, 0x625 whether
-// anything flows. Ported from cool-eva src/can/charge-manager.ts, which has the evidence.
+// anything flows.
 
 namespace emcool::can {
 
@@ -43,7 +43,7 @@ void decodeChargeManagerFrame(std::uint32_t id, FrameBytes data, DecodedValues& 
       if (data.size() < 8) return;
       if (data[1] != 0x01 || data[4] != 0 || data[5] != 0 || data[6] != 0 || data[7] != 0) return;
       // Kept although its original reason is gone: b0 = 0 is just a 256 V target under the
-      // 16-bit reading, and has never occurred. cool-eva src/can/charge-manager.ts.
+      // 16-bit reading, and has never occurred.
       if (data[0] != 0) {
         out.push("fast_dc_target_v", u16le(data[0], data[1]));
       }

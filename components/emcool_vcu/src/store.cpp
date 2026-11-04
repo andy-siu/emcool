@@ -311,7 +311,7 @@ void VcuStore::writeSnapshot(const SnapshotHeader& header, long thisRunStartOffs
     logWarning(kTag, "could not clear %s; a resume file may outlive this sweep: %s", kPartialFile, std::strerror(errno));
   }
 
-  // What changed against the snapshot before (cool-eva reportChanges).
+  // What changed against the snapshot before.
   if (baseline.state != Latest::State::kSnapshot) {
     logInfo(kTag, "no previous snapshot to compare against — this one becomes the baseline");
     return;
