@@ -378,10 +378,16 @@ async function main(): Promise<void> {
     (globalThis as any).__now = 0;
     const signals = await importFresh("src/can/signals.ts");
     const writeRunner = await importFresh("src/vcu/write-runner.ts");
-    for (const [key, value] of Object.entries(seed)) signals.record(key, value, 1790000000000 + now);
+    const failSendAt = seed.__failSendAt;
+    for (const [key, value] of Object.entries(seed)) {
+      if (!key.startsWith("__")) signals.record(key, value, 1790000000000 + now);
+    }
     const sent: string[] = [];
     const channel = {
       send(message: { id: number; data: Buffer }) {
+        if (failSendAt !== undefined && sent.length + 1 === failSendAt) {
+          throw new Error("ENOBUFS: the transmit queue is full");
+        }
         emit(`t ${now} ${message.id.toString(16)} ${hex(message.data)}`);
         sent.push(message.id.toString(16));
       },
@@ -411,6 +417,10 @@ async function main(): Promise<void> {
   scenarios.push(() => chargeCase("chargecurrent", {}, { kind: "charge-current", amps: 10, origin: "manual" }));
   // Over the ceiling: refused.
   scenarios.push(() => chargeCase("chargecurrent", { charge_manager_state: 0x23, fast_dc_limit_max_a: 40 }, { kind: "charge-current", amps: 60, origin: "manual" }));
+  // The bus fails on the second frame, after the 0x120 commit twin left: "may have sent" (#348).
+  scenarios.push(() =>
+    chargeCase("chargecurrent", { charge_manager_state: 0x23, fast_dc_limit_max_a: 75, __failSendAt: 2 }, { kind: "charge-current", amps: 30, origin: "manual" })
+  );
   // Charge stop, live session.
   scenarios.push(() => chargeCase("chargestop", { charge_manager_state: 0x02 }, { kind: "charge-stop" }));
   // Charge stop, no session: refused.

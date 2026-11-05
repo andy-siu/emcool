@@ -118,7 +118,14 @@ struct ServiceWriteAnswer {
   bool ok = false;
   ServiceWriteResult result;  // ok
   std::string reason;         // !ok
+  // !ok on a charge-current only: a frame may already have left (cool-eva's mayHaveSent). The 0x120
+  // commit twin goes first, so a later failure must never read as "not sent".
+  bool mayHaveSent = false;
 };
+
+// cool-eva's VcuWriteResponse.chargeCurrentAttempt: on a charge-current that produced no result,
+// whether nothing went out or delivery is uncertain. Absent for every other action.
+enum class ChargeCurrentAttempt : std::uint8_t { kNone, kNotSent, kUnknown };
 
 // What the three gates do about one action.
 struct ServiceActionPolicy {
@@ -183,9 +190,11 @@ class VcuWriteRunner {
   bool handleCanFrame(std::uint32_t id, std::span<const std::uint8_t> data);
   void stop();
 
-  // The /vcu-write body: {status, result, message}. `result`/`message` null unless given.
+  // The /vcu-write body: {status, result, message[, chargeCurrentAttempt]}. `result`/`message` null
+  // unless given.
   void writeResponseJson(text::TextBuffer& out, const WriteStatusRequest& request, const ServiceWriteResult* result,
-                         const std::optional<std::string>& message);
+                         const std::optional<std::string>& message,
+                         ChargeCurrentAttempt attempt = ChargeCurrentAttempt::kNone);
 
   SecurityCooldown& cooldown() { return cooldown_; }
 

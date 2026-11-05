@@ -84,7 +84,13 @@ export function openRidingView(view) {
   url.searchParams.delete("panel");
   url.searchParams.delete("section");
   url.hash = hashForView(view);
-  history.pushState(view === "cells" ? { coolEvaSubview: true, backName } : null, "", url);
+  history.pushState(
+    view === "cells" || view === "fault-report"
+      ? { coolEvaSubview: true, menuOrigin: destination.rawVal !== "", backName }
+      : null,
+    "",
+    url
+  );
   destination.val = "";
   destinationSection.val = "";
   armed.val = "";

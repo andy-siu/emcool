@@ -93,7 +93,7 @@ constexpr SignalDef kSignals[] = {
     {"charge_manager_soc", "%", "charge", SignalSource::kStream, 0.0, false, false, 0, 0, Unbounded::kNone},
     {"charge_manager_state", "", "charge", SignalSource::kStream, 0.0, false, true, 0.0, 255.0, Unbounded::kNone},
     {"charge_manager_status", "", "charge", SignalSource::kStream, 0.0, false, true, 0.0, 255.0, Unbounded::kNone},
-    {"charge_soc_limit_pct", "%", "charge", SignalSource::kStream, 0.0, false, true, 0.0, 100.0, Unbounded::kNone},
+    {"charge_soc_limit_pct", "%", "charge", SignalSource::kStream, 0.0, true, true, 0.0, 100.0, Unbounded::kNone},
     {"charge_state", "", "charge", SignalSource::kStream, 0.0, false, true, 0.0, 255.0, Unbounded::kNone},
     {"charge_type", "", "charge", SignalSource::kStream, 0.0, false, true, 0.0, 2.0, Unbounded::kNone},
     {"charger_enabled", "", "charge", SignalSource::kStream, 0.0, false, true, 0.0, 255.0, Unbounded::kNone},
