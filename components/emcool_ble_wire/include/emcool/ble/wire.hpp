@@ -24,12 +24,12 @@
 
 namespace emcool::ble {
 
-inline constexpr int kProtocolVersion = 1;
+inline constexpr int kProtocolVersion = 2;
 
 inline constexpr std::string_view kServiceUuid = "7c0e0001-5f3a-4c8e-9d2b-c00e7a000001";
 // Phone → bike, written with response.
 inline constexpr std::string_view kRxCharacteristicUuid = "7c0e0002-5f3a-4c8e-9d2b-c00e7a000001";
-// Bike → phone, by notification; values are at most MTU − 3 bytes.
+// Bike → phone, by notification; values are at most min(MTU − 5, 512) bytes, as cool-eva sends them.
 inline constexpr std::string_view kTxCharacteristicUuid = "7c0e0003-5f3a-4c8e-9d2b-c00e7a000001";
 // Read-only `{ version, serverNonce }`.
 inline constexpr std::string_view kInfoCharacteristicUuid = "7c0e0004-5f3a-4c8e-9d2b-c00e7a000001";
@@ -147,7 +147,7 @@ using HexDigest = std::array<char, 65>;
 HexNonce randomNonce();
 
 // HMAC-SHA256(secret, label ‖ serverNonce ‖ clientNonce) — the HELLO proof with label
-// "cool-eva/hello", the session's AES key with "cool-eva/session". False when a nonce isn't
+// "emcool/hello", the session's AES key with "emcool/session". False when a nonce isn't
 // lower-case hex.
 bool helloProof(std::string_view secret, std::string_view serverNonceHex, std::string_view clientNonceHex,
                 HexDigest& out);

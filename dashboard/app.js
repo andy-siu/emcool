@@ -1,27 +1,33 @@
+import { ReloadPageNotice } from "./views/reload-page.js";
 // @ts-check
 
 import van from "./vendor/van-1.6.1.js";
-import { chartTick, connect, connection, isStaleSampled, peek, signalState } from "./lib/store.js";
+import { chartTick, connect, connection, systemStatus, isStaleSampled, peek, signalState } from "./lib/store.js";
 import { headroomMvSampled } from "./lib/derive.js";
 import { chargeMode } from "./lib/charge-mode.js";
 import { updateDwell } from "./lib/dwell.js";
 import { updateTrip } from "./lib/trip.js";
 import { RideView } from "./views/ride.js";
 import { HypermileView } from "./views/hypermile.js";
+import { CellsView } from "./views/cells.js";
 import { ChargeView } from "./views/charge.js";
 import { AllView } from "./views/all.js";
 import { FaultsView } from "./views/faults.js";
-import { Sheet, hasTroubleCodes, installWaypointRefresh, openSheet, refreshStatus } from "./views/sheet.js";
-import { BleHeaderButton } from "./views/ble-connect.js";
+import { Sheet, hasTroubleCodes, installWaypointRefresh, refreshStatus } from "./views/sheet.js";
+import { Header } from "./views/header.js";
+import { CoolingView } from "./views/cooling.js";
 import { monotonicNow } from "./lib/clock.js";
-import { TABS, advanceTab, currentTab, peekTab, showTab, startRouting } from "./lib/router.js";
+import { TABS, advanceTab, currentTab, currentView, peekTab, showTab, startRouting } from "./lib/router.js";
 import { Toast } from "./lib/toast.js";
 import { installHandlebarGestures } from "./lib/handlebar-gestures.js";
 import { installAnnouncements } from "./lib/announce.js";
 import { startTheming } from "./lib/theme.js";
 import { viewRules } from "./lib/view-rules.js";
+import { destination, openDestination, startDestinationRouting } from "./lib/destination.js";
+import { DestinationPage } from "./views/destination-page.js";
+import { settings, watchSettings } from "./lib/settings.js";
 
-const { button, div, span } = van.tags;
+const { button, div } = van.tags;
 
 // Shell: header, the current view, the tab bar, and the rules for when the bike
 // gets to choose the view instead of you.
@@ -31,13 +37,13 @@ const { button, div, span } = van.tags;
 // tap on the bar, the high-beam gesture and the bike's own rules alike — so that Back
 // walks through the screens the rider actually saw, whoever chose them.
 
-/** @typedef {import("./lib/router.js").TabName} ViewName */
+/** @typedef {import("./lib/router.js").ViewName} ViewName */
 
 /**
- * The view each tab shows.
+ * The view each route shows.
  *
  * A Record over ViewName rather than the switch this used to be: ViewName is derived
- * from the router's TABS, so adding a tab there widens it and a tab with no view here
+ * from the router's ROUTES, so adding a route widens it and a route with no view here
  * fails `npm run typecheck`. The switch's `default` case would instead have drawn the
  * riding screen under the new tab's URL and said nothing.
  *
@@ -45,7 +51,9 @@ const { button, div, span } = van.tags;
  */
 const VIEWS = {
   ride: RideView,
+  cooling: CoolingView,
   hypermile: HypermileView,
+  cells: CellsView,
   charge: ChargeView,
   all: AllView,
   faults: FaultsView,
@@ -55,6 +63,7 @@ const VIEWS = {
 // render draws the screen a link named rather than drawing Ride and swapping it a frame
 // later. It answers whether the URL named a tab at all, which the rules below need.
 const arrivedByDeepLink = startRouting();
+startDestinationRouting();
 
 /** SOC at or below which the hypermiling screen takes over, as requested. */
 const HYPERMILE_SOC = 5;
@@ -70,53 +79,26 @@ const HYPERMILE_HEADROOM_MV = 150;
 function App() {
   // Toast last, so it paints over the header it covers. It is fixed and
   // hit-transparent, so its position in the tree costs nothing else.
-  return div(Header(), () => VIEWS[currentTab()](), TabBar(), Sheet(), Toast());
-}
-
-function Header() {
   return div(
-    { class: "header" },
-    button(
-      {
-        class: "menu",
-        // openSheet() rather than setting the flag here: the sheet's sections fetch
-        // when they become visible, and it owns the list of what has to be
-        // refreshed so this button cannot fall behind it.
-        onclick: () => openSheet(),
-      },
-      // The Faults tab carries the warning now, and it leads somewhere that names
-      // the code. Two ⚠ for one fault is how a warning stops being read.
-      "☰"
-    ),
-    span({ class: "brand" }, "emcool"),
-    div(
-      { class: "status" },
-      BleHeaderButton(openSheet),
-      span({ class: () => `dot ${canDotState()}` }),
-      span("CAN"),
-      span({ class: () => `dot ${connection.val}` }),
-      span(() => (connection.val === "live" ? "live" : connection.val === "connecting" ? "connecting" : "offline"))
-    )
+    Header(),
+    () => (destination.val ? ReloadPageNotice()() : div()),
+    () => {
+      const fault = systemStatus.val?.settingsFault ?? settings.val?.fault;
+      if (!destination.val || !fault || (destination.val === "settings" && fault === settings.val?.fault)) return div();
+      return div(
+        { class: "settings-page" },
+        div(
+          { class: "settings-card settings-row" },
+          div("Settings need attention", div({ class: "settings-note" }, fault)),
+          button({ class: "settings-button", onclick: () => openDestination("settings") }, "Open Settings")
+        )
+      );
+    },
+    () => (destination.val ? DestinationPage() : VIEWS[currentView()]()),
+    () => (destination.val ? div() : TabBar()),
+    Sheet(),
+    Toast()
   );
-}
-
-/**
- * The CAN interface dot's state: green when can0 is up, red when it is down, grey when
- * we can't say. "Can't say" is not only "no reading yet" — while the WebSocket is not
- * live the `can_link` value is frozen at whatever last arrived, so the honest answer is
- * unknown, the same way isStale() greys every tile out. The live dot beside this one is
- * what reports the WebSocket itself.
- * @returns {"up" | "down" | "unknown"}
- */
-function canDotState() {
-  if (connection.val !== "live") {
-    return "unknown";
-  }
-  const reading = signalState("can_link").val;
-  if (!reading) {
-    return "unknown";
-  }
-  return reading.value === 1 ? "up" : "down";
 }
 
 function TabBar() {
@@ -185,7 +167,9 @@ function autoFocus() {
   // peekTab(), not currentTab(): subscribing this timer to the tab would re-pace it on
   // every tab change.
   for (const tab of viewRules(viewRuleMemory, bike, peekTab())) {
-    showTab(tab);
+    if (!destination.rawVal) {
+      showTab(tab);
+    }
   }
 }
 
@@ -216,7 +200,9 @@ function detectHighBeamGesture() {
     flashEdges = [...flashEdges, now].filter(edge => now - edge <= FLASH_WINDOW_MS);
     if (flashEdges.length >= FLASH_COUNT) {
       flashEdges = [];
-      advanceTab();
+      if (!destination.rawVal) {
+        advanceTab();
+      }
     }
   }
   previousHighBeam = current;
@@ -264,7 +250,13 @@ van.add(document.body, App());
 // router's business alone: it is the same call the high-beam flash makes, and it is
 // what keeps the URL and the screen in step. A gesture that set the tab itself would
 // be the second answer to a question that must only have one.
-installHandlebarGestures({ onNextTab: advanceTab });
+installHandlebarGestures({
+  onNextTab: () => {
+    if (!destination.rawVal) {
+      advanceTab();
+    }
+  },
+});
 // The other half of the same story, and the reason the list above is shorter than it was:
 // the fan cycle and the waypoint hold are recognised on the Pi now, so this page finds out
 // about them the way it finds out about anything else on the bus, and says so.
@@ -277,3 +269,5 @@ installWaypointRefresh();
 startTheming();
 connect();
 void refreshStatus();
+
+watchSettings();

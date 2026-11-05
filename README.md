@@ -99,14 +99,14 @@ Per-bike settings live in the ESP32's NVS, emcool's counterpart of cool-eva's `/
 
 ```
 emcool> show
-emcool> set BLE_SECRET "a phrase you can type on a phone"
+emcool> new-ble-key
 emcool> set CUSTOM_BMS_CONFIG 1
 emcool> restart
 ```
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `BLE_SECRET` | not set | The phone dashboard's link secret, as cool-eva's `BLE_SECRET`: 12–128 characters. Unset keeps Bluetooth off. |
+| `BLE_SECRET` | not set | The phone dashboard's Bluetooth key: 64 hex characters, generated and printed once by `new-ble-key`, as cool-eva's generated key. Unset keeps Bluetooth off. |
 | `BLE_NAME` | `emcool` | The name in the phone's device list. |
 | `CUSTOM_BMS_CONFIG` | `0` | `1` if the BMS runs the custom LiBAL config, as cool-eva's `CUSTOM_BMS_CONFIG`. |
 | `OBD_ENABLED` | `0` | `1` to poll OBD-II and read trouble codes, as cool-eva's `OBD_ENABLED`. This puts the CAN controller on the bus as an active node. See [Transmitting](#transmitting). |
@@ -194,13 +194,15 @@ The boot log and the status line give the address. ⚠️ It's all plain text on
 
 ## Phone dashboard (Bluetooth)
 
-emcool ships its own phone dashboard in [`dashboard/`](dashboard/) — a static site copied from cool-eva's and rebranded, paired with emcool's wire protocol (the handshake salts and the request header were renamed from cool-eva's, so it talks to this firmware, not cool-eva's). Host it over HTTPS and open it in Bluefy on iOS or Chrome on Android. A [GitHub Pages workflow](.github/workflows/pages.yml) publishes it — see [`docs/github-pages.md`](docs/github-pages.md), [`dashboard/README.md`](dashboard/README.md) and [`docs/ble.md`](docs/ble.md).
+emcool ships its own phone dashboard in [`dashboard/`](dashboard/): cool-eva's, copied and rebranded by `tools/sync-dashboard.mts`, with the handshake salts and the request header renamed so it talks to this firmware, not cool-eva's. It is served at **https://emcool.athegen.com** (GitHub Pages, custom domain; see [`docs/hosting.md`](docs/hosting.md)). Open it in Bluefy on iOS or Chrome on Android. See also [`dashboard/README.md`](dashboard/README.md) and [`docs/ble.md`](docs/ble.md).
 
-1. Set `BLE_SECRET` from the serial console (see [Settings](#settings)) and `restart`.
-2. Enter the same secret in the dashboard's menu under *Bluetooth*.
+1. Run `new-ble-key` on the serial console (see [Settings](#settings)), keep the key it prints, and `restart`.
+2. Paste the key in the dashboard's menu under *Bluetooth → Use an existing access code*.
    - The live tiles, the status sheet and the Faults tab work. The Faults tab shows stored codes only with `OBD_ENABLED` on.
    - The parameters page works, as do service mode's reads with `SERVICE_MODE_ENABLED` on and its writes with `SERVICE_WRITE_ENABLED` on.
-   - The sheet's *Download recent ride log* downloads the newest part of the ride log (see [Ride log](#ride-log)). The dashboard's other requests answer "not on emcool yet". What differs from cool-eva's server, the memory it takes, and what has been verified are in [`docs/ble.md`](docs/ble.md).
+   - The sheet's *Download recent ride log* downloads the newest part of the ride log (see [Ride log](#ride-log)).
+   - Settings shows what the bike runs with, read-only; settings change on the serial console.
+   - The dashboard's other requests answer "not on emcool yet". What differs from cool-eva's server, the memory it takes, and what has been verified are in [`docs/ble.md`](docs/ble.md).
 
 ## Checks
 
@@ -210,6 +212,7 @@ tools/check.sh
 
 The checks run on the laptop. They need a cool-eva checkout (`../cool-eva`, or set `COOL_EVA_DIR`), Node 22.6+, CMake and Ninja, but not ESP-IDF.
 
+- **The dashboard is current.** `dashboard/` must be exactly what `tools/sync-dashboard.mts` makes from cool-eva's `public/`. Re-run that script to pull cool-eva's dashboard changes.
 - **The registry is current.** `components/emcool_signals/src/registry.gen.cpp` is generated from cool-eva's `src/can/registry.ts` by `tools/generate-registry.mts`. Re-run that script when cool-eva's registry changes.
 - **The decoders match cool-eva.** `tools/generate-golden.mts` runs about 200,000 synthetic frames through cool-eva's own `decodeFrame()`. `host/tests/check_decoders.cpp` then requires the C++ to produce the same keys, in the same order, with bit-identical values, and to warn exactly as often.
   - The corpus covers every 11-bit id at every length, biased payloads that get past each decoder's gates, and GPS sub-frame sequences.
@@ -266,12 +269,12 @@ The checks run on the laptop. They need a cool-eva checkout (`../cool-eva`, or s
 | `main` | Firmware: CAN receive and transmit, the decode, diagnostics, ride-log and Bluetooth tasks, the microSD mount, NimBLE, NVS settings and the serial console, the clock step and the status report. |
 | `host` | Host build of the components, plus the checks. |
 | `tools` | Generators, the ride-log reader and import, and `check.sh`. |
-| `docs` | Design notes: `ride-log-format.md`, `ble.md`, `obd.md`, `service-mode.md`. |
+| `docs` | Design notes: `ride-log-format.md`, `ble.md`, `obd.md`, `service-mode.md`, `hosting.md`. |
 
 ## Decisions
 
 - **The ride log is plain text on a FAT32 microSD card**, unlike cool-eva's encrypted log. Position, heading and altitude are never written to it; the list is in `components/emcool_signals/include/emcool/signals/ride_log_policy.hpp`.
-- **The phone dashboard is Bluetooth only.** It stays cool-eva's, loaded from the iOS app or GitHub Pages. The Bluetooth protocol is byte-compatible with cool-eva's `public/lib/ble-wire.js`, and `tools/check-ble.mts` holds it to that.
+- **The phone dashboard is Bluetooth only.** It stays cool-eva's, synced by `tools/sync-dashboard.mts` and loaded from https://emcool.athegen.com, an origin of its own (the Bluetooth key lives in its `localStorage`). The Bluetooth protocol is byte-compatible with cool-eva's `public/lib/ble-wire.js`, and `tools/check-ble.mts` holds it to that.
 - **Wi-Fi is for the laptop, and off by default.** It serves the console and the ride log, never the dashboard. It's a station only, never an access point, and it's plain text behind one admin password. See [`docs/wifi.md`](docs/wifi.md).
 - **Nothing goes on the bus unless a setting asks for it.** Every transmitting feature defaults to off, even where cool-eva's defaults to on. With all of them off, the CAN controller is listen-only.
 

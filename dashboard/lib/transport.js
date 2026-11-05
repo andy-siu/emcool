@@ -1,12 +1,12 @@
 // @ts-check
 
+import { requireCurrentPage } from "./page-reload.js";
 import { BLE_MODE, nativeShell, tunnelRequest } from "./ble-link.js";
 
 // How the dashboard reaches the Pi's endpoints: `fetch` when the page was served by the
-// Pi, the BLE tunnel when it was not — GitHub Pages, or the iOS app (./ble-link.js BLE_MODE). Every endpoint call in
-// public/ goes through request() so that choice is made in one place — a stray `fetch`
-// would work on wifi and 404 against GitHub Pages, which is the kind of bug that only
-// shows up at the roadside.
+// Pi, the BLE tunnel on the hosted HTTPS dashboard or iOS app (./ble-link.js BLE_MODE).
+// Every endpoint call in public/ goes through request() — a stray `fetch` would work
+// on wifi and 404 against the static host, only failing once the rider is away from wifi.
 
 /**
  * The part of `Response` the dashboard actually uses. Narrow on purpose, so the tunnel's
@@ -34,19 +34,28 @@ import { BLE_MODE, nativeShell, tunnelRequest } from "./ble-link.js";
  * @returns {Promise<EndpointResponse>}
  */
 export async function request(path, init = {}) {
+  if (init.method && !["GET", "HEAD"].includes(init.method)) {
+    init = { ...init, headers: { "Content-Type": "application/json", ...init.headers } };
+  }
   if (!BLE_MODE) {
     const { onProgress: _unused, ...fetchInit } = init;
-    return fetch(path, fetchInit);
+    const response = await fetch(path, fetchInit);
+    if (response.status === 403) {
+      await requireCurrentPage(response.clone());
+    }
+    return response;
   }
   const answer = await tunnelRequest(path, init);
   const contentType = answer.headers["content-type"] ?? "";
-  return {
+  const response = {
     ok: answer.status >= 200 && answer.status < 300,
     status: answer.status,
     json: async () => JSON.parse(new TextDecoder().decode(answer.body)),
     text: async () => new TextDecoder().decode(answer.body),
     blob: async () => new Blob([answer.body], { type: contentType }),
   };
+  await requireCurrentPage(response);
+  return response;
 }
 
 /**

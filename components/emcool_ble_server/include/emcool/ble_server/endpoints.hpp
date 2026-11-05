@@ -8,6 +8,9 @@
 //   GET /stored-dtcs     the OBD trouble-code lists as last read (all "not-read" with OBD off)
 //   GET /dl              the ride log off the card: the newest parts, up to ?mb= (default 16, at
 //                        most 256), or only ?boot=N's — see ride_log/download.hpp
+//   GET /settings        cool-eva's SettingsReply shape, read-only: what this boot runs with, from
+//                        the serial console's settings (settings/dashboard_reply.hpp). Changing
+//                        one stays a console job; a PATCH gets a 405 saying so
 // Everything else is a 404 saying the endpoint isn't on emcool yet. None of these touches the
 // bus: like cool-eva's, they serve what is already known, so refreshing a page can't make the
 // bike answer anything.
@@ -117,15 +120,18 @@ class DashboardEndpoints final : public RequestHandler {
   // one part — a few dozen sector reads — and the link task sends nothing while it runs.
   static constexpr int kDownloadStepsPerPoll = 1;
 
+  // `settingsBody`: /settings's JSON, built once at boot (the settings it describes can't change
+  // until a restart); empty answers 404, as on a bike with no such endpoint.
   DashboardEndpoints(const signals::SignalStore& store, std::mutex& storeMutex, StorageReport& storage,
                      TroubleCodeSource& troubleCodes, ServiceDesk* service = nullptr,
-                     ride_log::LogDownload* download = nullptr)
+                     ride_log::LogDownload* download = nullptr, std::string settingsBody = {})
       : store_(store),
         storeMutex_(storeMutex),
         storage_(storage),
         troubleCodes_(troubleCodes),
         service_(service),
-        download_(download) {}
+        download_(download),
+        settingsBody_(std::move(settingsBody)) {}
 
   std::optional<HttpResponse> begin(const HttpRequest& request, std::int64_t nowMonotonicMs) override;
   std::optional<HttpResponse> poll(std::int64_t nowMonotonicMs) override;
@@ -153,6 +159,7 @@ class DashboardEndpoints final : public RequestHandler {
   TroubleCodeSource& troubleCodes_;
   ServiceDesk* service_;
   ride_log::LogDownload* download_;
+  const std::string settingsBody_;
   Waiting waiting_ = Waiting::kNothing;
   std::string downloadName_;
   // A body read a part at a time: the parts, and where the one in hand sits in the body.

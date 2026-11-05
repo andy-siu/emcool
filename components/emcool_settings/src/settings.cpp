@@ -1,6 +1,7 @@
 #include "emcool/settings/settings.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <charconv>
 #include <cstdio>
@@ -14,8 +15,9 @@ namespace {
 constexpr const char* kTag = "settings";
 
 constexpr SettingSpec kSpecs[] = {
-    {"BLE_SECRET", "ble_secret", SettingType::kSecret, "", 12, 128, false,
-     "The phone dashboard's link secret, as cool-eva's BLE_SECRET. 12-128 characters; unset keeps Bluetooth off."},
+    {"BLE_SECRET", "ble_secret", SettingType::kSecret, "", 64, 64, false,
+     "The phone dashboard's Bluetooth key: 64 lower-case hex characters, as cool-eva's generated key. `new-ble-key` "
+     "makes one and prints it once; unset keeps Bluetooth off."},
     // The scan response has room for a 29-byte name.
     {"BLE_NAME", "ble_name", SettingType::kText, "emcool", 1, 29, false,
      "The name the phone's device list shows. The dashboard finds the bike by its service UUID, not this."},
@@ -62,6 +64,19 @@ bool equalsIgnoringCase(std::string_view left, std::string_view right) {
          });
 }
 
+std::string lowerCased(std::string_view value) {
+  std::string lowered(value);
+  std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                 [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+  return lowered;
+}
+
+bool isBluetoothKey(std::string_view value) {
+  return value.size() == 64 && std::all_of(value.begin(), value.end(), [](char character) {
+           return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
+         });
+}
+
 std::optional<bool> parseFlag(std::string_view value) {
   for (const char* yes : {"1", "on", "true", "yes"}) {
     if (equalsIgnoringCase(value, yes)) return true;
@@ -94,6 +109,8 @@ std::string storedOrDefault(SettingsStorage& storage, const SettingSpec& spec) {
 std::string describe(const SettingSpec& spec, std::string_view value) {
   if (spec.type != SettingType::kSecret) return value.empty() ? "(empty)" : std::string(value);
   if (value.empty()) return "not set";
+  // The key is always 64 characters, so its length says nothing.
+  if (spec.name == "BLE_SECRET") return "set";
   return "set (" + std::to_string(value.size()) + " characters)";
 }
 
@@ -143,7 +160,7 @@ int save(SettingsStorage& storage, RuntimeSettings& running, const SettingSpec& 
 int set(SettingsStorage& storage, RuntimeSettings& running, int argumentCount, const char* const* arguments,
         std::string& output) {
   if (argumentCount != 3) {
-    appendLine(output, "usage: set NAME VALUE — quote a value with spaces: set BLE_SECRET \"my long phrase\"");
+    appendLine(output, "usage: set NAME VALUE — quote a value with spaces: set WIFI_SSID \"garage wifi\"");
     return 1;
   }
   const SettingSpec* spec = findSetting(arguments[1]);
@@ -172,6 +189,41 @@ int unset(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
   running.apply(*spec, spec->defaultValue);
   appendLine(output, std::string(spec->name) + " is back to its default (" + describe(*spec, spec->defaultValue) +
                          "); " + whenItApplies(*spec));
+  return 0;
+}
+
+// Generates BLE_SECRET from 32 random bytes and prints it, the only time it is ever shown. Replacing
+// a key locks out every phone holding the old one, so that needs saying twice.
+int newBluetoothKey(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
+                    const char* const* arguments, const RandomFill& fillRandom, std::string& output) {
+  const bool replacing = argumentCount == 2 && std::string_view(arguments[1]) == "replace";
+  if (argumentCount > 2 || (argumentCount == 2 && !replacing)) {
+    appendLine(output, "usage: new-ble-key [replace]");
+    return 1;
+  }
+  if (!fillRandom) {
+    appendLine(output, "new-ble-key: this console has no random source");
+    return 1;
+  }
+  const SettingSpec& spec = *findSetting("BLE_SECRET");
+  if (storage.read(spec.storageKey) && !replacing) {
+    appendLine(output, "a Bluetooth key is already saved; `new-ble-key replace` makes a new one, and every phone "
+                       "holding the old key must then be given the new one");
+    return 1;
+  }
+  std::array<std::uint8_t, 32> bytes = {};
+  fillRandom(bytes);
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string key;
+  for (const std::uint8_t byte : bytes) {
+    key += kHex[byte >> 4];
+    key += kHex[byte & 0x0f];
+  }
+  bytes.fill(0);
+  if (save(storage, running, spec, key, output) != 0) return 1;
+  appendLine(output, "The new Bluetooth key, shown only now. Keep a copy, then paste it into the dashboard "
+                     "(Menu → Bluetooth → Use an existing access code):");
+  appendLine(output, "  " + key);
   return 0;
 }
 
@@ -226,6 +278,10 @@ std::optional<std::string> validate(const SettingSpec& spec, std::string_view va
     return std::nullopt;
   }
   const auto length = static_cast<std::int64_t>(value.size());
+  // Generated, never typed: a phrase is what the 2 s lockout protected, and protocol 2 has none.
+  if (spec.name == "BLE_SECRET" && !isBluetoothKey(lowerCased(value))) {
+    return std::string("must be a generated key, 64 lower-case hex characters; `new-ble-key` makes one");
+  }
   // A Wi-Fi password is WPA's 8-63 characters, or nothing for an open network.
   if (spec.name == "WIFI_PASSWORD" && length > 0 && length < 8) {
     return "must be 8-63 characters (WPA2/WPA3), or unset for an open network; this is " + std::to_string(length);
@@ -246,6 +302,7 @@ std::optional<std::string> validate(const SettingSpec& spec, std::string_view va
 std::string normalizeValue(const SettingSpec& spec, std::string_view value) {
   if (spec.type == SettingType::kFlag) return *parseFlag(value) ? "1" : "0";
   if (spec.type == SettingType::kInteger) return std::to_string(*parseInteger(value));
+  if (spec.name == "BLE_SECRET") return lowerCased(value);
   return std::string(value);
 }
 
@@ -300,12 +357,13 @@ void RuntimeSettings::apply(const SettingSpec& spec, std::string_view normalized
 }
 
 int runSettingsCommand(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
-                       const char* const* arguments, std::string& output) {
+                       const char* const* arguments, std::string& output, const RandomFill& fillRandom) {
   const std::string_view command = argumentCount > 0 ? arguments[0] : "";
   if (command == "show") return show(storage, running, output);
   if (command == "set") return set(storage, running, argumentCount, arguments, output);
   if (command == "unset") return unset(storage, running, argumentCount, arguments, output);
   if (command == "status") return status(storage, running, argumentCount, arguments, output);
+  if (command == "new-ble-key") return newBluetoothKey(storage, running, argumentCount, arguments, fillRandom, output);
   appendLine(output, "unknown command");
   return 1;
 }

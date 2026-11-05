@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -105,11 +106,15 @@ class RuntimeSettings {
   std::atomic<bool> reportRequested_{false};
 };
 
+// Fills a buffer with cryptographically random bytes; the firmware's draws on the hardware RNG.
+using RandomFill = std::function<void(std::span<std::uint8_t>)>;
+
 // The console's commands, writing what to print into `output`:
-//   show | set NAME VALUE | unset NAME | status [on | off | every SECONDS]
+//   show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | new-ble-key [replace]
 // Returns 0 on success, 1 on a usage or storage error, as an esp_console command does.
+// `new-ble-key` needs `fillRandom`, and fails without one.
 int runSettingsCommand(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
-                       const char* const* arguments, std::string& output);
+                       const char* const* arguments, std::string& output, const RandomFill& fillRandom = nullptr);
 
 // When the periodic status report is due. Each periodic report covers the time since the last
 // window began. Turning reporting on or off starts a fresh window, so the first report after

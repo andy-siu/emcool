@@ -67,7 +67,8 @@ const coolEvaStoredDtcs = await (async () => {
   console.log = log;
   return stored.troubleCodeSnapshot();
 })();
-const SECRET = "correct horse battery staple";
+// A generated key, as protocol 2 requires: 32 bytes as 64 lower-case hex (dashboard/lib/ble-secret.js).
+const SECRET = "5c0ffee5c0ffee5c0ffee5c0ffee5c0ffee5c0ffee5c0ffee5c0ffee5c0ffee5";
 const PHONE_WRITE_FRAME_BYTES = 180;
 const ALL_FRAMES = 0xffffffff;
 
@@ -194,14 +195,18 @@ class Phone {
     }
   }
 
+  clientNonce = "";
+
   async hello(): Promise<void> {
     const info = await this.bike.info();
+    check(info.version === wire.PROTOCOL_VERSION, `info says protocol ${info.version}, the phone speaks ${wire.PROTOCOL_VERSION}`);
     const clientNonce = wire.randomNonce();
+    this.clientNonce = clientNonce;
     this.key = await wire.deriveSessionKey(this.secret, info.serverNonce, clientNonce);
     this.nextCounter = 0;
     this.lastInbound = -1;
     const proof = await wire.helloProof(this.secret, info.serverNonce, clientNonce);
-    await this.write(wire.clearEnvelope(wire.encodeMessage(MessageKind.HELLO, { version: 1, clientNonce, proof })));
+    await this.write(wire.clearEnvelope(wire.encodeMessage(MessageKind.HELLO, { version: wire.PROTOCOL_VERSION, clientNonce, proof })));
   }
 
   async sealed(kind: number, header: unknown, body?: Uint8Array): Promise<Uint8Array> {
@@ -386,21 +391,36 @@ async function expectedDownload(maxBytes: number): Promise<{ body: Buffer; files
 const bike = new Bike();
 await bike.feed(120000);
 
-// 1. Handshake: a wrong secret, the cooldown, then the right one.
+// 1. Handshake: a wrong key is refused to its own nonce, with no lockout after it; the right one
+// goes straight in.
 await bike.connect(185);
 await bike.notifications(true);
-const stranger = new Phone(bike, "not the secret at all");
+const stranger = new Phone(bike, "f".repeat(64));
 await stranger.hello();
 let replies = await stranger.collect(0);
 check(
-  replies.length === 1 && replies[0].kind === MessageKind.REFUSED && replies[0].header.reason === "wrong secret",
-  `a wrong secret got ${JSON.stringify(replies.map(reply => reply.header))}`
+  replies.length === 1 &&
+    replies[0].kind === MessageKind.REFUSED &&
+    replies[0].header.reason === "wrong secret" &&
+    replies[0].header.clientNonce === stranger.clientNonce,
+  `a wrong key got ${JSON.stringify(replies.map(reply => reply.header))}`
 );
-const phone = new Phone(bike, SECRET);
-await phone.hello();
-replies = await phone.collect(0);
-check(replies[0]?.header?.reason === "too soon after a failed attempt", "the 2 s cooldown did not hold");
+// A burst of wrong HELLOs gets at most four refusals per 2 s, then silence until the window turns.
+let refusals = 0;
+for (let attempt = 0; attempt < 8; attempt++) {
+  await stranger.hello();
+  refusals += (await stranger.collect(0)).filter(reply => reply.kind === MessageKind.REFUSED).length;
+}
+check(refusals === 3, `${refusals} refusals in the rest of the window; four per 2 s allows 3 more`);
 await bike.advance(2000);
+await stranger.hello();
+check((await stranger.collect(0)).length === 1, "no refusal once the 2 s window had turned");
+// Frames that are not a whole HELLO are dropped unanswered before authentication.
+for (const frame of [Uint8Array.of(1, 1, 0, 1), Uint8Array.of(2, 1, 9), Uint8Array.of(3, 1, 1, 0, 0)]) {
+  await bike.command("W", frame);
+}
+check((await stranger.collect(0)).length === 0, "an unauthenticated non-HELLO frame was answered");
+const phone = new Phone(bike, SECRET);
 const nonceBefore = (await bike.info()).serverNonce;
 await phone.hello();
 replies = await phone.collect(0);
@@ -418,7 +438,7 @@ const snapshot = mergeStream(stream, "snapshot");
 const snapshotChunks = stream.filter(message => message.header?.type === "snapshot").length;
 sameLiveState("first snapshot", snapshot, liveBefore);
 check(snapshotChunks > 1, `the snapshot came in ${snapshotChunks} chunk(s); expected several at ~4.5 KB each`);
-check(Math.max(...phone.frameSizes) <= 182, `a notification of ${Math.max(...phone.frameSizes)} bytes at MTU 185`);
+check(Math.max(...phone.frameSizes) <= 180, `a notification of ${Math.max(...phone.frameSizes)} bytes at MTU 185 (MTU − 5)`);
 
 // Patches carry the latest values of what changed; a heartbeat snapshot then matches the store.
 await bike.feed(3000);
@@ -459,6 +479,37 @@ check(payload.groups?.battery?.[1] === batteryTotal && payload.groups.battery[0]
 check(payload.groups?.waypoint === undefined, "/status counted the on-demand-only waypoint group");
 const missing = await request(phone, 2, "/fan");
 check(missing.status === 404 && missing.body.includes("isn't available"), `/fan: ${missing.status} ${missing.body}`);
+// /settings: cool-eva's SettingsReply, read-only, with every field the dashboard's views read.
+const settingsReply = await request(phone, 3, "/settings");
+check(settingsReply.status === 200, `/settings ${settingsReply.status}`);
+const settings = JSON.parse(settingsReply.body);
+for (const field of ["ok", "source", "version", "processGeneration", "instanceId", "revision", "saved", "active",
+  "pending", "fault", "notices", "readiness", "restart", "locations"]) {
+  check(field in settings, `/settings has no ${field}`);
+}
+check(
+  settings.ok === true && settings.fault === null && settings.pending.length === 0 && settings.restart.state === "idle",
+  `/settings state: ${JSON.stringify({ ok: settings.ok, fault: settings.fault, pending: settings.pending })}`
+);
+check(
+  settings.active.customBmsConfigurationFlashed === true &&
+    settings.active.coolantProbesEnabled === false &&
+    settings.active.radiatorFanEnabled === false &&
+    settings.active.phoneHotspotSsid === 'garage "wifi"' &&
+    JSON.stringify(settings.saved) === JSON.stringify(settings.active),
+  `/settings values: ${JSON.stringify(settings.active)}`
+);
+check(/^[0-9a-f-]{36}$/.test(settings.instanceId), `/settings instanceId ${settings.instanceId}`);
+check(/^[0-9a-f-]{36}$/.test(settings.active.bluetoothCodeId), `/settings bluetoothCodeId ${settings.active.bluetoothCodeId}`);
+check(settings.readiness.can.includes("OBD"), `/settings can readiness: ${settings.readiness.can}`);
+for (const [path, method] of [["/settings", "PATCH"], ["/settings/apply", "POST"], ["/settings/hub-candidates", "POST"]]) {
+  const refused = await request(phone, 4, path, method, { "X-Emcool": "settings" });
+  const reply = JSON.parse(refused.body);
+  check(
+    refused.status === 405 && reply.ok === false && reply.message.includes("serial console"),
+    `${method} ${path}: ${refused.status} ${refused.body}`
+  );
+}
 if (ridesSource) {
   await checkDownload();
 } else {
@@ -682,9 +733,9 @@ await bike.connect(185);
 await bike.notifications(true);
 await phone.send(MessageKind.SUBSCRIBE, {});
 replies = await phone.collect(0);
-check(replies[0]?.header?.reason === "no session — send HELLO first", "a sealed message after disconnect was not refused");
+check(replies.length === 0, "a sealed message after disconnect was answered; only a HELLO gets a clear reply");
 
-// 6. The smallest MTU: 20-byte notifications still carry a whole snapshot.
+// 6. The smallest MTU: 18-byte notifications (MTU − 5) still carry a whole snapshot.
 await bike.command("D");
 await bike.connect(23);
 await bike.notifications(true);
@@ -694,7 +745,7 @@ check((await smallPhone.collect(0))[0]?.kind === MessageKind.WELCOME, "no WELCOM
 const liveSmall = await bike.json("L");
 await smallPhone.send(MessageKind.SUBSCRIBE, {});
 sameLiveState("snapshot at MTU 23", mergeStream(await smallPhone.collect(0), "snapshot"), liveSmall);
-check(Math.max(...smallPhone.frameSizes) <= 20, `a ${Math.max(...smallPhone.frameSizes)}-byte notification at MTU 23`);
+check(Math.max(...smallPhone.frameSizes) <= 18, `a ${Math.max(...smallPhone.frameSizes)}-byte notification at MTU 23`);
 
 const final = await bike.json("Z");
 await bike.quit();

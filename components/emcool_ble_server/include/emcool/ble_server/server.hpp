@@ -49,6 +49,9 @@ class BleServer {
   static constexpr std::size_t kResponseChunkBytes = 4 * 1024;
   static constexpr std::uint16_t kDefaultAttMtu = 23;
   static constexpr std::int64_t kRequestTimeoutMs = 180000;
+  // cool-eva's Rejections: a summary log line and up to four clear refusals per window.
+  static constexpr std::int64_t kRejectionWindowMs = 2000;
+  static constexpr std::uint32_t kRefusalsPerWindow = 4;
 
   BleServer(std::string_view secret, signals::SignalStore& store, std::mutex& storeMutex, RequestHandler& requests);
 
@@ -93,6 +96,10 @@ class BleServer {
   // kWaiting: the handler will answer later (a probe, say), and is asked each tick.
   enum class ResponseStage : std::uint8_t { kNone, kWaiting, kHead, kBody, kEnd };
 
+  void receiveHello(std::span<const std::uint8_t> envelope, std::int64_t nowMonotonicMs);
+  bool allowRefusal(std::int64_t nowMonotonicMs);
+  void noteProblem(const char* reason, std::int64_t nowMonotonicMs);
+  void flushProblems(std::int64_t nowMonotonicMs);
   void endSession(const char* reason);
   void dispatch(const ble::Message& message, std::int64_t nowMonotonicMs);
   void queueRequest(std::string_view header);
@@ -134,6 +141,12 @@ class BleServer {
   // How far the body fell short of its promised length; the END says so.
   std::size_t bodyShortBy_ = 0;
   std::array<char, ble::kMaxMessageBytes - 64> header_ = {};
+
+  std::optional<std::int64_t> refusalWindowStartMs_;
+  std::uint32_t refusalsInWindow_ = 0;
+  std::optional<std::int64_t> lastProblemLogMs_;
+  std::uint32_t pendingProblems_ = 0;
+  const char* lastProblem_ = "";
 
   BleServerCounters counters_;
 };
