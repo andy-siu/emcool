@@ -53,6 +53,7 @@ await writeFile(
   `const files = () => globalThis.__fakeFiles;
 const missing = path => Object.assign(new Error("ENOENT: no such file " + path), { code: "ENOENT" });
 export async function mkdir() {}
+export async function chmod() {}
 export async function readFile(path) { if (!files().has(path)) throw missing(path); return files().get(path); }
 export async function rm(path) { files().delete(path); }
 export async function rename(from, to) { if (!files().has(from)) throw missing(from); files().set(to, files().get(from)); files().delete(from); }
@@ -60,7 +61,7 @@ export async function readdir() { return []; }
 export async function stat(path) { if (!files().has(path)) throw missing(path); return { size: files().get(path).length }; }
 export async function writeFile(path, data) { files().set(path, String(data)); }
 export async function appendFile(path, data) { files().set(path, (files().get(path) ?? "") + String(data)); }
-export default { mkdir, readFile, rm, rename, readdir, stat, writeFile, appendFile };
+export default { mkdir, chmod, readFile, rm, rename, readdir, stat, writeFile, appendFile };
 `
 );
 await writeFile(

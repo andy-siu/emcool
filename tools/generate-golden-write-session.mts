@@ -46,12 +46,13 @@ await writeFile(
   fakeFsPath,
   `const files = () => ((globalThis).__fakeFiles ??= new Map());
 export async function mkdir() {}
+export async function chmod() {}
 export async function readFile(path) { if (!files().has(path)) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); return files().get(path); }
 export async function appendFile(path, data) { files().set(path, (files().get(path) ?? "") + String(data)); }
 export async function writeFile(path, data) { files().set(path, String(data)); }
 export async function rm() {} export async function rename() {} export async function readdir() { return []; }
 export async function stat(path) { return { size: (files().get(path) ?? "").length }; }
-export default { mkdir, readFile, appendFile, writeFile, rm, rename, readdir, stat };
+export default { mkdir, chmod, readFile, appendFile, writeFile, rm, rename, readdir, stat };
 `
 );
 const fakeDurablePath = join(fakeDirectory, "fake-durable.mjs");

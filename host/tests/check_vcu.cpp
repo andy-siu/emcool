@@ -70,14 +70,14 @@ std::string replaceAll(std::string text, std::string_view from, std::string_view
 // cool-eva's two pointers at its extract script, as emcool words them (JSON-escaped as in the file).
 std::string emcoolWording(std::string text) {
   text = replaceAll(text,
-                    "Add the table with scripts/extract-vcu-tables.ts (README: \\\"Adding your bike's VCU parameter "
+                    "Add the table with scripts/extract-vcu-tables.ts (docs/vcu-parameters.md: \\\"Adding your bike's VCU parameter "
                     "table\\\").",
-                    "Add the table to cool-eva (its README: \\\"Adding your bike's VCU parameter table\\\") and run "
+                    "Add the table to cool-eva (its docs/vcu-parameters.md: \\\"Adding your bike's VCU parameter table\\\") and run "
                     "tools/generate-vcu-tables.mts.");
   return replaceAll(text,
-                    "run scripts/extract-vcu-tables.ts against your own service-tool install (see README.md) and send "
+                    "run scripts/extract-vcu-tables.ts against your own service-tool install (see docs/vcu-parameters.md) and send "
                     "the diff.",
-                    "add it to cool-eva (see its README) and run tools/generate-vcu-tables.mts.");
+                    "add it to cool-eva (see its docs/vcu-parameters.md) and run tools/generate-vcu-tables.mts.");
 }
 
 template <typename Write>

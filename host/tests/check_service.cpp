@@ -108,18 +108,21 @@ struct Millisecond {
 std::string emcoolWording(std::string text) {
   for (const char* quote : {"\"", "\\\""}) {
     text = replaceAll(text,
-                      std::string("Add the table with scripts/extract-vcu-tables.ts (README: ") + quote +
+                      std::string("Add the table with scripts/extract-vcu-tables.ts (docs/vcu-parameters.md: ") + quote +
                           "Adding your bike's VCU parameter table" + quote + ").",
-                      std::string("Add the table to cool-eva (its README: ") + quote +
+                      std::string("Add the table to cool-eva (its docs/vcu-parameters.md: ") + quote +
                           "Adding your bike's VCU parameter table" + quote + ") and run tools/generate-vcu-tables.mts.");
   }
   text = replaceAll(text, "switched off on this Pi (SERVICE_MODE_ENABLED=0)", "switched off on this bike (SERVICE_MODE_ENABLED=0)");
+  // cool-eva now points at its dashboard Settings page; on emcool the switch is still OBD_ENABLED.
+  text = replaceAll(text, "the CAN channel cannot transmit — check the adapter and bus configuration",
+                    "the bus is listen-only (OBD_ENABLED=0) — nothing can be transmitted, so every read would time out");
   text = replaceAll(text, "node --experimental-strip-types scripts/read-freeze-frame.ts --lifetime --save",
                     emcool::vcu::kLifetimeHowToReadWithServiceStopped);
   return replaceAll(text,
-                    "run scripts/extract-vcu-tables.ts against your own service-tool install (see README.md) and send "
+                    "run scripts/extract-vcu-tables.ts against your own service-tool install (see docs/vcu-parameters.md) and send "
                     "the diff.",
-                    "add it to cool-eva (see its README) and run tools/generate-vcu-tables.mts.");
+                    "add it to cool-eva (see its docs/vcu-parameters.md) and run tools/generate-vcu-tables.mts.");
 }
 
 // A log line as compared: the message without its "tag: ".
