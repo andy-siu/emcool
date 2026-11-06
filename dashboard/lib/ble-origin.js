@@ -16,6 +16,9 @@ export function allowedBleOrigin(url) {
   return url.protocol === "https:" && HOSTED_BLE_ORIGINS.includes(url.origin);
 }
 
-// Fork owners add their exact exclusive origin here; paths and wildcards do not isolate storage.
+// The HTTPS origins allowed to open the Bluetooth link, one per line. The key lives in the origin's
+// localStorage, so each must be an exact origin dedicated to this dashboard alone: no path, trailing
+// slash or wildcard, no shared host (a <user>.github.io serves every Pages site on that account)
+// and no preview. Fork owners add theirs here.
 export const HOSTED_BLE_ORIGINS = HOSTED_DASHBOARD_ORIGINS;
 export const BLE_ORIGIN_MESSAGE = "Bluetooth needs its own address";

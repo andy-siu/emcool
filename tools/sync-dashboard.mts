@@ -48,10 +48,12 @@ interface Patch {
 }
 
 const PATCHES: Patch[] = [
-  // The hosted origin: emcool's own exclusive one, never cool-eva's (docs/github-pages.md).
+  // The hosted origin: emcool's own exclusive one, never cool-eva's (docs/hosting.md).
   {
     file: "lib/ble-origin.js",
-    from: 'export const HOSTED_BLE_ORIGINS = ["https://cool-eva-dashboard.cool-eva.workers.dev"];',
+    from: `export const HOSTED_BLE_ORIGINS = [
+  "https://cool-eva.athegen.com", // GitHub Pages custom domain, .github/workflows/pages.yml
+];`,
     to: "export const HOSTED_BLE_ORIGINS = HOSTED_DASHBOARD_ORIGINS;",
   },
   {
@@ -182,7 +184,7 @@ try {
     const name = relative(staging, path);
     if (name.startsWith("vendor/") || !name.endsWith(".js")) continue;
     const text = await readFile(path, "utf-8");
-    if (/X-Cool-Eva|cool-eva\/(hello|session)|cool-eva-dashboard/.test(text)) leftover.push(name);
+    if (/X-Cool-Eva|cool-eva\/(hello|session)|cool-eva-dashboard|cool-eva\.athegen\.com/.test(text)) leftover.push(name);
   }
   if (leftover.length > 0) {
     throw new Error(`cool-eva wire names survived the renames in: ${leftover.join(", ")}`);
