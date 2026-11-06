@@ -20,7 +20,12 @@ using text::TextBuffer;
 constexpr std::string_view kBadPath = "path must start with /";
 
 constexpr const char* kTag = "ble-server";
-constexpr std::uint16_t kNotificationOverheadBytes = 3;
+// MTU − 5, as cool-eva sends: it also fits BlueZ's multiple-notification format, so the phone sees
+// the same frame sizes from either bike. Never above ATT's 512-byte value ceiling.
+constexpr std::uint16_t kNotificationOverheadBytes = 5;
+constexpr std::size_t kMaxNotificationBytes = 512;
+constexpr std::uint8_t kCompleteFrameFlags = 3;
+constexpr std::uint8_t kClearEnvelopeTag = 0;
 
 bool equalsIgnoringCase(std::string_view left, std::string_view right) {
   if (left.size() != right.size()) return false;
@@ -64,21 +69,42 @@ void BleServer::mtuChanged(std::uint16_t mtu) {
 }
 
 void BleServer::receiveFrame(std::span<const std::uint8_t> frame, std::int64_t nowMonotonicMs) {
+  if (frame.size() < ble::kFrameHeaderBytes || frame.size() > ble::kMaxWriteFrameBytes) {
+    noteProblem("invalid frame", nowMonotonicMs);
+    return;
+  }
+  // Before authentication only a whole HELLO in one frame counts, so a stranger can never hold
+  // the assembler (cool-eva docs/ble-server.md §"Framing and resource bounds").
+  if (frame[0] == kCompleteFrameFlags && frame.size() > ble::kFrameHeaderBytes &&
+      frame[ble::kFrameHeaderBytes] == kClearEnvelopeTag) {
+    receiveHello(frame.subspan(ble::kFrameHeaderBytes), nowMonotonicMs);
+    return;
+  }
+  if (!session_.authenticated()) {
+    noteProblem("only a complete HELLO may precede authentication", nowMonotonicMs);
+    return;
+  }
   const ble::FrameAssembler::Result assembled = assembler_.push(frame);
   if (assembled.problem != nullptr) {
-    counters_.problems++;
-    logInfo(kTag, "inbound frame: %s", assembled.problem);
+    noteProblem(assembled.problem, nowMonotonicMs);
   }
   if (!assembled.envelope) return;
+  const ble::BleSession::Received result = session_.receive(*assembled.envelope);
+  if (result.problem != nullptr) {
+    noteProblem(result.problem, nowMonotonicMs);
+  }
+  if (result.message) {
+    dispatch(*result.message, nowMonotonicMs);
+  }
+}
 
+void BleServer::receiveHello(std::span<const std::uint8_t> envelope, std::int64_t nowMonotonicMs) {
   // Replies (REFUSED, WELCOME) are written straight into the next free slot.
   Slot* slot = freeSlot();
   const ble::BleSession::Received result =
-      session_.receive(*assembled.envelope, nowMonotonicMs, slot != nullptr ? std::span<std::uint8_t>(slot->bytes)
-                                                                            : std::span<std::uint8_t>());
+      session_.receiveHello(envelope, slot != nullptr ? std::span<std::uint8_t>(slot->bytes) : std::span<std::uint8_t>());
   if (result.problem != nullptr) {
-    counters_.problems++;
-    logInfo(kTag, "%s", result.problem);
+    noteProblem(result.problem, nowMonotonicMs);
   }
   if (result.startedSession) {
     // Whatever was queued belonged to the session this one replaces.
@@ -97,19 +123,54 @@ void BleServer::receiveFrame(std::span<const std::uint8_t> frame, std::int64_t n
     attempt_.reset();
     logInfo(kTag, "phone authenticated, session started");
   }
-  if (result.replyLength > 0 && slot != nullptr) {
-    slot->length = result.replyLength;
-    commitSlot(*slot);
-    if (!result.startedSession) {
-      counters_.refusals++;
-    }
-  }
-  if (result.message) {
-    dispatch(*result.message, nowMonotonicMs);
+  if (result.replyLength == 0 || slot == nullptr) return;
+  // With no lockout, refusals are what a flood of wrong HELLOs would multiply; cool-eva allows a
+  // burst of four per 2 s.
+  if (!result.startedSession && !allowRefusal(nowMonotonicMs)) return;
+  slot->length = result.replyLength;
+  commitSlot(*slot);
+  if (!result.startedSession) {
+    counters_.refusals++;
   }
 }
 
+bool BleServer::allowRefusal(std::int64_t nowMonotonicMs) {
+  if (!refusalWindowStartMs_ || nowMonotonicMs - *refusalWindowStartMs_ >= kRejectionWindowMs) {
+    refusalWindowStartMs_ = nowMonotonicMs;
+    refusalsInWindow_ = 0;
+  }
+  if (refusalsInWindow_ >= kRefusalsPerWindow) return false;
+  refusalsInWindow_++;
+  return true;
+}
+
+// One log line per window, with the count and the latest reason, so a peer's flood can't bury the
+// console; tick() flushes a quiet tail.
+void BleServer::noteProblem(const char* reason, std::int64_t nowMonotonicMs) {
+  counters_.problems++;
+  pendingProblems_++;
+  lastProblem_ = reason;
+  if (!lastProblemLogMs_ || nowMonotonicMs - *lastProblemLogMs_ >= kRejectionWindowMs) {
+    flushProblems(nowMonotonicMs);
+  }
+}
+
+void BleServer::flushProblems(std::int64_t nowMonotonicMs) {
+  if (pendingProblems_ == 0) return;
+  if (pendingProblems_ == 1) {
+    logInfo(kTag, "rejected: %s", lastProblem_);
+  } else {
+    logInfo(kTag, "rejected %u frames/messages, the latest: %s", static_cast<unsigned>(pendingProblems_),
+            lastProblem_);
+  }
+  pendingProblems_ = 0;
+  lastProblemLogMs_ = nowMonotonicMs;
+}
+
 void BleServer::tick(std::int64_t nowMonotonicMs, std::int64_t nowWallClockMs) {
+  if (pendingProblems_ > 0 && lastProblemLogMs_ && nowMonotonicMs - *lastProblemLogMs_ >= kRejectionWindowMs) {
+    flushProblems(nowMonotonicMs);
+  }
   if (!session_.authenticated()) return;
   advanceResponse(nowMonotonicMs);
   advanceStream(nowMonotonicMs, nowWallClockMs);
@@ -120,7 +181,7 @@ bool BleServer::nextFrame(std::span<std::uint8_t> out, std::size_t& length) {
     Slot& head = slots_[slotHead_];
     if (!splitter_) {
       splitter_.emplace(std::span<const std::uint8_t>(head.bytes.data(), head.length), head.messageId,
-                        static_cast<std::size_t>(mtu_ - kNotificationOverheadBytes));
+                        std::min<std::size_t>(mtu_ - kNotificationOverheadBytes, kMaxNotificationBytes));
     }
     attempt_ = *splitter_;
     if (attempt_->next(out, length)) {

@@ -16,6 +16,7 @@
 #include "emcool/obd/obd_hold.hpp"
 #include "emcool/obd/obd_poller.hpp"
 #include "emcool/obd/stored_codes.hpp"
+#include "emcool/obd/transmit_log.hpp"
 #include "emcool/obd/trouble_code_reader.hpp"
 
 namespace emcool::obd {
@@ -30,8 +31,8 @@ class ObdStack {
   // Sharing `order` with an event loop, so ties between its timers and these keep the order set.
   ObdStack(CanTransmitter& bus, SignalRecorder& recorder, bool elockEnabled, DeadlineOrder& order)
       : hold_(order),
-        reader_(bus, order),
-        poller_(bus, recorder, reader_, stored_, hold_, order),
+        reader_(bus, order, transmitLogs_.troubleCodes),
+        poller_(bus, recorder, reader_, stored_, hold_, order, transmitLogs_.obd),
         elock_(bus, recorder, order),
         elockEnabled_(elockEnabled) {}
 
@@ -55,9 +56,11 @@ class ObdStack {
   StoredCodes& stored() { return stored_; }
   const StoredCodes& stored() const { return stored_; }
   const ObdPoller& poller() const { return poller_; }
+  TransmitLogs& transmitLogs() { return transmitLogs_; }
 
  private:
   DeadlineOrder ownOrder_;
+  TransmitLogs transmitLogs_;
   ObdHold hold_;
   TroubleCodeReader reader_;
   StoredCodes stored_;

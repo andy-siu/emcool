@@ -113,7 +113,9 @@ async::Task<ServiceWriteAnswer> VcuWriteRunner::performChargeCurrent(const Servi
                                   " A, on 0x121; event frame with no reply — confirm on the dash / charge_limit_a";
   audit(std::move(record));
 
-  if (sendFailure) co_return ServiceWriteAnswer{false, {}, *sendFailure};
+  // Even a failure on the first frame counts as possibly sent, as cool-eva's does: the 0x120 commit
+  // twin goes first, and a send error does not prove nothing reached the bus.
+  if (sendFailure) co_return ServiceWriteAnswer{false, {}, *sendFailure, true};
   ServiceWriteResult result;
   result.action = AuditAction::kChargeCurrent;
   result.status = "sent";

@@ -1,5 +1,6 @@
 #include "emcool/ble/session.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -11,6 +12,12 @@ namespace emcool::ble {
 
 using text::TextBuffer;
 
+namespace {
+
+bool isLowerHex(char character) { return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'); }
+
+}  // namespace
+
 BleSession::BleSession(std::string_view secret) : serverNonce_(randomNonce()) {
   if (secretIsUsable(secret)) {
     std::memcpy(secret_.data(), secret.data(), secret.size());
@@ -18,8 +25,10 @@ BleSession::BleSession(std::string_view secret) : serverNonce_(randomNonce()) {
   }
 }
 
+// cool-eva's validBleSecret(): 32 random bytes as 64 lower-case hex characters, never a phrase.
 bool BleSession::secretIsUsable(std::string_view secret) {
-  return secret.size() >= kMinSecretLength && secret.size() <= kMaxSecretLength;
+  return secret.size() == kSecretLength &&
+         std::all_of(secret.begin(), secret.end(), [](char character) { return isLowerHex(character); });
 }
 
 void BleSession::end() {
@@ -37,19 +46,20 @@ std::size_t BleSession::info(std::span<char> out) const {
   return text.overflowed() ? 0 : text.length();
 }
 
-BleSession::Received BleSession::receive(std::span<const std::uint8_t> envelope, std::int64_t nowMs,
-                                         std::span<std::uint8_t> reply) {
+BleSession::Received BleSession::receive(std::span<const std::uint8_t> envelope) {
   Received result;
   const std::optional<Envelope> parsed = parseEnvelope(envelope);
   if (!parsed) {
     result.problem = "unreadable envelope";
     return result;
   }
+  // A clear HELLO only counts whole in one frame, through receiveHello(); one assembled from
+  // several would skip that path's checks.
   if (!parsed->sealed) {
-    return receiveHello(parsed->payload, nowMs, reply);
+    result.problem = "a clear message outside the single-frame HELLO path";
+    return result;
   }
   if (!active_) {
-    result.replyLength = refusal("no session — send HELLO first", reply);
     result.problem = "sealed envelope with no session";
     return result;
   }
@@ -84,54 +94,52 @@ std::size_t BleSession::seal(MessageKind kind, std::string_view headerJson, std:
   return length;
 }
 
-BleSession::Received BleSession::receiveHello(std::span<const std::uint8_t> message, std::int64_t nowMs,
-                                              std::span<std::uint8_t> reply) {
+BleSession::Received BleSession::receiveHello(std::span<const std::uint8_t> envelope, std::span<std::uint8_t> reply) {
   Received result;
-  if (lastHelloFailureMs_ && nowMs - *lastHelloFailureMs_ < kHelloFailureCooldownMs) {
-    result.replyLength = refusal("too soon after a failed attempt", reply);
-    result.problem = "HELLO inside cooldown";
+  const std::optional<Envelope> parsed = parseEnvelope(envelope);
+  if (!parsed || parsed->sealed) {
+    result.problem = "unreadable HELLO";
     return result;
   }
-  const std::optional<Message> decoded = decodeMessage(message);
+  const std::optional<Message> decoded = decodeMessage(parsed->payload);
   if (!decoded) {
     result.problem = "undecodable HELLO";
     return result;
   }
   if (decoded->kind != static_cast<std::uint8_t>(MessageKind::kHello)) {
-    result.replyLength = refusal("only HELLO may be sent clear", reply);
-    result.problem = "a clear message that isn't HELLO";
+    result.problem = "only HELLO may be sent clear";
     return result;
   }
   char scratch[512];
   JsonObjectReader hello;
   if (!hello.read(decoded->header, scratch)) {
-    result.problem = "undecodable HELLO";
+    result.problem = "malformed HELLO header";
+    return result;
+  }
+  // Without a well-formed nonce there is nothing to address a refusal to, so none is sent.
+  const JsonMember* clientNonce = hello.find("clientNonce");
+  if (clientNonce == nullptr || clientNonce->type != JsonType::kString || clientNonce->text.size() != 32 ||
+      !std::all_of(clientNonce->text.begin(), clientNonce->text.end(),
+                   [](char character) { return isLowerHex(character); })) {
+    result.problem = "HELLO requires a 16-byte lowercase-hex nonce";
     return result;
   }
   const JsonMember* version = hello.find("version");
   if (version == nullptr || version->type != JsonType::kNumber || version->number != kProtocolVersion) {
-    char reason[96];
-    std::snprintf(reason, sizeof reason, "protocol %.*s unsupported; this bike speaks %d",
-                  version ? static_cast<int>(version->text.size()) : 1, version ? version->text.data() : "?",
-                  kProtocolVersion);
-    result.replyLength = refusal(reason, reply);
+    char reason[64];
+    std::snprintf(reason, sizeof reason, "protocol unsupported; this bike speaks %d", kProtocolVersion);
+    result.replyLength = refusal(clientNonce->text, reason, reply);
     result.problem = "HELLO with another protocol version";
     return result;
   }
-  const JsonMember* clientNonce = hello.find("clientNonce");
   HexDigest expectedProof;
-  if (clientNonce == nullptr || clientNonce->type != JsonType::kString ||
-      !helloProof(std::string_view(secret_.data(), secretLength_), serverNonce_.data(), clientNonce->text,
-                  expectedProof)) {
-    result.replyLength = refusal("malformed nonce", reply);
-    result.problem = "HELLO with a malformed nonce";
-    return result;
-  }
   const JsonMember* proof = hello.find("proof");
-  if (secretLength_ == 0 || proof == nullptr || proof->type != JsonType::kString ||
+  if (secretLength_ == 0 ||
+      !helloProof(std::string_view(secret_.data(), secretLength_), serverNonce_.data(), clientNonce->text,
+                  expectedProof) ||
+      proof == nullptr || proof->type != JsonType::kString ||
       !proofsMatch(proof->text, std::string_view(expectedProof.data(), 64))) {
-    lastHelloFailureMs_ = nowMs;
-    result.replyLength = refusal("wrong secret", reply);
+    result.replyLength = refusal(clientNonce->text, "wrong secret", reply);
     result.problem = "HELLO with a wrong secret";
     return result;
   }
@@ -152,11 +160,13 @@ BleSession::Received BleSession::receiveHello(std::span<const std::uint8_t> mess
   return result;
 }
 
-std::size_t BleSession::refusal(std::string_view reason, std::span<std::uint8_t> reply) {
+std::size_t BleSession::refusal(std::string_view clientNonce, std::string_view reason, std::span<std::uint8_t> reply) {
   char header[160];
   TextBuffer text(header, sizeof header);
   text.append("{\"reason\":");
   text.appendJsonString(reason);
+  text.append(",\"clientNonce\":");
+  text.appendJsonString(clientNonce);
   text.append("}");
   if (text.overflowed()) return 0;
   const std::size_t messageLength =

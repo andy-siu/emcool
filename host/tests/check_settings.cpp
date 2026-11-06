@@ -1,5 +1,6 @@
 // The settings and the serial console's commands, against an in-memory store in place of NVS.
 
+#include <cctype>
 #include <cstdio>
 #include <map>
 #include <span>
@@ -41,11 +42,19 @@ struct Result {
   std::string output;
 };
 
-Result run(MemoryStorage& storage, RuntimeSettings& running, std::vector<const char*> arguments) {
+Result run(MemoryStorage& storage, RuntimeSettings& running, std::vector<const char*> arguments,
+           const RandomFill& fillRandom = nullptr) {
   Result result{0, ""};
   result.status = runSettingsCommand(storage, running, static_cast<int>(arguments.size()), arguments.data(),
-                                     result.output);
+                                     result.output, fillRandom);
   return result;
+}
+
+// Counts up from `next`, so each generated key is known and differs from the last.
+RandomFill countingRandom(std::uint8_t& next) {
+  return [&next](std::span<std::uint8_t> bytes) {
+    for (std::uint8_t& byte : bytes) byte = next++;
+  };
 }
 
 bool contains(const std::string& text, const std::string& part) { return text.find(part) != std::string::npos; }
@@ -64,19 +73,44 @@ int main() {
                    contains(result.output, "CUSTOM_BMS_CONFIG  0 (default)") && !contains(result.output, "restart"),
                "show on a fresh store:\n%s", result.output.c_str());
 
-  // The secret: validated, stored exactly, never echoed.
-  result = run(storage, booted, {"set", "BLE_SECRET", "too short"});
-  EMCOOL_CHECK(result.status == 1 && contains(result.output, "12-128 characters"), "a short secret: %s",
+  // The Bluetooth key: a generated 64-hex key, never a phrase, never echoed by `show`.
+  for (const char* rejected : {"correct horse battery staple", "too short",
+                               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
+                               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg"}) {
+    result = run(storage, booted, {"set", "BLE_SECRET", rejected});
+    EMCOOL_CHECK(result.status == 1 && contains(result.output, "new-ble-key") && storage.values.count("ble_secret") == 0,
+                 "BLE_SECRET %s was accepted: %s", rejected, result.output.c_str());
+  }
+  result = run(storage, booted, {"new-ble-key"});
+  EMCOOL_CHECK(result.status == 1 && contains(result.output, "no random source") &&
+                   storage.values.count("ble_secret") == 0,
+               "new-ble-key ran without a random source: %s", result.output.c_str());
+  std::uint8_t nextRandom = 0;
+  result = run(storage, booted, {"new-ble-key"}, countingRandom(nextRandom));
+  const std::string generated = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+  EMCOOL_CHECK(result.status == 0 && storage.values["ble_secret"] == generated && contains(result.output, generated),
+               "new-ble-key did not save and print its key: %s", result.output.c_str());
+  result = run(storage, booted, {"new-ble-key"}, countingRandom(nextRandom));
+  EMCOOL_CHECK(result.status == 1 && contains(result.output, "new-ble-key replace") &&
+                   storage.values["ble_secret"] == generated,
+               "new-ble-key replaced a saved key without `replace`: %s", result.output.c_str());
+  result = run(storage, booted, {"new-ble-key", "replace"}, countingRandom(nextRandom));
+  const std::string secret = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f";
+  EMCOOL_CHECK(result.status == 0 && storage.values["ble_secret"] == secret, "new-ble-key replace: %s",
                result.output.c_str());
-  const char* secret = "correct horse  battery staple";
-  result = run(storage, booted, {"set", "BLE_SECRET", secret});
-  EMCOOL_CHECK(result.status == 0 && storage.values["ble_secret"] == secret, "the secret was not stored exactly");
   result = run(storage, booted, {"show"});
-  EMCOOL_CHECK(!contains(result.output, "horse") && contains(result.output, "set (29 characters)") &&
+  EMCOOL_CHECK(!contains(result.output, secret.substr(0, 16)) && contains(result.output, "BLE_SECRET         set") &&
                    contains(result.output, "takes effect after `restart`"),
-               "show after setting the secret:\n%s", result.output.c_str());
-  result = run(storage, booted, {"set", "BLE_SECRET", "a", "b"});
-  EMCOOL_CHECK(result.status == 1 && contains(result.output, "quote"), "an unquoted phrase was accepted");
+               "show after making a key:\n%s", result.output.c_str());
+  // A key pasted in upper case is the same key, as the dashboard treats it.
+  std::string upper = generated;
+  for (char& character : upper) character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+  result = run(storage, booted, {"set", "BLE_SECRET", upper.c_str()});
+  EMCOOL_CHECK(result.status == 0 && storage.values["ble_secret"] == generated, "an upper-case key: %s",
+               result.output.c_str());
+  result = run(storage, booted, {"set", "BLE_SECRET", secret.c_str()});
+  EMCOOL_CHECK(result.status == 0 && storage.values["ble_secret"] == secret, "setting the key back: %s",
+               result.output.c_str());
 
   // CUSTOM_BMS_CONFIG: any spelling of a flag, stored as 1 or 0, under a 15-character NVS key.
   result = run(storage, booted, {"set", "custom_bms_config", "on"});

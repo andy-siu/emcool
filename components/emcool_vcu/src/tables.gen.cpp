@@ -6373,7 +6373,7 @@ constexpr VcuParameterTable kTables[] = {
     {4106, "201904030934", "97a36ee9", kRows1},
     {4112, "201904161554", "3ae1f7f4", kRows2},
     {4114, "201912121751", "94d568ef", kRows3},
-    {4115, "service-tool-analysis", "f591017d", kRows4},
+    {4115, "definitions-import", "f591017d", kRows4},
     {4117, "202202241008", "5fc76505", kRows5},
     {4118, "202310160851", "d0d027dd", kRows6},
     {4119, "202310160850", "5757d064", kRows7},
@@ -6400,7 +6400,7 @@ constexpr VcuParameterTable kTables[] = {
 };
 
 constexpr A8FirmwareRow kFirmwareRows[] = {
-    {278, StorageType::kDword, "one of the two odometer-master cells the manufacturer's service tool writes in its odometer-change action, as a 32-bit value followed by an ECU reset — which half is which is NOT established. Answered a 7-byte reply on 2026-09-14, consistent with the 4-byte record. This project reads them and never writes them"},
+    {278, StorageType::kDword, "one of the two odometer-master cells written by Energica's odometer-change action, as a 32-bit value followed by an ECU reset — which half is which is NOT established. Answered a 7-byte reply on 2026-09-14, consistent with the 4-byte record. This project reads them and never writes them"},
     {279, StorageType::kDword, "the other odometer-master cell — see 278, and never written from here either. Nothing has ever read it"},
     {613, StorageType::kWord, nullptr},
     {614, StorageType::kWord, nullptr},
@@ -6417,14 +6417,14 @@ constexpr A8FirmwareRow kFirmwareRows[] = {
     {625, StorageType::kWord, nullptr},
     {626, StorageType::kDword, nullptr},
     {627, StorageType::kByte, "the only BYTE in the block, so a 4-byte REPLY — three of framing plus one of record — confirms the width"},
-    {1000, StorageType::kWord, "the last-service date's low word of the last-service stamp — value = (high << 16) | low, the date a count of seconds since 2000-01-01 UTC, decompiled from the manufacturer's service tool and live-confirmed on 2026-09-08 (all four answered two bytes, all zero). Written only by the service-point routine, never by a parameter write"},
-    {1001, StorageType::kWord, "the last-service date's high word of the last-service stamp — value = (high << 16) | low, the date a count of seconds since 2000-01-01 UTC, decompiled from the manufacturer's service tool and live-confirmed on 2026-09-08 (all four answered two bytes, all zero). Written only by the service-point routine, never by a parameter write"},
-    {1002, StorageType::kWord, "the last-service odometer's low word of the last-service stamp — value = (high << 16) | low, the date a count of seconds since 2000-01-01 UTC, decompiled from the manufacturer's service tool and live-confirmed on 2026-09-08 (all four answered two bytes, all zero). Written only by the service-point routine, never by a parameter write"},
-    {1003, StorageType::kWord, "the last-service odometer's high word of the last-service stamp — value = (high << 16) | low, the date a count of seconds since 2000-01-01 UTC, decompiled from the manufacturer's service tool and live-confirmed on 2026-09-08 (all four answered two bytes, all zero). Written only by the service-point routine, never by a parameter write"},
+    {1000, StorageType::kWord, "the last-service date's low word of the last-service stamp — value = (high << 16) | low, the date a count of seconds since 2000-01-01 UTC, from Energica's definitions and live-confirmed on 2026-09-08 (all four answered two bytes, all zero). Written only by the service-point routine, never by a parameter write"},
+    {1001, StorageType::kWord, "the last-service date's high word of the last-service stamp — value = (high << 16) | low, the date a count of seconds since 2000-01-01 UTC, from Energica's definitions and live-confirmed on 2026-09-08 (all four answered two bytes, all zero). Written only by the service-point routine, never by a parameter write"},
+    {1002, StorageType::kWord, "the last-service odometer's low word of the last-service stamp — value = (high << 16) | low, the date a count of seconds since 2000-01-01 UTC, from Energica's definitions and live-confirmed on 2026-09-08 (all four answered two bytes, all zero). Written only by the service-point routine, never by a parameter write"},
+    {1003, StorageType::kWord, "the last-service odometer's high word of the last-service stamp — value = (high << 16) | low, the date a count of seconds since 2000-01-01 UTC, from Energica's definitions and live-confirmed on 2026-09-08 (all four answered two bytes, all zero). Written only by the service-point routine, never by a parameter write"},
     {1004, StorageType::kWord, nullptr},
     {1005, StorageType::kWord, nullptr},
-    {1006, StorageType::kWord, "one of the only two identifiers the manufacturer's service tool was ever captured WRITING (2026-08-08): it read this one back as 0x9380 and wrote the same value, which reads more like a handshake than a tuning change. Read-only from here"},
-    {1007, StorageType::kWord, "the other one the service tool wrote, 0x29C2, in the same 2026-08-08 capture. Read-only from here"},
+    {1006, StorageType::kWord, "one of the only two identifiers ever captured WRITING (2026-08-08): the sender read this one back as 0x9380 and wrote the same value, which reads more like a handshake than a tuning change. Read-only from here"},
+    {1007, StorageType::kWord, "the other one written, 0x29C2, in the same 2026-08-08 capture. Read-only from here"},
 };
 
 }  // namespace

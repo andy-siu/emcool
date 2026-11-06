@@ -80,6 +80,7 @@ class MultiFrameTransfer : public std::enable_shared_from_this<MultiFrameTransfe
   bool sawStrayFlowControl_ = false;
   std::optional<ArrivalLatency> flowControlLatency_;
   int framesHandled_ = 0;
+  int framesSent_ = 0;
   bool settled_ = false;
   async::TimerId timer_;
   async::TimerId pacer_;

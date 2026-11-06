@@ -9,8 +9,6 @@ namespace emcool::obd {
 
 namespace {
 
-constexpr const char* kTag = "obd";
-
 struct PidDef {
   std::uint8_t pid;
   // 0 for every round.
@@ -64,8 +62,11 @@ void ObdPoller::continuePids(Now now) {
     }
     const Payload request = {0x02, 0x01, def.pid, 0x55, 0x55, 0x55, 0x55, 0x55};
     if (const std::optional<std::string> problem = bus_.transmit(kRequestId, request)) {
-      logError(kTag, "send failed: %s", problem->c_str());
-      continue;
+      // cool-eva's requestPid rejects and ends pollOnce, so a refused PID skips the rest of the
+      // round, trouble-code reads included, and the round keeps its pacing (docs/obd.md).
+      transmitLog_.log(now.monotonicMs, "poll round failed — skipping the remaining requests", *problem);
+      endRound(now);
+      return;
     }
     awaitingPid_ = index;
     pidDeadline_ = order_.at(now.monotonicMs + kPidTimeoutMs);

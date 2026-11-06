@@ -194,6 +194,16 @@ void checkFrames() {
                "an abandoned message was not reported, or the new one was lost");
   EMCOOL_CHECK(assembler.push(stray).problem != nullptr && !assembler.push(stray).envelope,
                "a stray continuation was accepted");
+  // A continuation carrying nothing resets the message, as cool-eva's does, so empty frames can't
+  // hold the buffer open.
+  const std::uint8_t opening[] = {1, 7, 'd'};
+  const std::uint8_t empty[] = {0, 7};
+  const std::uint8_t closing[] = {2, 7, 'e'};
+  assembler.push(opening);
+  EMCOOL_CHECK(assembler.push(empty).problem != nullptr, "an empty continuation was not reported");
+  const auto afterEmpty = assembler.push(closing);
+  EMCOOL_CHECK(afterEmpty.problem != nullptr && !afterEmpty.envelope,
+               "the message an empty continuation interrupted still completed");
 }
 
 void checkEnvelopes() {
@@ -241,7 +251,7 @@ struct Phone {
     deriveSessionKey(secret, serverNonce, clientNonce, key);
     nextCounter = 0;
     const std::string header =
-        "{\"version\":1,\"clientNonce\":\"" + std::string(clientNonce) + "\",\"proof\":\"" + proof.data() + "\"}";
+        "{\"version\":2,\"clientNonce\":\"" + std::string(clientNonce) + "\",\"proof\":\"" + proof.data() + "\"}";
     std::uint8_t message[512];
     const std::size_t length = encodeMessage(MessageKind::kHello, header, {}, message);
     std::vector<std::uint8_t> envelope(length + 1);
@@ -268,56 +278,87 @@ struct Phone {
   }
 };
 
-std::string refusalReason(const std::optional<Message>& message) {
+bool contains(const std::string& text, std::string_view part) { return text.find(part) != std::string::npos; }
+
+std::string refusalField(const std::optional<Message>& message, std::string_view field) {
   if (!message || message->kind != static_cast<std::uint8_t>(MessageKind::kRefused)) return "(not a REFUSED)";
   JsonObjectReader reader;
   char scratch[256];
   reader.read(message->header, scratch);
-  return reader.find("reason") ? std::string(reader.find("reason")->text) : "(no reason)";
+  return reader.find(field) ? std::string(reader.find(field)->text) : "(none)";
 }
 
+std::string refusalReason(const std::optional<Message>& message) { return refusalField(message, "reason"); }
+
 void checkSession() {
-  const std::string secret = "correct horse battery";
-  EMCOOL_CHECK(!BleSession::secretIsUsable("too short"), "an 9-character secret was accepted");
+  const std::string secret = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0";
+  EMCOOL_CHECK(BleSession::secretIsUsable(secret), "a generated key was refused");
+  for (const std::string_view phrase : {std::string_view("correct horse battery staple"),
+                                        std::string_view(secret).substr(0, 63),
+                                        std::string_view("0F1E2D3C4B5A69788796A5B4C3D2E1F00F1E2D3C4B5A69788796A5B4C3D2E1F0")}) {
+    EMCOOL_CHECK(!BleSession::secretIsUsable(phrase), "%.*s was accepted as a key", static_cast<int>(phrase.size()),
+                 phrase.data());
+  }
   BleSession session(secret);
   std::vector<std::uint8_t> reply(kMaxEnvelopeBytes);
   std::vector<std::uint8_t> plaintext;
 
-  Phone stranger("the wrong secret!!");
-  auto result = session.receive(stranger.hello(session, "00112233445566778899aabbccddeeff"), 1000, reply);
-  EMCOOL_CHECK(!result.startedSession && refusalReason(stranger.open(std::span(reply.data(), result.replyLength),
-                                                                     plaintext)) == "wrong secret",
-               "a wrong secret was not refused as one");
+  // A wrong key is refused, addressed to its own nonce, and arms nothing: the right one goes
+  // straight in (protocol 2 has no lockout; the key is generated, so there is nothing to guess).
+  Phone stranger("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+  auto result = session.receiveHello(stranger.hello(session, "00112233445566778899aabbccddeeff"), reply);
+  const auto refused = stranger.open(std::span(reply.data(), result.replyLength), plaintext);
+  EMCOOL_CHECK(!result.startedSession && refusalReason(refused) == "wrong secret" &&
+                   refusalField(refused, "clientNonce") == "00112233445566778899aabbccddeeff",
+               "a wrong key was not refused to its own nonce");
   Phone phone(secret);
-  result = session.receive(phone.hello(session, "ffeeddccbbaa99887766554433221100"), 2500, reply);
-  EMCOOL_CHECK(refusalReason(phone.open(std::span(reply.data(), result.replyLength), plaintext)) ==
-                   "too soon after a failed attempt",
-               "the cooldown did not hold");
-
   const auto recordedHello = phone.hello(session, "ffeeddccbbaa99887766554433221100");
-  result = session.receive(recordedHello, 3100, reply);
-  EMCOOL_CHECK(result.startedSession && session.authenticated(), "the right secret did not start a session");
+  result = session.receiveHello(recordedHello, reply);
+  EMCOOL_CHECK(result.startedSession && session.authenticated(), "the right key right after a wrong one was refused");
   const auto welcome = phone.open(std::span(reply.data(), result.replyLength), plaintext);
   EMCOOL_CHECK(welcome && welcome->kind == static_cast<std::uint8_t>(MessageKind::kWelcome),
                "the WELCOME did not open with the phone's key");
 
   const auto subscribe = phone.sealed(MessageKind::kSubscribe, "{}");
-  result = session.receive(subscribe, 3200, reply);
+  result = session.receive(subscribe);
   EMCOOL_CHECK(result.message && result.message->kind == static_cast<std::uint8_t>(MessageKind::kSubscribe),
                "a sealed SUBSCRIBE did not come through");
-  result = session.receive(subscribe, 3300, reply);
+  result = session.receive(subscribe);
   EMCOOL_CHECK(!result.message && result.problem != nullptr, "a replayed envelope came through again");
+  result = session.receive(recordedHello);
+  EMCOOL_CHECK(!result.message && !result.startedSession && result.problem != nullptr,
+               "a clear HELLO came through the assembled-message path");
 
-  // The nonce rotated, so replaying the recorded HELLO is a wrong secret now.
+  // The nonce rotated, so replaying the recorded HELLO is a wrong key now.
   const std::uint32_t generation = session.generation();
-  result = session.receive(recordedHello, 9000, reply);
+  result = session.receiveHello(recordedHello, reply);
   EMCOOL_CHECK(!result.startedSession && session.generation() == generation, "a recorded HELLO started a session");
 
+  // A nonce that isn't 32 lower-case hex has nothing to address a refusal to: no reply at all.
+  for (const char* badNonce : {"short", "FFEEDDCCBBAA99887766554433221100"}) {
+    result = session.receiveHello(phone.hello(session, badNonce), reply);
+    EMCOOL_CHECK(!result.startedSession && result.replyLength == 0, "a HELLO with nonce %s got a reply", badNonce);
+  }
+
+  // Another protocol version is refused by name, to its nonce.
+  {
+    const std::string header =
+        "{\"version\":1,\"clientNonce\":\"00112233445566778899aabbccddeeff\",\"proof\":\"00\"}";
+    std::uint8_t message[512];
+    const std::size_t length = encodeMessage(MessageKind::kHello, header, {}, message);
+    std::vector<std::uint8_t> envelope(length + 1);
+    clearEnvelope(std::span(message, length), envelope);
+    result = session.receiveHello(envelope, reply);
+    EMCOOL_CHECK(contains(refusalReason(phone.open(std::span(reply.data(), result.replyLength), plaintext)),
+                          "this bike speaks 2"),
+                 "a protocol 1 HELLO was not refused by version");
+  }
+
+  // With no session, a sealed envelope is dropped without a reply: a clear refusal is only ever
+  // an answer to a HELLO.
   session.end();
-  result = session.receive(phone.sealed(MessageKind::kSubscribe, "{}"), 12000, reply);
-  EMCOOL_CHECK(refusalReason(phone.open(std::span(reply.data(), result.replyLength), plaintext)) ==
-                   "no session — send HELLO first",
-               "a sealed envelope with no session was not refused");
+  result = session.receive(phone.sealed(MessageKind::kSubscribe, "{}"));
+  EMCOOL_CHECK(!result.message && result.problem != nullptr, "a sealed envelope with no session was not rejected");
 }
 
 }  // namespace

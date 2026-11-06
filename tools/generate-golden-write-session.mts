@@ -46,12 +46,13 @@ await writeFile(
   fakeFsPath,
   `const files = () => ((globalThis).__fakeFiles ??= new Map());
 export async function mkdir() {}
+export async function chmod() {}
 export async function readFile(path) { if (!files().has(path)) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); return files().get(path); }
 export async function appendFile(path, data) { files().set(path, (files().get(path) ?? "") + String(data)); }
 export async function writeFile(path, data) { files().set(path, String(data)); }
 export async function rm() {} export async function rename() {} export async function readdir() { return []; }
 export async function stat(path) { return { size: (files().get(path) ?? "").length }; }
-export default { mkdir, readFile, appendFile, writeFile, rm, rename, readdir, stat };
+export default { mkdir, chmod, readFile, appendFile, writeFile, rm, rename, readdir, stat };
 `
 );
 const fakeDurablePath = join(fakeDirectory, "fake-durable.mjs");
@@ -139,6 +140,8 @@ const drain = async () => {
 };
 
 let generation = 0;
+// socketcan's send() returns sizeof(struct can_frame) on success, and cool-eva refuses anything else (#359).
+const SOCKETCAN_SENT = 16;
 const importFresh = (path: string) => import(`${coolEvaRoot}${path}?gen=${generation}`);
 
 // The scripted bus: a list of (requestHex → replyHex|null) in order. Each send looks up the next
@@ -159,7 +162,7 @@ function makeChannel(script: Script) {
         const entry = script.replies[at];
         if (!entry.match(message.id, data)) continue;
         script.used[at] = true;
-        if (entry.reply === null) return message.data.length;
+        if (entry.reply === null) return SOCKETCAN_SENT;
         const replyId = kwpReplyId(message.id);
         const reply = entry.reply;
         const timer = { at: now + entry.delayMs, seq: seq++, cb: () => {
@@ -167,9 +170,9 @@ function makeChannel(script: Script) {
           script.session?.handleFrame(replyId, Buffer.from(reply));
         }, cancelled: false };
         timers.push(timer);
-        return message.data.length;
+        return SOCKETCAN_SENT;
       }
-      return message.data.length;
+      return SOCKETCAN_SENT;
     },
   };
 }
@@ -377,12 +380,19 @@ async function main(): Promise<void> {
     (globalThis as any).__now = 0;
     const signals = await importFresh("src/can/signals.ts");
     const writeRunner = await importFresh("src/vcu/write-runner.ts");
-    for (const [key, value] of Object.entries(seed)) signals.record(key, value, 1790000000000 + now);
+    const failSendAt = seed.__failSendAt;
+    for (const [key, value] of Object.entries(seed)) {
+      if (!key.startsWith("__")) signals.record(key, value, 1790000000000 + now);
+    }
     const sent: string[] = [];
     const channel = {
       send(message: { id: number; data: Buffer }) {
+        if (failSendAt !== undefined && sent.length + 1 === failSendAt) {
+          throw new Error("ENOBUFS: the transmit queue is full");
+        }
         emit(`t ${now} ${message.id.toString(16)} ${hex(message.data)}`);
         sent.push(message.id.toString(16));
+        return SOCKETCAN_SENT;
       },
     };
     const runner = writeRunner.createVcuWriteRunner({
@@ -410,6 +420,10 @@ async function main(): Promise<void> {
   scenarios.push(() => chargeCase("chargecurrent", {}, { kind: "charge-current", amps: 10, origin: "manual" }));
   // Over the ceiling: refused.
   scenarios.push(() => chargeCase("chargecurrent", { charge_manager_state: 0x23, fast_dc_limit_max_a: 40 }, { kind: "charge-current", amps: 60, origin: "manual" }));
+  // The bus fails on the second frame, after the 0x120 commit twin left: "may have sent" (#348).
+  scenarios.push(() =>
+    chargeCase("chargecurrent", { charge_manager_state: 0x23, fast_dc_limit_max_a: 75, __failSendAt: 2 }, { kind: "charge-current", amps: 30, origin: "manual" })
+  );
   // Charge stop, live session.
   scenarios.push(() => chargeCase("chargestop", { charge_manager_state: 0x02 }, { kind: "charge-stop" }));
   // Charge stop, no session: refused.

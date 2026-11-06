@@ -175,9 +175,13 @@ void MultiFrameTransfer::sendNextRequestFrame() {
 bool MultiFrameTransfer::transmit(const std::array<std::uint8_t, 8>& frame) {
   if (const std::optional<std::string> problem = send_(kKwpRequestCanId, frame)) {
     logError(kTag, "sending %s to %s failed: %s", toHex(frame).c_str(), microName(target_), problem->c_str());
-    settle({MultiFrameResult::Kind::kNotSent, {}, false, TransferStage::kFirstReply, *problem, {}});
+    // Once a frame of the request is out, the micro may have acted on part of it: not "not sent".
+    const MultiFrameResult::Kind kind = framesSent_ == 0 ? MultiFrameResult::Kind::kNotSent
+                                                          : MultiFrameResult::Kind::kAbandoned;
+    settle({kind, {}, false, TransferStage::kFirstReply, *problem, {}});
     return false;
   }
+  framesSent_ += 1;
   return true;
 }
 

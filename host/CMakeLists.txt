@@ -49,13 +49,13 @@ add_subdirectory(../components/emcool_async emcool_async)
 add_subdirectory(../components/emcool_vcu emcool_vcu)
 add_subdirectory(../components/emcool_ble_server emcool_ble_server)
 
+add_subdirectory(../components/emcool_settings emcool_settings)
+
 add_executable(ble_server_host tests/ble_server_host.cpp)
-target_link_libraries(ble_server_host PRIVATE emcool_ble_server emcool_can)
+target_link_libraries(ble_server_host PRIVATE emcool_ble_server emcool_can emcool_settings)
 
 add_executable(check_pack_temperature tests/check_pack_temperature.cpp)
 target_link_libraries(check_pack_temperature PRIVATE emcool_can)
-
-add_subdirectory(../components/emcool_settings emcool_settings)
 
 add_executable(check_settings tests/check_settings.cpp)
 target_link_libraries(check_settings PRIVATE emcool_settings)

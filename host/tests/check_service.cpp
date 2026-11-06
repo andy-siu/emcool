@@ -37,6 +37,15 @@ using namespace emcool::vcu;
 
 namespace {
 
+// The reason cool-eva's transmitCanFrame gives for a send() that returned -1, which reaches
+// /stored-dtcs and the logs; emcool's own reason is whatever its bus says.
+std::string coolEvaRefusal(std::uint32_t id) {
+  char text[128];
+  std::snprintf(text, sizeof text, "CAN 0x%x not sent: send() returned -1, expected 16 (socketcan does not expose errno)",
+                static_cast<unsigned>(id));
+  return text;
+}
+
 std::vector<std::uint8_t> parseHex(const std::string& text) {
   std::vector<std::uint8_t> bytes;
   if (text == "-") return bytes;
@@ -108,18 +117,23 @@ struct Millisecond {
 std::string emcoolWording(std::string text) {
   for (const char* quote : {"\"", "\\\""}) {
     text = replaceAll(text,
-                      std::string("Add the table with scripts/extract-vcu-tables.ts (README: ") + quote +
+                      std::string("Add the table with scripts/extract-vcu-tables.ts (docs/vcu-parameters.md: ") + quote +
                           "Adding your bike's VCU parameter table" + quote + ").",
-                      std::string("Add the table to cool-eva (its README: ") + quote +
+                      std::string("Add the table to cool-eva (its docs/vcu-parameters.md: ") + quote +
                           "Adding your bike's VCU parameter table" + quote + ") and run tools/generate-vcu-tables.mts.");
   }
-  text = replaceAll(text, "switched off on this Pi (SERVICE_MODE_ENABLED=0)", "switched off on this bike (SERVICE_MODE_ENABLED=0)");
+  // cool-eva's switch became "service data is writable" in its #336; emcool's is still SERVICE_MODE_ENABLED.
+  text = replaceAll(text, "Service data is unavailable. Resolve the Settings fault before reading.",
+                    emcool::vcu::kServiceModeDisabled);
+  // cool-eva now points at its dashboard Settings page; on emcool the switch is still OBD_ENABLED.
+  text = replaceAll(text, "the CAN channel cannot transmit — check the adapter and bus configuration",
+                    "the bus is listen-only (OBD_ENABLED=0) — nothing can be transmitted, so every read would time out");
   text = replaceAll(text, "node --experimental-strip-types scripts/read-freeze-frame.ts --lifetime --save",
                     emcool::vcu::kLifetimeHowToReadWithServiceStopped);
   return replaceAll(text,
-                    "run scripts/extract-vcu-tables.ts against your own service-tool install (see README.md) and send "
-                    "the diff.",
-                    "add it to cool-eva (see its README) and run tools/generate-vcu-tables.mts.");
+                    "run scripts/extract-vcu-tables.ts against your parameter definitions (see docs/vcu-parameters.md) and send the "
+                    "diff.",
+                    "add it to cool-eva (see its docs/vcu-parameters.md) and run tools/generate-vcu-tables.mts.");
 }
 
 // A log line as compared: the message without its "tag: ".
@@ -180,7 +194,7 @@ class Scenario final : public obd::CanTransmitter, public obd::SignalRecorder {
     for (Expected& expected : bucket().outputs) {
       if (!expected.consumed && expected.text == text) {
         expected.consumed = true;
-        if (expected.fail) return std::string("simulated send failure");
+        if (expected.fail) return coolEvaRefusal(id);
         return std::nullopt;
       }
     }

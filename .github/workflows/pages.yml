@@ -6,7 +6,7 @@
 # "Deploy dashboard to Pages" → Run workflow) so you can preview a branch before merging.
 #
 # Turn Pages on once, in the repo: Settings → Pages → Build and deployment → Source =
-# "GitHub Actions". See docs/github-pages.md.
+# "GitHub Actions", and set the custom domain emcool.athegen.com (dashboard/CNAME). See docs/hosting.md.
 
 name: Deploy dashboard to Pages
 

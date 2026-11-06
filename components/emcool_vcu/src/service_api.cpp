@@ -226,16 +226,28 @@ async::Task<ServiceAnswer> ServiceApi::answer(ServiceRequest request) {
       };
       const auto getAll = [&query](std::string_view key) { return queryValues(query, key); };
       const WriteStatusRequest statusReq = parseStatusRequest(get);
-      const auto body = [&](const ServiceWriteResult* result, const std::optional<std::string>& message) {
-        return build([&](text::TextBuffer& out) { writeRunner_->writeResponseJson(out, statusReq, result, message); });
+      const auto body = [&](const ServiceWriteResult* result, const std::optional<std::string>& message,
+                            ChargeCurrentAttempt attempt = ChargeCurrentAttempt::kNone) {
+        return build(
+            [&](text::TextBuffer& out) { writeRunner_->writeResponseJson(out, statusReq, result, message, attempt); });
       };
       if (request.kind == Kind::kWriteStatus) {
         co_return ServiceAnswer{200, body(nullptr, std::nullopt)};
       }
       const WriteRequestParse parsed = parseWriteRequest(get, getAll, wallClockMs_());
-      if (!parsed.ok) co_return ServiceAnswer{400, body(nullptr, parsed.reason)};
+      if (!parsed.ok) {
+        co_return ServiceAnswer{400, body(nullptr, parsed.reason,
+                                          get("action") == "charge-current" ? ChargeCurrentAttempt::kNotSent
+                                                                            : ChargeCurrentAttempt::kNone)};
+      }
       const ServiceWriteAnswer answer = co_await writeRunner_->perform(parsed.request);
-      if (!answer.ok) co_return ServiceAnswer{409, body(nullptr, answer.reason)};
+      if (!answer.ok) {
+        const ChargeCurrentAttempt attempt =
+            parsed.request.kind != ServiceWriteRequest::Kind::kChargeCurrent ? ChargeCurrentAttempt::kNone
+            : answer.mayHaveSent                                            ? ChargeCurrentAttempt::kUnknown
+                                                                            : ChargeCurrentAttempt::kNotSent;
+        co_return ServiceAnswer{409, body(nullptr, answer.reason, attempt)};
+      }
       co_return ServiceAnswer{200, body(&answer.result, std::nullopt)};
     }
     case Kind::kChargeAutoStatus:

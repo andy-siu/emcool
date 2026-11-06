@@ -36,6 +36,7 @@
 #include "emcool/can/frame_decoder.hpp"
 #include "emcool/obd/stored_codes.hpp"
 #include "emcool/ride_log/download.hpp"
+#include "emcool/settings/dashboard_reply.hpp"
 #include "emcool/signals/signal_store.hpp"
 
 namespace {
@@ -153,7 +154,15 @@ int main(int argumentCount, char** arguments) {
     rides = std::make_unique<FolderCard>(arguments[4]);
     download = std::make_unique<emcool::ride_log::LogDownload>(*rides);
   }
-  emcool::ble_server::DashboardEndpoints endpoints(store, storeMutex, storage, troubleCodes, &desk, download.get());
+  emcool::settings::Settings settings;
+  settings.customBmsConfig = true;
+  settings.obdEnabled = true;
+  settings.wifiSsid = "garage \"wifi\"";
+  emcool::ble_server::DashboardEndpoints endpoints(
+      store, storeMutex, storage, troubleCodes, &desk, download.get(),
+      emcool::settings::dashboardSettingsReply(
+          settings, {"v-test", "0011223344556677", "00000000-0000-0000-0000-a1b2c3d4e5f6", download != nullptr,
+                     "0123abcd-0123-4567-89ab-0123456789ab"}));
   emcool::ble_server::BleServer server(arguments[1], store, storeMutex, endpoints);
   emcool::can::FrameDecoder decoder;
   std::int64_t monotonicMs = 1'000'000;

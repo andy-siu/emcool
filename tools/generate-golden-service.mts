@@ -53,6 +53,7 @@ await writeFile(
   `const files = () => globalThis.__fakeFiles;
 const missing = path => Object.assign(new Error("ENOENT: no such file " + path), { code: "ENOENT" });
 export async function mkdir() {}
+export async function chmod() {}
 export async function readFile(path) { if (!files().has(path)) throw missing(path); return files().get(path); }
 export async function rm(path) { files().delete(path); }
 export async function rename(from, to) { if (!files().has(from)) throw missing(from); files().set(to, files().get(from)); files().delete(from); }
@@ -60,7 +61,7 @@ export async function readdir() { return []; }
 export async function stat(path) { if (!files().has(path)) throw missing(path); return { size: files().get(path).length }; }
 export async function writeFile(path, data) { files().set(path, String(data)); }
 export async function appendFile(path, data) { files().set(path, (files().get(path) ?? "") + String(data)); }
-export default { mkdir, readFile, rm, rename, readdir, stat, writeFile, appendFile };
+export default { mkdir, chmod, readFile, rm, rename, readdir, stat, writeFile, appendFile };
 `
 );
 await writeFile(
@@ -124,6 +125,9 @@ registerHooks({
     return result;
   },
 });
+// socketcan's send() returns sizeof(struct can_frame) on success, and cool-eva refuses anything else (#359).
+const SOCKETCAN_SENT = 16;
+const SOCKETCAN_REFUSED = -1;
 const importFresh = (path: string) => import(`${coolEvaRoot}${path}?gen=${generation}`);
 
 // ---------------------------------------------------------------------------------------------
@@ -337,7 +341,8 @@ async function runScenario(index: number, durationMs: number): Promise<void> {
     send(message: { id: number; data: Buffer }) {
       const fail = chance(sendFail);
       emit(`t ${now} ${message.id.toString(16)} ${hex(message.data)} ${fail ? "fail" : "ok"}`);
-      if (fail) throw new Error("simulated send failure");
+      // A refusal, as socketcan reports one: -1 rather than a throw (#359).
+      if (fail) return SOCKETCAN_REFUSED;
       if (message.id === 0x7df && message.data[0] === 0x02 && message.data[1] === 0x01 && answersPids) {
         // Road speed agrees with the bike's broadcasts: zero unless it's moving.
         const pid = message.data[2];
@@ -345,7 +350,7 @@ async function runScenario(index: number, durationMs: number): Promise<void> {
         arrive(now + between(1, 25), 0x7e8, [0x04, 0x41, pid, a, between(0, 255), 0x55, 0x55, 0x55]);
       }
       if (message.id === 0x7c0) bus.channel.send(message);
-      return message.data.length;
+      return SOCKETCAN_SENT;
     },
   };
   const runner = runnerModule.createVcuReadRunner({ channel: () => channel, busIsActive, directory: DIRECTORY });

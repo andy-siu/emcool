@@ -57,6 +57,19 @@ std::optional<HttpResponse> DashboardEndpoints::begin(const HttpRequest& request
     if (download_ == nullptr) return fromText(503, kText, "emcool: the ride log is off (no microSD pins configured)\n");
     return beginDownload(query);
   }
+  // cool-eva's SettingsActionReply (and HubCandidatesReply's empty list), so the dashboard shows
+  // why beside the button rather than "no confirmed reply".
+  if (!settingsBody_.empty() && (route.starts_with("/settings/") || (route == "/settings" && method != "GET"))) {
+    return fromText(405, kJson,
+                    "{\"ok\":false,\"message\":\"emcool changes settings on its serial console (show, set NAME "
+                    "VALUE, then restart), not from the dashboard.\",\"candidates\":[]}");
+  }
+  if (route == "/settings" && !settingsBody_.empty()) {
+    source_ = Source::kStatic;
+    static_ = settingsBody_;
+    length_ = static_.size();
+    return HttpResponse{200, kJson, length_};
+  }
   if (method == "GET") {
     if (route == "/status") return status(nowMonotonicMs);
     if (route == "/dtc-table" || route == "/fault-infokeys") {

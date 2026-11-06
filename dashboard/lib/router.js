@@ -1,6 +1,7 @@
 // @ts-check
 
 import van from "../vendor/van-1.6.1.js";
+import { armed } from "./arming.js";
 
 // The tab bar, in the URL, so the phone's Back button has something to walk back
 // through instead of leaving the dashboard from whichever screen you were on.
@@ -17,20 +18,32 @@ import van from "../vendor/van-1.6.1.js";
 // The full argument for each of those, and for what Back does across a repeat visit:
 // docs/dashboard-decisions.md §Routing.
 
-/**
- * The bottom tab bar, in order — and, since this module exists, the routing table
- * too. A tab's `name` is its URL: renaming one breaks every bookmark that pointed at
- * it, which is what scripts/check-tab-routing.ts pins down.
- */
+/** Bookmark names are pinned by check-tab-routing.ts; rationale: docs/dashboard-routing.md. */
 export const TABS = /** @type {const} */ ([
   { name: "ride", label: "Ride" },
-  { name: "hypermile", label: "Hypermile" },
+  { name: "hypermile", label: "Range" },
   { name: "charge", label: "Charge" },
   { name: "all", label: "All" },
   { name: "faults", label: "Faults" },
 ]);
 
 /** @typedef {(typeof TABS)[number]["name"]} TabName */
+
+export const ROUTES = /** @type {const} */ ([
+  { name: "ride", tab: "ride", label: "Ride", hash: "#ride" },
+  { name: "cooling", tab: "ride", label: "Cooling", hash: "#ride/cooling" },
+  { name: "hypermile", tab: "hypermile", label: "Range", hash: "#hypermile" },
+  { name: "cells", tab: "hypermile", label: "Cells", hash: "#hypermile/cells" },
+  { name: "charge", tab: "charge", label: "Charge", hash: "#charge" },
+  { name: "charge-pack", tab: "charge", label: "Pack & cooling", hash: "#charge/pack-cooling" },
+  { name: "charge-controls", tab: "charge", label: "Controls", hash: "#charge/controls" },
+  { name: "all", tab: "all", label: "All", hash: "#all" },
+  { name: "faults", tab: "faults", label: "Faults", hash: "#faults" },
+  { name: "fault-report", tab: "faults", label: "Fault report", hash: "#faults/report" },
+]);
+/** @typedef {(typeof ROUTES)[number]["name"]} ViewName */
+
+export const RIDING_CYCLE = /** @type {const} */ (["ride", "cooling", "hypermile", "charge", "all", "faults"]);
 
 /**
  * Where a URL that names no tab lands, and where one that names something unknown
@@ -40,16 +53,21 @@ export const TABS = /** @type {const} */ ([
  */
 export const DEFAULT_TAB = /** @type {TabName} */ ("ride");
 
-/**
- * The tab on screen.
- *
- * Deliberately not exported, which leaves exactly two writers, both in this file:
- * showTab(), which moves the tab and the URL together, and showTabFromUrl(), which
- * follows a URL the browser has already moved. Nothing outside can set one without the
- * other, so "the screen and the URL agree" holds by construction rather than by
- * everyone remembering. Read it through currentTab() or peekTab() below.
- */
+/** Only explicit navigation and URL restoration write these states; why private: docs/dashboard-routing.md. */
 const tab = van.state(DEFAULT_TAB);
+const view = van.state(/** @type {ViewName} */ (DEFAULT_TAB));
+
+export function currentView() {
+  return view.val;
+}
+
+export function peekView() {
+  return view.rawVal;
+}
+
+export function currentViewLabel() {
+  return ROUTES.find(route => route.name === view.rawVal)?.label ?? "Ride";
+}
 
 /**
  * The tab on screen. Calling this inside a binding subscribes that binding to tab
@@ -81,14 +99,25 @@ export function peekTab() {
  * @param {TabName} name
  */
 export function showTab(name) {
+  showView(name);
+}
+
+/** @param {ViewName} name */
+export function showView(name) {
   // rawVal, not val: this is reachable from inside bindings (see peekTab).
-  if (name === tab.rawVal) {
+  if (name === view.rawVal) {
     // Re-tapping the tab you are on is not a navigation, and an entry for it would be
     // a Back press that appears to do nothing.
     return;
   }
+  // Only a real view change loses confirmation context; a repeated tab tap is a no-op.
+  armed.val = "";
   try {
-    history.pushState(null, "", hashForTab(name));
+    history.pushState(
+      name === "cells" || name === "fault-report" ? { coolEvaSubview: true, backName: currentViewLabel() } : null,
+      "",
+      hashForView(name)
+    );
   } catch (error) {
     // Safari refuses more than about a hundred pushState calls in thirty seconds. No
     // hand can tap that fast, but this is reachable from a handlebar gesture, and a
@@ -96,7 +125,11 @@ export function showTab(name) {
     // the URL and nothing else — never the screen the rider asked for.
     console.warn("router: could not add a history entry", error);
   }
-  tab.val = name;
+  view.val = name;
+  tab.val = ROUTES.find(route => route.name === name)?.tab ?? DEFAULT_TAB;
+  if (typeof window !== "undefined") {
+    window.scrollTo(0, 0);
+  }
 }
 
 /**
@@ -104,7 +137,21 @@ export function showTab(name) {
  * other half of what a handlebar gesture might want from this module.
  */
 export function advanceTab() {
-  showTab(nextTabAfter(tab.rawVal));
+  showView(nextViewAfter(view.rawVal));
+}
+
+/** @param {ViewName} name @returns {ViewName} */
+export function nextViewAfter(name) {
+  // Deliberate details advance from their parent; Cooling is itself a cycle stop.
+  const route = ROUTES.find(route => route.name === name);
+  const from = RIDING_CYCLE.some(stop => stop === name) ? name : route?.tab;
+  const index = RIDING_CYCLE.findIndex(stop => stop === from);
+  return RIDING_CYCLE[(index + 1) % RIDING_CYCLE.length];
+}
+
+/** @param {ViewName} name */
+export function hashForView(name) {
+  return ROUTES.find(route => route.name === name)?.hash ?? "#ride";
 }
 
 /**
@@ -145,7 +192,9 @@ export function startRouting() {
  * @returns {boolean} whether the fragment named a tab, rather than falling back to one.
  */
 function showTabFromUrl() {
-  const { tab: landing, rewriteTo, named } = canonicalHash(location.hash);
+  // Back and direct hash changes bypass showView(), so URL restoration must also disarm.
+  armed.val = "";
+  const { tab: landing, view: landingView, rewriteTo, named } = canonicalHash(location.hash);
   if (rewriteTo !== null) {
     try {
       history.replaceState(null, "", rewriteTo);
@@ -160,29 +209,20 @@ function showTabFromUrl() {
     }
   }
   tab.val = landing;
+  view.val = landingView;
   return named;
 }
 
-/**
- * What to do about a fragment: the tab it lands on, what the URL should be rewritten
- * to — null when it already says the right thing — and whether the fragment named that
- * tab or merely fell back to it. The three are independent.
- *
- * Pure, so the rule can be checked without a browser; the same split as
- * headroomMvWith() in lib/derive.js, and for the same reason.
- *
- * Rewriting only when it would CHANGE something is the part worth not undoing: Back
- * through ten tabs must not spend ten replaceState calls out of Safari's bucket. Why
- * rewrite at all, and why no caller pushes: docs/dashboard-decisions.md §Routing.
- *
+/** Normalise known view URLs once; constraints and history behaviour: docs/dashboard-routing.md.
  * @param {string} hash
- * @returns {{ tab: TabName, rewriteTo: string | null, named: boolean }}
+ * @returns {{tab:TabName,view:ViewName,rewriteTo:string|null,named:boolean}}
  */
 export function canonicalHash(hash) {
-  const named = tabFromHash(hash);
-  const landing = named ?? DEFAULT_TAB;
-  const wanted = hashForTab(landing);
-  return { tab: landing, rewriteTo: hash === wanted ? null : wanted, named: named !== null };
+  const route = ROUTES.find(candidate => candidate.hash === hash.toLowerCase());
+  const landing = route?.tab ?? DEFAULT_TAB;
+  const landingView = route?.name ?? DEFAULT_TAB;
+  const wanted = hashForView(landingView);
+  return { tab: landing, view: landingView, rewriteTo: hash === wanted ? null : wanted, named: route !== undefined };
 }
 
 /**
@@ -205,22 +245,5 @@ export function hashForTab(name) {
  * @returns {TabName | null}
  */
 export function tabFromHash(hash) {
-  const name = hash.replace(/^#/, "").toLowerCase();
-  return TABS.some(candidate => candidate.name === name) ? /** @type {TabName} */ (name) : null;
-}
-
-/**
- * The tab after this one, wrapping. Pure, so the ring the high-beam gesture rides on
- * can be checked without a browser.
- *
- * A name that is not in the bar answers with the first tab: findIndex returns -1 and
- * the wrap turns that into 0. That cannot happen through TabName, but it is the right
- * answer if it ever does.
- *
- * @param {TabName} name
- * @returns {TabName}
- */
-export function nextTabAfter(name) {
-  const index = TABS.findIndex(candidate => candidate.name === name);
-  return TABS[(index + 1) % TABS.length].name;
+  return ROUTES.find(route => route.hash === hash.toLowerCase())?.tab ?? null;
 }

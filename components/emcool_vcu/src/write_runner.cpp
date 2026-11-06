@@ -1151,7 +1151,8 @@ void VcuWriteRunner::writeStatusJson(text::TextBuffer& out, const WriteStatusReq
 }
 
 void VcuWriteRunner::writeResponseJson(text::TextBuffer& out, const WriteStatusRequest& request,
-                                       const ServiceWriteResult* result, const std::optional<std::string>& message) {
+                                       const ServiceWriteResult* result, const std::optional<std::string>& message,
+                                       ChargeCurrentAttempt attempt) {
   out.append("{\"status\":");
   writeStatusJson(out, request);
   out.append(",\"result\":");
@@ -1224,6 +1225,8 @@ void VcuWriteRunner::writeResponseJson(text::TextBuffer& out, const WriteStatusR
   } else {
     out.append("null");
   }
+  if (attempt == ChargeCurrentAttempt::kNotSent) out.append(",\"chargeCurrentAttempt\":\"not-sent\"");
+  if (attempt == ChargeCurrentAttempt::kUnknown) out.append(",\"chargeCurrentAttempt\":\"unknown\"");
   out.append("}");
 }
 

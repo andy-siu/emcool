@@ -417,7 +417,8 @@ std::string chargeAnswerJson(const ServiceWriteAnswer& answer) {
     if (!answer.ok) {
       out.append("{\"ok\":false,\"reason\":");
       out.appendJsonString(answer.reason);
-      out.append("}");
+      // cool-eva's mayHaveSent: present (true) only when a charge-current frame may have left.
+      out.append(answer.mayHaveSent ? ",\"mayHaveSent\":true}" : "}");
       return;
     }
     const ServiceWriteResult& r = answer.result;
@@ -443,8 +444,13 @@ void runChargeBlock(const Block& block) {
   ChargeAckWatch ackWatch(recorder);
 
   auto sent = std::make_shared<std::vector<std::string>>();
+  // The scenario's "__failSendAt": the 1-based frame whose send fails, as the generator's channel throws.
+  const auto failAt = block.seed.find("__failSendAt");
+  const std::size_t failSendAt = failAt == block.seed.end() ? 0 : static_cast<std::size_t>(failAt->second);
   WriteContext context;
-  context.send = [sent](std::uint32_t id, const std::array<std::uint8_t, 8>& frame) -> std::optional<std::string> {
+  context.send = [sent, failSendAt](std::uint32_t id,
+                                    const std::array<std::uint8_t, 8>& frame) -> std::optional<std::string> {
+    if (failSendAt != 0 && sent->size() + 1 == failSendAt) return std::string("ENOBUFS: the transmit queue is full");
     char idText[12];
     std::snprintf(idText, sizeof idText, "%x", static_cast<unsigned>(id));
     sent->push_back(std::string(idText) + " " + lowerHex(frame));

@@ -13,10 +13,12 @@
 #include <algorithm>
 #include <array>
 #include <cinttypes>
+#include <cstdio>
 #include <mutex>
 #include <new>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -37,9 +39,11 @@
 #include "emcool/ride_log/download.hpp"
 #include "emcool/ride_log/log_writer.hpp"
 #include "emcool/ride_log/ride_log.hpp"
+#include "emcool/settings/dashboard_reply.hpp"
 #include "emcool/settings/settings.hpp"
 #include "emcool/signals/signal_store.hpp"
 #include "esp_app_desc.h"
+#include "esp_mac.h"
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -104,7 +108,9 @@ Type* allocate(const char* what, Arguments&&... arguments);
 bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
                     std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
                     emcool::DiagnosticsTask& diagnostics, emcool::ride_log::LogDownload* download,
-                    emcool::BleLinkCounters& counters);
+                    const emcool::ride_log::SessionId& session, emcool::BleLinkCounters& counters);
+std::string dashboardInstanceId();
+std::string bluetoothCodeId(const std::string& key);
 void logSettings(const emcool::settings::Settings& settings);
 
 }  // namespace
@@ -173,7 +179,8 @@ extern "C" void app_main() {
   if (diagnostics == nullptr || !diagnostics->start()) return;
   // NimBLE keeps PHY calibration in NVS; without it the radio can't start.
   const bool bluetooth =
-      nvsReady && startBluetooth(settings, store, storeMutex, storageReport, *diagnostics, download, bleLinkCounters);
+      nvsReady &&
+      startBluetooth(settings, store, storeMutex, storageReport, *diagnostics, download, session, bleLinkCounters);
   // Wi-Fi after Bluetooth: they share the radio, and coexistence wants the Bluetooth controller up first.
   static emcool::WifiCounters wifiCounters;
   const bool wifi = nvsReady && emcool::startWifi(settings, settingsStorage, runtimeSettings,
@@ -185,7 +192,7 @@ extern "C" void app_main() {
                               kDecodeTaskCore) != pdPASS) {
     emcool::logError(kTag, "could not create the decode task (%" PRIu32 " bytes of stack)", kDecodeTaskStackBytes);
   }
-  emcool::startSettingsConsole(settingsStorage, runtimeSettings);
+  emcool::startSettingsConsole(settingsStorage, runtimeSettings, bluetooth || wifi);
 }
 
 namespace {
@@ -279,20 +286,22 @@ bool initNvs() {
 bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
                     std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
                     emcool::DiagnosticsTask& diagnostics, emcool::ride_log::LogDownload* download,
-                    emcool::BleLinkCounters& counters) {
+                    const emcool::ride_log::SessionId& session, emcool::BleLinkCounters& counters) {
   if (!emcool::ble::BleSession::secretIsUsable(settings.bleSecret)) {
-    emcool::logWarning(kTag,
-                       "Bluetooth is off: no link secret. On the serial console: set BLE_SECRET \"a phrase of "
-                       "%zu-%zu characters\", then restart",
-                       emcool::ble::BleSession::kMinSecretLength, emcool::ble::BleSession::kMaxSecretLength);
+    emcool::logWarning(kTag, "Bluetooth is off: no Bluetooth key. On the serial console: new-ble-key, then restart");
     return false;
   }
   if (!emcool::ble::initCrypto() || !emcool::ble::cryptoSelfTest()) {
     emcool::logError(kTag, "Bluetooth is off: the crypto failed its self-test");
     return false;
   }
-  auto* endpoints = allocate<emcool::ble_server::DashboardEndpoints>("the dashboard endpoints", store, storeMutex,
-                                                                     storage, diagnostics, &diagnostics, download);
+  const std::string instanceId = dashboardInstanceId();
+  const std::string codeId = bluetoothCodeId(settings.bleSecret);
+  std::string settingsReply = emcool::settings::dashboardSettingsReply(
+      settings, {esp_app_get_description()->version, session.hex.data(), instanceId, download != nullptr, codeId});
+  auto* endpoints = allocate<emcool::ble_server::DashboardEndpoints>(
+      "the dashboard endpoints", store, storeMutex, storage, diagnostics, &diagnostics, download,
+      std::move(settingsReply));
   auto* server = endpoints == nullptr ? nullptr
                                       : allocate<emcool::ble_server::BleServer>("the Bluetooth server",
                                                                                  settings.bleSecret, store, storeMutex,
@@ -305,8 +314,7 @@ void logSettings(const emcool::settings::Settings& settings) {
   emcool::logInfo(kTag,
                   "settings: BLE_SECRET %s, BLE_NAME %s, CUSTOM_BMS_CONFIG %d, OBD_ENABLED %d, ELOCK_ENABLED %d, "
                   "SERVICE_MODE_ENABLED %d, WIFI_SSID %s, status report %s (serial console: show)",
-                  settings.bleSecret.empty() ? "not set" : ("set (" + std::to_string(settings.bleSecret.size()) +
-                                                             " characters)").c_str(),
+                  settings.bleSecret.empty() ? "not set" : "set",
                   settings.bleName.c_str(), settings.customBmsConfig ? 1 : 0, settings.obdEnabled ? 1 : 0,
                   settings.elockEnabled ? 1 : 0, settings.serviceModeEnabled ? 1 : 0,
                   settings.wifiSsid.empty() ? "not set" : settings.wifiSsid.c_str(),
@@ -323,6 +331,37 @@ void logSettings(const emcool::settings::Settings& settings) {
                       ? "custom config expected — true pack temps from 0x660, 0x200 logged as batt_temp_*_vcu"
                       : "stock config assumed — pack temps from 0x200 once no 0x660 has been seen (set "
                         "CUSTOM_BMS_CONFIG 1 if flashed)");
+}
+
+// The dashboard keys its per-bike state on this, so it must not change across boots: the factory
+// MAC, in cool-eva's instance-id shape (a UUID's 8-4-4-4-12), zero-padded in front.
+std::string dashboardInstanceId() {
+  std::uint8_t mac[6] = {};
+  if (esp_efuse_mac_get_default(mac) != ESP_OK) {
+    emcool::logWarning(kTag, "could not read the factory MAC; the dashboard's instance id is all zeros");
+  }
+  char id[37];
+  std::snprintf(id, sizeof id, "00000000-0000-0000-0000-%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3],
+                mac[4], mac[5]);
+  return id;
+}
+
+// The dashboard files its saved copies of the key under this, and cool-eva's is a UUID. A labelled
+// HMAC of the key: it changes with the key and reveals nothing of it. Empty if the HMAC fails.
+std::string bluetoothCodeId(const std::string& key) {
+  constexpr std::string_view kLabel = "emcool/code-id";
+  emcool::ble::Sha256Digest digest = {};
+  if (!emcool::ble::hmacSha256(
+          std::span(reinterpret_cast<const std::uint8_t*>(key.data()), key.size()),
+          {std::span(reinterpret_cast<const std::uint8_t*>(kLabel.data()), kLabel.size())}, digest)) {
+    emcool::logWarning(kTag, "could not derive the Bluetooth key's id; the dashboard will say no key is saved");
+    return {};
+  }
+  char id[37];
+  std::snprintf(id, sizeof id, "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", digest[0],
+                digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7], digest[8], digest[9],
+                digest[10], digest[11], digest[12], digest[13], digest[14], digest[15]);
+  return id;
 }
 
 // For the objects that live as long as the firmware and are too big for static data.

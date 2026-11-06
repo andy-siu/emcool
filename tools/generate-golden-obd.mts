@@ -32,7 +32,7 @@
 //   run <n> <elock 0|1> <wall clock base ms> <end ms>
 //   a <ms> hold <wait ms> <max hold ms> <reason> | a <ms> release | a <ms> snapshot
 //   r <ms> <id hex> <data hex>                a frame arriving
-//   t <ms> <id hex> <data hex> <ok|fail>      a frame cool-eva sent (fail: send threw)
+//   t <ms> <id hex> <data hex> <ok|fail>      a frame cool-eva sent (fail: send returned -1)
 //   s <ms> <key> <value>                      record(key, value)
 //   l <ms> <I|W|E> <text>                     a log line (its first argument)
 //   j <ms> <json>                             JSON.stringify(troubleCodeSnapshot())
@@ -82,6 +82,9 @@ const lines: string[] = [];
 let now = 0;
 let wallBase = 0;
 const emit = (line: string) => void lines.push(line);
+// socketcan's send() returns sizeof(struct can_frame) on success, and cool-eva refuses anything else (#359).
+const SOCKETCAN_SENT = 16;
+const SOCKETCAN_REFUSED = -1;
 const hex = (bytes: ArrayLike<number>) => Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
 
 Object.defineProperty(performance, "now", { value: () => now, configurable: true, writable: true });
@@ -331,6 +334,8 @@ interface Profile {
   responder: number;
   noisePerSecond: number;
   sendFail: number;
+  // Refused flow control only; drawn in fixed scenarios, so the random ones keep their sequence.
+  flowControlFail: number;
   stored: [DtcBehaviour, number][];
   silentModes: [DtcBehaviour, number][];
   codes: number[];
@@ -360,6 +365,7 @@ function makeProfile(): Profile {
     responder: chance(0.85) ? 0x7e8 : pick([0x7e9, 0x7ea, 0x7e0, 0x7e3]),
     noisePerSecond: pick([0, 0, 1, 5, 20]),
     sendFail: pick([0, 0, 0, 0.01, 0.1]),
+    flowControlFail: 0,
     stored: quiet
       ? [["silent", 1]]
       : [
@@ -524,12 +530,15 @@ async function runScenario(index: number, durationMs: number, elockEnabled: bool
 
   const channel = {
     send(message: { id: number; data: Buffer }) {
-      const fail = chance(profile.sendFail);
+      const isFlowControl = message.id >= 0x7e0 && message.id <= 0x7e7 && message.data[0] === 0x30;
+      const fail =
+        chance(profile.sendFail) || (profile.flowControlFail > 0 && isFlowControl && chance(profile.flowControlFail));
       emit(`t ${now} ${message.id.toString(16)} ${hex(message.data)} ${fail ? "fail" : "ok"}`);
-      if (fail) throw new Error("simulated send failure");
+      // A refusal, as socketcan reports one: -1 rather than a throw (#359).
+      if (fail) return SOCKETCAN_REFUSED;
       const data = message.data;
       if (message.id === 0x7df && data[0] === 0x02 && data[1] === 0x01) {
-        if (!chance(profile.pidAnswer)) return;
+        if (!chance(profile.pidAnswer)) return SOCKETCAN_SENT;
         const pid = data[2];
         const late = chance(profile.pidLate);
         const at = now + (late ? between(201, 320) : between(1, 30));
@@ -544,6 +553,7 @@ async function runScenario(index: number, durationMs: number, elockEnabled: bool
       } else if (message.id === 0x791) {
         answerElock(data);
       }
+      return SOCKETCAN_SENT;
     },
   };
 
@@ -684,6 +694,21 @@ const coincidences: Fixed["holds"][] = [
 ];
 for (const holds of coincidences) {
   await runScenario(totals.runs, 6000, false, { profile: silent, holds });
+  totals.runs++;
+  totals.simulatedMs += 6000;
+}
+
+// A stored list long enough to need flow control, whose flow control is refused: every attempt
+// (all five) ends at once as a stall, then sometimes (half) one gets through and completes.
+const multiFrame: Partial<Profile> = {
+  ...silent,
+  responder: 0x7e8,
+  stored: [["complete", 1]],
+  codes: Array.from({ length: 39 }, (_, offset) => 0x9006 + offset),
+  declaredDelta: 0,
+};
+for (const flowControlFail of [1, 0.5]) {
+  await runScenario(totals.runs, 6000, false, { profile: { ...multiFrame, flowControlFail }, holds: [] });
   totals.runs++;
   totals.simulatedMs += 6000;
 }

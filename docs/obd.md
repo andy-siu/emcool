@@ -20,6 +20,18 @@ With it on, the controller is an ordinary node on the bus, as cool-eva's `can0` 
 - **It retries a frame until something acknowledges it,** as SocketCAN does. The controller's zeroed default is single-shot, which would drop a request whenever it lost arbitration to the bike's own traffic.
 - **It recovers from bus-off** by itself, at most once a second.
 
+## When a send is refused
+
+A frame the controller won't take is reported as not sent and never retried as if it went. This is cool-eva's #359 policy (its `docs/can-transmit.md`). The TWAI driver refuses a frame when the bus is listen-only, when all 8 transmit slots are still waiting, or when `twai_node_transmit` fails.
+
+- **A PID request:** the rest of that round is skipped, trouble-code reads included, and the next round keeps its 500 ms pacing.
+- **A trouble-code request:** the list is `not-asked` and isn't retried.
+- **A trouble-code flow control:** that attempt ends at once as a stall, and the usual stall retries follow. This applies whether the send was refused or the id was outside the physical request range.
+- **The E-LOCK read:** no keys-paired value, and no retry loop.
+- **A VCU multi-frame request:** `not-sent` if its first frame was refused. If a later frame or a flow control is refused, it's `abandoned`, because the micro may have acted on part of it.
+
+Refusals are logged at once, then at most once per 5 s for each of `obd` and `obd-dtc`. The next line logged says how many were held back. clear-dtcs's PID and list reads count against the same limit as the poller's, as cool-eva's module-level loggers do.
+
 ## The hub's active faults
 
 Separately from OBD, and passive, emcool reads the bike's active fault list as the Energica Connectivity Hub mirrors it onto 0x410 (message type 25). This is a port of cool-eva's `src/can/hub-mirror.ts` and `src/diagnostics/decode.ts` and `record.ts`. It needs no setting, because it only listens.
@@ -83,11 +95,11 @@ Memory: the OBD side is about 2 KB, mostly the ISO-TP reassembly buffer. It's al
   - every NRC's name
   - 94,000 ISO-TP frames in random sequences
   - 4,000 random replies through the trouble-code decoder
-- **The poller, the reads, the hold and the E-LOCK read,** against a scripted ECU on a fake clock, in 72 scenarios covering four simulated hours. The ECU's behaviour includes:
+- **The poller, the reads, the hold and the E-LOCK read,** against a scripted ECU on a fake clock, in 74 scenarios covering three and a half simulated hours. The ECU's behaviour includes:
   - PIDs answered, late, short, twice or not at all
   - trouble-code lists as single frames, or as multi-frame transfers that complete, stall, skip a sequence number, restart or overflow
   - refusals, silence, and flow control to an id the poller must refuse
-  - noise on the diagnostic ids, and sends that fail
+  - noise on the diagnostic ids, and sends that are refused, flow control included
   - holds that are granted, refused, released, or outstay their cap, including both orders of the same-millisecond race
 
   `host/tests/check_obd.cpp` replays each scenario through the C++. In every millisecond it must send the same frames, record the same signals, log the same lines and serve the same `/stored-dtcs` body as cool-eva's own code did.
@@ -102,6 +114,7 @@ Memory: the OBD side is about 2 KB, mostly the ISO-TP reassembly buffer. It's al
   - consecutive frames not recognised
   - deadlines ordered by time alone
   - a read time stamped after a failed send
+  - a refused flow control left to time out instead of ending the attempt
   - a windowing bug in the body writer
   - the ISO-TP frame cap not counting
   - padding read as a code

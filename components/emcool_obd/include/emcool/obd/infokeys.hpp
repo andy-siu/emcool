@@ -29,7 +29,7 @@ struct InfokeyField {
 struct FaultInfokeys {
   std::uint8_t component;
   std::uint8_t symptom;
-  const char* serviceToolObdCode;
+  const char* definitionObdCode;
   std::span<const std::uint8_t> infokeys;
 };
 

@@ -77,7 +77,7 @@ The bike's own TABLE_TYPE (indices 276 and 277) picks which table names the para
 - **At startup:** from the latest snapshot.
 - **After each sweep:** from what the sweep read.
 
-A table emcool doesn't carry is reported, never guessed. To add one, add it to cool-eva, as its README describes, and run the generator.
+A table emcool doesn't carry is reported, never guessed. To add one, add it to cool-eva, as its [`docs/vcu-parameters.md`](https://github.com/andy-siu/cool-eva/blob/main/docs/vcu-parameters.md#adding-your-bikes-vcu-parameter-table) describes, and run the generator.
 
 ## How it runs
 

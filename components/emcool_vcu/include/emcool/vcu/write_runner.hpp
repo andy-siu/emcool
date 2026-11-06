@@ -16,6 +16,7 @@
 #include "emcool/async/task.hpp"
 #include "emcool/obd/obd_hold.hpp"
 #include "emcool/obd/stored_codes.hpp"
+#include "emcool/obd/transmit_log.hpp"
 #include "emcool/text/text_buffer.hpp"
 #include "emcool/vcu/charge_ack_watch.hpp"
 #include "emcool/vcu/runner.hpp"  // BusLease, ServiceContext-adjacent helpers
@@ -118,7 +119,14 @@ struct ServiceWriteAnswer {
   bool ok = false;
   ServiceWriteResult result;  // ok
   std::string reason;         // !ok
+  // !ok on a charge-current only: a frame may already have left (cool-eva's mayHaveSent). The 0x120
+  // commit twin goes first, so a later failure must never read as "not sent".
+  bool mayHaveSent = false;
 };
+
+// cool-eva's VcuWriteResponse.chargeCurrentAttempt: on a charge-current that produced no result,
+// whether nothing went out or delivery is uncertain. Absent for every other action.
+enum class ChargeCurrentAttempt : std::uint8_t { kNone, kNotSent, kUnknown };
 
 // What the three gates do about one action.
 struct ServiceActionPolicy {
@@ -168,6 +176,7 @@ struct WriteContext {
   obd::ObdHold* hold = nullptr;         // the always-on poller's hold; null with OBD off
   obd::SignalRecorder* recorder = nullptr;  // for clear-dtcs's PID records
   obd::StoredCodes* stored = nullptr;   // for clear-dtcs's mode-03 read-back into /stored-dtcs
+  obd::TransmitLogs* transmitLogs = nullptr;  // the OBD stack's, which clear-dtcs's sends share
   VcuStore* store = nullptr;            // the snapshot store, for swept values and the table report
   ChargeAckWatch* ackWatch = nullptr;   // the charge-current ack readout; null until stage 5 wired
   // Told BEFORE a charge current reaches the bus, with where it came from — the automatic
@@ -183,9 +192,11 @@ class VcuWriteRunner {
   bool handleCanFrame(std::uint32_t id, std::span<const std::uint8_t> data);
   void stop();
 
-  // The /vcu-write body: {status, result, message}. `result`/`message` null unless given.
+  // The /vcu-write body: {status, result, message[, chargeCurrentAttempt]}. `result`/`message` null
+  // unless given.
   void writeResponseJson(text::TextBuffer& out, const WriteStatusRequest& request, const ServiceWriteResult* result,
-                         const std::optional<std::string>& message);
+                         const std::optional<std::string>& message,
+                         ChargeCurrentAttempt attempt = ChargeCurrentAttempt::kNone);
 
   SecurityCooldown& cooldown() { return cooldown_; }
 

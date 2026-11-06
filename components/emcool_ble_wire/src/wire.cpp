@@ -106,6 +106,11 @@ FrameAssembler::Result FrameAssembler::push(std::span<const std::uint8_t> frame)
   const std::uint8_t flags = frame[0];
   const std::uint8_t messageId = frame[1];
   const std::span<const std::uint8_t> payload = frame.subspan(kFrameHeaderBytes);
+  if (!(flags & kFrameFirst) && payload.empty()) {
+    reset();
+    result.problem = "empty continuation";
+    return result;
+  }
   if (flags & kFrameFirst) {
     if (messageId_) {
       result.problem = "a message was abandoned part-way";

@@ -114,7 +114,7 @@ ParameterNames::Selection ParameterNames::select(int tableType) {
     const std::string message = "vcu-table: ⚠️  this bike reports " + describeTableType(tableType) +
                                 ", which this software does not carry — keeping " +
                                 describeTableType(active_->tableType) +
-                                "'s names, which may be WRONG for this bike. Add the table to cool-eva (its README: "
+                                "'s names, which may be WRONG for this bike. Add the table to cool-eva (its docs/vcu-parameters.md: "
                                 "\"Adding your bike's VCU parameter table\") and run tools/generate-vcu-tables.mts. "
                                 "Carried: " +
                                 knownTableTypesText() + ".";
@@ -157,7 +157,7 @@ std::optional<TableTypeVerdict> ParameterNames::checkTableType(int index, double
       "'s and may belong to a different parameter — routing and record widths are the same across all of Energica's "
       "tables, so a wrong name still reads and still writes cleanly. On 20 of the 28 tables shipped in 2024, ids 70–94 "
       "are a regen curve rather than the battery cell block, so this is not a small difference. Do not write anything "
-      "by name until the table is added: add it to cool-eva (see its README) and run tools/generate-vcu-tables.mts. "
+      "by name until the table is added: add it to cool-eva (see its docs/vcu-parameters.md) and run tools/generate-vcu-tables.mts. "
       "Carried today: " +
       knownTableTypesText() + ".";
   return TableTypeVerdict{index, parameter->micro, value, false, message};
