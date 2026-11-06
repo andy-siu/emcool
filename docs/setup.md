@@ -16,8 +16,6 @@ or, on a board that's already flashed, just `idf.py monitor`. It is a UART REPL 
 emcool>
 ```
 
-In a Claude Code session you can reach the same prompt by typing `! idf.py monitor` so its output lands in the conversation.
-
 With Wi-Fi set up, the same console is also on the network: `nc <bike> 23`, behind `ADMIN_PASSWORD`. See [`wifi.md`](wifi.md).
 
 NVS settings **survive reflashing and firmware updates**. Only `idf.py erase-flash` clears them (which also wipes the Bluetooth key, so the link goes off until you make one again).
