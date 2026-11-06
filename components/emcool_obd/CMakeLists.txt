@@ -16,6 +16,7 @@ set(emcool_obd_sources
   src/obd_stack.cpp
   src/static_bodies.gen.cpp
   src/stored_codes.cpp
+  src/transmit_log.cpp
   src/trouble_code_reader.cpp
 )
 

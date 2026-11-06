@@ -111,6 +111,7 @@ DiagnosticsTask::DiagnosticsTask(CanBus& bus, signals::SignalStore& store, std::
   writeContext.hold = obd_ ? &obd_->hold() : nullptr;
   writeContext.recorder = recorder_.get();
   writeContext.stored = obd_ ? &obd_->stored() : nullptr;
+  writeContext.transmitLogs = obd_ ? &obd_->transmitLogs() : nullptr;
   writeContext.store = &store_;
   ackWatch_ = std::make_unique<vcu::ChargeAckWatch>(*recorder_);
   writeContext.ackWatch = ackWatch_.get();

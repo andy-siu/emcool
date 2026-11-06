@@ -17,6 +17,7 @@
 #include "emcool/obd/bus.hpp"
 #include "emcool/obd/obd_hold.hpp"
 #include "emcool/obd/stored_codes.hpp"
+#include "emcool/obd/transmit_log.hpp"
 #include "emcool/obd/trouble_code_reader.hpp"
 
 namespace emcool::obd {
@@ -34,13 +35,15 @@ class ObdPoller {
   static constexpr int kSilentModeReadEvery = 10;
 
   ObdPoller(CanTransmitter& bus, SignalRecorder& recorder, TroubleCodeReader& codes, StoredCodes& stored,
-            ObdHold& hold, DeadlineOrder& order, std::int64_t intervalMs = kIntervalMs)
+            ObdHold& hold, DeadlineOrder& order, TransmitFailureLog& transmitLog,
+            std::int64_t intervalMs = kIntervalMs)
       : bus_(bus),
         recorder_(recorder),
         codes_(codes),
         stored_(stored),
         hold_(hold),
         order_(order),
+        transmitLog_(transmitLog),
         intervalMs_(intervalMs) {}
 
   // startObdPoller(): the first round begins now.
@@ -78,6 +81,7 @@ class ObdPoller {
   StoredCodes& stored_;
   ObdHold& hold_;
   DeadlineOrder& order_;
+  TransmitFailureLog& transmitLog_;
   const std::int64_t intervalMs_;
 
   Phase phase_ = Phase::kStopped;

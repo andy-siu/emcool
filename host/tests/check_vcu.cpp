@@ -75,8 +75,8 @@ std::string emcoolWording(std::string text) {
                     "Add the table to cool-eva (its docs/vcu-parameters.md: \\\"Adding your bike's VCU parameter table\\\") and run "
                     "tools/generate-vcu-tables.mts.");
   return replaceAll(text,
-                    "run scripts/extract-vcu-tables.ts against your own service-tool install (see docs/vcu-parameters.md) and send "
-                    "the diff.",
+                    "run scripts/extract-vcu-tables.ts against your parameter definitions (see docs/vcu-parameters.md) and send the "
+                    "diff.",
                     "add it to cool-eva (see its docs/vcu-parameters.md) and run tools/generate-vcu-tables.mts.");
 }
 

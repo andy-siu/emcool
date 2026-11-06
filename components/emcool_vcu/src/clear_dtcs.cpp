@@ -1,4 +1,5 @@
 #include <array>
+#include <cstdio>
 #include <memory>
 
 #include "emcool/log.hpp"
@@ -85,7 +86,8 @@ class SendAdapter final : public obd::CanTransmitter {
 class ClearDtcsRun : public std::enable_shared_from_this<ClearDtcsRun> {
  public:
   ClearDtcsRun(VcuSend send, const ParameterNames& names, SecurityCooldown& cooldown, obd::SignalRecorder* recorder,
-               obd::StoredCodes* stored, obd::ObdHold* hold, std::string directory, std::string versionLabel,
+               obd::StoredCodes* stored, obd::ObdHold* hold, obd::TransmitLogs* transmitLogs, std::string directory,
+               std::string versionLabel,
                std::function<ServiceGateVerdict()> gate, std::function<std::optional<std::string>()> refuseNow,
                std::function<double()> wallClockMs, std::function<PiClockEvidence()> clockEvidence,
                std::function<void(std::function<void(std::string)>)> setAbortable)
@@ -95,6 +97,7 @@ class ClearDtcsRun : public std::enable_shared_from_this<ClearDtcsRun> {
         recorder_(recorder),
         stored_(stored),
         hold_(hold),
+        transmitLogs_(transmitLogs != nullptr ? *transmitLogs : ownTransmitLogs_),
         directory_(std::move(directory)),
         versionLabel_(std::move(versionLabel)),
         gate_(std::move(gate)),
@@ -194,7 +197,9 @@ class ClearDtcsRun : public std::enable_shared_from_this<ClearDtcsRun> {
     if (const std::optional<std::string> problem = send_(0x7df, frame)) {
       async::currentLoop().clearTimeout(timer);
       pidPending_.reset();
-      logError("obd", "send failed: %s", problem->c_str());
+      char what[32];
+      std::snprintf(what, sizeof what, "PID 0x%x send failed", static_cast<unsigned>(pid));
+      transmitLogs_.obd.log(loopNow(), what, *problem);
       done.resolve(std::nullopt);
     }
     const std::optional<std::array<std::uint8_t, 8>> reply = co_await done;
@@ -244,7 +249,7 @@ class ClearDtcsRun : public std::enable_shared_from_this<ClearDtcsRun> {
   }
 
   async::Task<obd::DtcReadOutcome> runList() {
-    listReader_ = std::make_unique<obd::TroubleCodeReader>(adapter_, listOrder_);
+    listReader_ = std::make_unique<obd::TroubleCodeReader>(adapter_, listOrder_, transmitLogs_.troubleCodes);
     listSettled_ = false;
     listDone_ = async::Deferred<obd::DtcReadOutcome>{};
     if (const std::optional<obd::DtcReadOutcome> immediate = listReader_->start(obd::kModeStoredDtcs, now())) {
@@ -360,6 +365,9 @@ class ClearDtcsRun : public std::enable_shared_from_this<ClearDtcsRun> {
   obd::SignalRecorder* recorder_;
   obd::StoredCodes* stored_;
   obd::ObdHold* hold_;
+  // With OBD off there is no stack to share with; clear-dtcs is refused then, but never dangles.
+  obd::TransmitLogs ownTransmitLogs_;
+  obd::TransmitLogs& transmitLogs_;
   std::string directory_;
   std::string versionLabel_;
   std::function<ServiceGateVerdict()> gate_;
@@ -380,7 +388,8 @@ class ClearDtcsRun : public std::enable_shared_from_this<ClearDtcsRun> {
 
 async::Task<ServiceWriteAnswer> VcuWriteRunner::performClearDtcs() {
   auto run = std::make_shared<ClearDtcsRun>(
-      context_.send, names(), cooldown_, context_.recorder, context_.stored, context_.hold, context_.directory,
+      context_.send, names(), cooldown_, context_.recorder, context_.stored, context_.hold, context_.transmitLogs,
+      context_.directory,
       context_.version.label, context_.gate, [this] { return refusalFor(ServiceWriteRequest::Kind::kClearDtcs); },
       context_.wallClockMs, context_.clockEvidence,
       [this](std::function<void(std::string)> abort) { abortRunning_ = std::move(abort); });

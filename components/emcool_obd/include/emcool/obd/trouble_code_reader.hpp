@@ -20,6 +20,7 @@
 #include "emcool/obd/bus.hpp"
 #include "emcool/obd/iso_tp.hpp"
 #include "emcool/obd/obd_dtc.hpp"
+#include "emcool/obd/transmit_log.hpp"
 
 namespace emcool::obd {
 
@@ -44,7 +45,8 @@ class TroubleCodeReader {
   static constexpr int kRetryAttempts = 4;
   static constexpr std::int64_t kRetryGapMs = 120;
 
-  TroubleCodeReader(CanTransmitter& bus, DeadlineOrder& order) : bus_(bus), order_(order) {}
+  TroubleCodeReader(CanTransmitter& bus, DeadlineOrder& order, TransmitFailureLog& transmitLog)
+      : bus_(bus), order_(order), transmitLog_(transmitLog) {}
 
   // requestTroubleCodeList(mode), for 03, 07 or 0A only. The outcome comes from
   // takeOutcome(), at once if the send failed, or later. While another read is running (or
@@ -68,10 +70,12 @@ class TroubleCodeReader {
   // One attempt ended: retry a stall, or hand the outcome over.
   void attemptEnded(DtcReadOutcome result, Now now);
   bool addressesService(std::span<const std::uint8_t> data) const;
-  void sendFlowControl(std::uint32_t responseId);
+  // False when the flow control didn't go, and the attempt has ended as truncated.
+  bool sendFlowControl(std::uint32_t responseId, Now now);
 
   CanTransmitter& bus_;
   DeadlineOrder& order_;
+  TransmitFailureLog& transmitLog_;
   Phase phase_ = Phase::kIdle;
   int mode_ = 0;
   int attempt_ = 0;

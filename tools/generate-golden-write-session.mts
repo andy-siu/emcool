@@ -140,6 +140,8 @@ const drain = async () => {
 };
 
 let generation = 0;
+// socketcan's send() returns sizeof(struct can_frame) on success, and cool-eva refuses anything else (#359).
+const SOCKETCAN_SENT = 16;
 const importFresh = (path: string) => import(`${coolEvaRoot}${path}?gen=${generation}`);
 
 // The scripted bus: a list of (requestHex → replyHex|null) in order. Each send looks up the next
@@ -160,7 +162,7 @@ function makeChannel(script: Script) {
         const entry = script.replies[at];
         if (!entry.match(message.id, data)) continue;
         script.used[at] = true;
-        if (entry.reply === null) return message.data.length;
+        if (entry.reply === null) return SOCKETCAN_SENT;
         const replyId = kwpReplyId(message.id);
         const reply = entry.reply;
         const timer = { at: now + entry.delayMs, seq: seq++, cb: () => {
@@ -168,9 +170,9 @@ function makeChannel(script: Script) {
           script.session?.handleFrame(replyId, Buffer.from(reply));
         }, cancelled: false };
         timers.push(timer);
-        return message.data.length;
+        return SOCKETCAN_SENT;
       }
-      return message.data.length;
+      return SOCKETCAN_SENT;
     },
   };
 }
@@ -390,6 +392,7 @@ async function main(): Promise<void> {
         }
         emit(`t ${now} ${message.id.toString(16)} ${hex(message.data)}`);
         sent.push(message.id.toString(16));
+        return SOCKETCAN_SENT;
       },
     };
     const runner = writeRunner.createVcuWriteRunner({

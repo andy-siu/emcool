@@ -58,15 +58,15 @@ std::string asCoolEva(std::string text) {
   // (plain) and the mismatch-remedy sentence (JSON-escaped quotes).
   text = replaceAll(text,
                     "add it to cool-eva (see its docs/vcu-parameters.md) and run tools/generate-vcu-tables.mts.",
-                    "run scripts/extract-vcu-tables.ts against your own service-tool install (see docs/vcu-parameters.md) and send "
-                    "the diff.");
+                    "run scripts/extract-vcu-tables.ts against your parameter definitions (see docs/vcu-parameters.md) and send the "
+                    "diff.");
   for (const char* quote : {"\"", "\\\""}) {
     text = replaceAll(
         text,
         std::string("add the table to cool-eva (its docs/vcu-parameters.md: ") + quote + "Adding your bike's VCU parameter table" +
             quote + ") and run tools/generate-vcu-tables.mts, and this gate opens.",
         std::string("run `node --experimental-strip-types scripts/extract-vcu-tables.ts <the exe>` against your own "
-                    "Energica service-tool install — its main executable, the dealer application itself — commit the "
+                    "Energica parameter definitions — commit the "
                     "diff to src/vcu/table-catalog.data.ts and this gate opens. docs/vcu-parameters.md, ") +
             quote + "Adding your bike's VCU parameter table" + quote + ", is the walkthrough.");
   }

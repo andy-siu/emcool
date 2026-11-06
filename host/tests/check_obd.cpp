@@ -32,6 +32,15 @@ using namespace emcool::obd;
 
 namespace {
 
+// The reason cool-eva's transmitCanFrame gives for a send() that returned -1, which reaches
+// /stored-dtcs and the logs; emcool's own reason is whatever its bus says.
+std::string coolEvaRefusal(std::uint32_t id) {
+  char text[128];
+  std::snprintf(text, sizeof text, "CAN 0x%x not sent: send() returned -1, expected 16 (socketcan does not expose errno)",
+                static_cast<unsigned>(id));
+  return text;
+}
+
 std::vector<std::uint8_t> parseHex(const std::string& text) {
   std::vector<std::uint8_t> bytes;
   if (text == "-") return bytes;
@@ -116,7 +125,7 @@ class Scenario final : public CanTransmitter, public SignalRecorder {
     for (Expected& expected : bucket().outputs) {
       if (!expected.consumed && expected.text == text) {
         expected.consumed = true;
-        if (expected.fail) return std::string("simulated send failure");
+        if (expected.fail) return coolEvaRefusal(id);
         return std::nullopt;
       }
     }

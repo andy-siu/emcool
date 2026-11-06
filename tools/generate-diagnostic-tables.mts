@@ -47,7 +47,7 @@ const infokeyTable = (await load("src/diagnostics/infokey-table.ts")).INFOKEY_TA
 const faultInfokeys = (await load("src/diagnostics/fault-infokeys.ts")).FAULT_INFOKEYS as {
   component: number;
   symptom: number;
-  serviceToolObdCode: string;
+  definitionObdCode: string;
   infokeys: readonly number[];
 }[];
 const dtcTableBody = JSON.stringify((await load("src/http/dtc-table.ts")).buildPayload());
@@ -173,9 +173,9 @@ function renderInfokeys(): string {
   const lists: string[] = [];
   const shortlists = faultInfokeys.map((entry, index) => {
     // A fault whose shortlist is empty gets an empty span: C++ has no zero-length arrays.
-    if (entry.infokeys.length === 0) return `    {${entry.component}, ${entry.symptom}, ${literal(entry.serviceToolObdCode)}, {}},`;
+    if (entry.infokeys.length === 0) return `    {${entry.component}, ${entry.symptom}, ${literal(entry.definitionObdCode)}, {}},`;
     lists.push(`constexpr std::uint8_t kList${index}[] = {${entry.infokeys.join(", ")}};`);
-    return `    {${entry.component}, ${entry.symptom}, ${literal(entry.serviceToolObdCode)}, kList${index}},`;
+    return `    {${entry.component}, ${entry.symptom}, ${literal(entry.definitionObdCode)}, kList${index}},`;
   });
   return (
     header("src/diagnostics/infokey-table.ts and src/diagnostics/fault-infokeys.ts") +

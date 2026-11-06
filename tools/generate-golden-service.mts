@@ -125,6 +125,9 @@ registerHooks({
     return result;
   },
 });
+// socketcan's send() returns sizeof(struct can_frame) on success, and cool-eva refuses anything else (#359).
+const SOCKETCAN_SENT = 16;
+const SOCKETCAN_REFUSED = -1;
 const importFresh = (path: string) => import(`${coolEvaRoot}${path}?gen=${generation}`);
 
 // ---------------------------------------------------------------------------------------------
@@ -338,7 +341,8 @@ async function runScenario(index: number, durationMs: number): Promise<void> {
     send(message: { id: number; data: Buffer }) {
       const fail = chance(sendFail);
       emit(`t ${now} ${message.id.toString(16)} ${hex(message.data)} ${fail ? "fail" : "ok"}`);
-      if (fail) throw new Error("simulated send failure");
+      // A refusal, as socketcan reports one: -1 rather than a throw (#359).
+      if (fail) return SOCKETCAN_REFUSED;
       if (message.id === 0x7df && message.data[0] === 0x02 && message.data[1] === 0x01 && answersPids) {
         // Road speed agrees with the bike's broadcasts: zero unless it's moving.
         const pid = message.data[2];
@@ -346,7 +350,7 @@ async function runScenario(index: number, durationMs: number): Promise<void> {
         arrive(now + between(1, 25), 0x7e8, [0x04, 0x41, pid, a, between(0, 255), 0x55, 0x55, 0x55]);
       }
       if (message.id === 0x7c0) bus.channel.send(message);
-      return message.data.length;
+      return SOCKETCAN_SENT;
     },
   };
   const runner = runnerModule.createVcuReadRunner({ channel: () => channel, busIsActive, directory: DIRECTORY });

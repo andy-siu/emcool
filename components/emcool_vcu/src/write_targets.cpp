@@ -156,7 +156,7 @@ WriteTarget generatedTarget(const VcuParameter& parameter) {
       "⚠️ The range " + text::jsNumber(target.control.min) + "…" + text::jsNumber(target.control.max) +
           " is the datatype's full range, not a safe range. A value inside it can still be one the bike cannot run on.",
       "⚠️ Read the current value first and write it down. There is no factory default in this repo to put back.",
-      "A dealer visit reverts it. The service tool reinstalls parameter values from Energica's server, keyed by VIN.",
+      "A dealer visit reverts it. Parameter values are restored from Energica's server, keyed by VIN.",
   };
   target.verify = std::nullopt;
   return target;
@@ -225,7 +225,7 @@ std::vector<WriteTarget> curatedWriteTargets() {
       "⚠️ 80 A is 1.25C for this pack. The cell datasheet allows 1.10C = 70.4 A, and only between 25 and 35 °C — and "
       "the VCU is shown 35 °C while the pack is really at 44-54 °C, so 91 % of DC charging time above 30 A is already "
       "over the cell's fast-charge ceiling. This raises the ceiling on an exposure that is already there.",
-      "A dealer visit reverts it. The service tool reinstalls parameter values from Energica's server, keyed by VIN.",
+      "A dealer visit reverts it. Parameter values are restored from Energica's server, keyed by VIN.",
   };
   dc.verify =
       "Free check, no charger needed: 0x625 b2 is the configured max DC current and is broadcast on a merely-awake "

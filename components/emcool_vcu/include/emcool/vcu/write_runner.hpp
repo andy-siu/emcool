@@ -16,6 +16,7 @@
 #include "emcool/async/task.hpp"
 #include "emcool/obd/obd_hold.hpp"
 #include "emcool/obd/stored_codes.hpp"
+#include "emcool/obd/transmit_log.hpp"
 #include "emcool/text/text_buffer.hpp"
 #include "emcool/vcu/charge_ack_watch.hpp"
 #include "emcool/vcu/runner.hpp"  // BusLease, ServiceContext-adjacent helpers
@@ -175,6 +176,7 @@ struct WriteContext {
   obd::ObdHold* hold = nullptr;         // the always-on poller's hold; null with OBD off
   obd::SignalRecorder* recorder = nullptr;  // for clear-dtcs's PID records
   obd::StoredCodes* stored = nullptr;   // for clear-dtcs's mode-03 read-back into /stored-dtcs
+  obd::TransmitLogs* transmitLogs = nullptr;  // the OBD stack's, which clear-dtcs's sends share
   VcuStore* store = nullptr;            // the snapshot store, for swept values and the table report
   ChargeAckWatch* ackWatch = nullptr;   // the charge-current ack readout; null until stage 5 wired
   // Told BEFORE a charge current reaches the bus, with where it came from — the automatic

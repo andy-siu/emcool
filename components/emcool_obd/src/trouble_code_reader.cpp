@@ -78,7 +78,7 @@ void TroubleCodeReader::attempt(Now now) {
   frame[0] = 0x01;
   frame[1] = static_cast<std::uint8_t>(mode_);
   if (const std::optional<std::string> problem = bus_.transmit(kFunctionalRequestId, frame)) {
-    logError(kTag, "send of mode %s failed: %s", hex(mode_).c_str(), problem->c_str());
+    transmitLog_.log(now.monotonicMs, "send of mode " + hex(mode_) + " failed", *problem);
     attemptEnded({DtcReadOutcome::Kind::kNotSent, mode_, {}, *problem}, now);
   }
 }
@@ -90,7 +90,7 @@ bool TroubleCodeReader::handleFrame(std::uint32_t id, std::span<const std::uint8
   IsoTpResult result = reassembler_.push(data);
   switch (result.status) {
     case IsoTpStatus::kFlowControlRequired:
-      sendFlowControl(id);
+      if (!sendFlowControl(id, now)) return true;
       sawFirstFrame_ = true;
       deadline_ = order_.at(now.monotonicMs + kTransferTimeoutMs);
       return true;
@@ -178,18 +178,27 @@ bool TroubleCodeReader::addressesService(std::span<const std::uint8_t> data) con
   return false;
 }
 
-void TroubleCodeReader::sendFlowControl(std::uint32_t responseId) {
+// Without its flow control the responder sends nothing more, so the attempt ends here as a stall
+// rather than waiting out the timer; the retry after it is the stall retry.
+bool TroubleCodeReader::sendFlowControl(std::uint32_t responseId, Now now) {
   const std::uint32_t flowControlId = responseId - kFlowControlIdOffset;
   if (flowControlId < kPhysicalRequestLowId || flowControlId > kPhysicalRequestHighId) {
     logWarning(kTag, "refusing flow control to 0x%x — outside the physical request range",
                static_cast<unsigned>(flowControlId));
-    return;
+    reassembler_.reset();
+    attemptEnded({DtcReadOutcome::Kind::kTruncated, mode_, {}, "flow-control ID outside the physical request range"},
+                 now);
+    return false;
   }
   // Clear to send, no block limit, no gap.
   const Payload frame = {0x30, 0x00, 0x00, 0, 0, 0, 0, 0};
   if (const std::optional<std::string> problem = bus_.transmit(flowControlId, frame)) {
-    logError(kTag, "flow control to 0x%x failed: %s", static_cast<unsigned>(flowControlId), problem->c_str());
+    transmitLog_.log(now.monotonicMs, "flow control to " + hex(static_cast<int>(flowControlId)) + " failed", *problem);
+    reassembler_.reset();
+    attemptEnded({DtcReadOutcome::Kind::kTruncated, mode_, {}, *problem}, now);
+    return false;
   }
+  return true;
 }
 
 }  // namespace emcool::obd
