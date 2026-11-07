@@ -11,6 +11,8 @@
 //   GET /settings        cool-eva's SettingsReply shape, read-only: what this boot runs with, from
 //                        the serial console's settings (settings/dashboard_reply.hpp). Changing
 //                        one stays a console job; a PATCH gets a 405 saying so
+//   POST /settings/bluetooth-key  cool-eva's Show key read-back, refused: emcool never returns
+//                        its Bluetooth key (docs/ble.md)
 // Everything else is a 404 saying the endpoint isn't on emcool yet. None of these touches the
 // bus: like cool-eva's, they serve what is already known, so refreshing a page can't make the
 // bike answer anything.

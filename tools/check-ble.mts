@@ -510,6 +510,17 @@ for (const [path, method] of [["/settings", "PATCH"], ["/settings/apply", "POST"
     `${method} ${path}: ${refused.status} ${refused.body}`
   );
 }
+// cool-eva's Show key (POST /settings/bluetooth-key) reads the key back; emcool refuses, in the
+// BluetoothKeyReply shape the dashboard reads, and the key appears nowhere in the reply.
+{
+  const refused = await request(phone, 4, "/settings/bluetooth-key", "POST", { "X-Emcool": "settings" });
+  const reply = JSON.parse(refused.body);
+  check(
+    refused.status === 405 && reply.ok === false && reply.saved === null && reply.active === null &&
+      reply.message.includes("new-ble-key") && !refused.body.includes(SECRET),
+    `POST /settings/bluetooth-key: ${refused.status} ${refused.body}`
+  );
+}
 if (ridesSource) {
   await checkDownload();
 } else {

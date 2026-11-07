@@ -32,9 +32,14 @@ emcool> restart
 
 With no key, the bike doesn't advertise, and the boot log says `Bluetooth is off: no Bluetooth key`. cool-eva's [`docs/connecting-over-bluetooth.md`](https://github.com/andy-siu/cool-eva/blob/main/docs/connecting-over-bluetooth.md) has the phone-side steps.
 
+After a reload or relaunch, the page asks the browser (`navigator.bluetooth.getDevices()`) for devices this origin was already allowed to use. If there is exactly one and a key is stored, it reconnects to that device with no tap. If there are none, more than one, or the browser has no `getDevices`, tap **Connect** as before. ⚠️ cool-eva hasn't confirmed this on a phone yet, in Bluefy or Chrome.
+
 The bike advertises as **emcool** (`set BLE_NAME …` changes this). The phone finds it by cool-eva's service UUID, not by name, so a Pi running cool-eva would appear in the same list.
 
-The key lives in NVS, not in the firmware image or the build directory. The console prints it only once, as `new-ble-key` makes it; `show` says only `set`. Anyone with the board and a flasher could still read NVS, which is the same exposure as cool-eva's `/etc/default/cool-eva` on the Pi's SD card. ESP32 flash encryption would close that hole, but it can't be undone and complicates reflashing.
+The key lives in NVS, not in the firmware image or the build directory. The console prints it only once, as `new-ble-key` makes it; `show` says only `set`. The bike never sends it back:
+
+- **The phone's copy:** after a `wrong secret`, tick **Show key** under the dashboard's Bluetooth box. It shows the key that page holds, in full, so you can compare it with your saved copy. Each origin keeps its own copy.
+- **Settings → Dashboard Bluetooth → Show key:** on cool-eva this reads the Pi's saved and active keys back (`POST /settings/bluetooth-key`, reachable over the Pi's Wi-Fi). emcool refuses it with a 405, and the page shows why beside the button. On emcool that request can only arrive over a Bluetooth session, which means the phone already holds the running key. The only new thing it could learn is a key saved by `new-ble-key replace` but not yet restarted into, and that key is meant to lock old phones out. If every copy is lost, `new-ble-key replace` on the USB console makes a new key. Anyone with the board and a flasher could still read NVS, which is the same exposure as cool-eva's `/etc/default/cool-eva` on the Pi's SD card. ESP32 flash encryption would close that hole, but it can't be undone and complicates reflashing.
 
 ## What works
 
@@ -83,7 +88,7 @@ The key lives in NVS, not in the firmware image or the build directory. The cons
   - Charge links to the automatic-current permission (`CHARGE_AUTO_ENABLED`);
   - the header raises a fault if there is one, and there never is.
 
-  The Settings pages open and show these values, under a card saying the serial console is where they change. A `PATCH /settings` or anything under `/settings/` answers 405 with cool-eva's `{ ok: false, message }`, so the page says why beside the button. `instanceId` is the factory MAC in a UUID's shape, and `processGeneration` is the boot's ride-log session id, so the dashboard can tell a restart from a reconnect.
+  The Settings pages open and show these values, under a card saying the serial console is where they change. A `PATCH /settings` or anything under `/settings/` answers 405 with cool-eva's `{ ok: false, message }`, so the page says why beside the button. `POST /settings/bluetooth-key` gets a 405 too, in cool-eva's `BluetoothKeyReply` shape, with `saved` and `active` both null (see [Turning it on](#turning-it-on)). `instanceId` is the factory MAC in a UUID's shape, and `processGeneration` is the boot's ride-log session id, so the dashboard can tell a restart from a reconnect.
 - **Everything else** answers 404, with a body saying the endpoint isn't on emcool yet. That covers fan control, `/update`, `/can-restart`, `/recording/flush` and `/waypoint`. The dashboard shows the error where it would show the result.
 
 ## How it differs from cool-eva's server
@@ -124,7 +129,7 @@ With Bluetooth on, the static-data region is too small for them. The 10 s status
   - **Handshake:** a wrong key's refusal carries its nonce; a burst of wrong HELLOs gets four refusals per 2 s and no more; non-HELLO frames before authentication are dropped unanswered; the WELCOME opens with the phone's key, and the server nonce rotates afterwards.
   - **Snapshots:** every snapshot equals the server's live state exactly, value and timestamp, with cool-eva's units and groups. This holds at MTU 185 (180-byte notifications) and at MTU 23 (18-byte).
   - **Patches:** they carry the latest values, including after a link that drained nothing for a second.
-  - **Requests:** `/status` has the right shape and counts. `/settings` carries every field the dashboard reads, with this boot's values, and a PATCH or a `/settings/…` action is refused as JSON. `/dtc-table` and `/fault-infokeys` are byte-identical to cool-eva's, over seven and three 4 KB pieces. `/stored-dtcs`, after a 60-code mode 03 reply, equals what cool-eva's own `stored-codes.ts` serves for that reply, apart from the read's time. 404 and 400 come back as expected.
+  - **Requests:** `/status` has the right shape and counts. `/settings` carries every field the dashboard reads, with this boot's values, and a PATCH or a `/settings/…` action is refused as JSON. `/settings/bluetooth-key` is refused without the key anywhere in the body. `/dtc-table` and `/fault-infokeys` are byte-identical to cool-eva's, over seven and three 4 KB pieces. `/stored-dtcs`, after a 60-code mode 03 reply, equals what cool-eva's own `stored-codes.ts` serves for that reply, apart from the read's time. 404 and 400 come back as expected.
   - **`/dl`:** served from the ride log the corpus run wrote, it holds exactly the newest parts' records, byte for byte. The laptop's reader gets the same readings from it as from those parts' files, and it imports through cool-eva's `db.ts`. Also checked:
     - its name, `?boot=`, and the refusals (bad `mb=` or `boot=`, POST, a boot that isn't there)
     - 503 with no card configured

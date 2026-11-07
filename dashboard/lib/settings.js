@@ -10,6 +10,7 @@ import { destination } from "./destination.js";
 /** @typedef {import("../../src/settings/view.ts").SettingsReply} SettingsReply */
 /** @typedef {import("../../src/settings/view.ts").SettingsActionReply} SettingsActionReply */
 /** @typedef {import("../../src/settings/schema.ts").StartupSettings} StartupSettings */
+/** @typedef {import("../../src/settings/view.ts").BluetoothKeyReply} BluetoothKeyReply */
 export const settings = van.state(/** @type {SettingsReply | null} */ (null));
 export const settingsInstance = van.derive(() => settings.val?.instanceId ?? "");
 export const settingsReady = van.derive(() => settings.val !== null);
@@ -178,6 +179,28 @@ export async function settingsAction(key, path, method, body) {
     return false;
   } finally {
     settingsBusy.val = "";
+  }
+}
+
+/** Asks the Pi for its saved and active Bluetooth keys; `null` when it could not answer. */
+export async function fetchBluetoothKey() {
+  if (!settingsConfirmed.rawVal || settingsError.rawVal) {
+    settingsMessages.val = { ...settingsMessages.rawVal, bluetoothKey: "Reconnect and confirm this Pi first." };
+    return null;
+  }
+  try {
+    const response = await request("/settings/bluetooth-key", {
+      method: "POST",
+      headers: { "X-Emcool": "settings", "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const reply = /** @type {BluetoothKeyReply} */ (await response.json());
+    settingsMessages.val = { ...settingsMessages.rawVal, bluetoothKey: reply.message };
+    return reply.ok || reply.active ? reply : null;
+  } catch (error) {
+    console.warn("settings: Bluetooth key could not be read", error);
+    settingsMessages.val = { ...settingsMessages.rawVal, bluetoothKey: "The Pi did not answer. Try again." };
+    return null;
   }
 }
 
