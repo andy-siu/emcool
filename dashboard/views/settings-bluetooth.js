@@ -10,6 +10,7 @@ import {
   settingsConfirmed,
   saveSetting,
   settingsMessages,
+  fetchBluetoothKey,
 } from "../lib/settings.js";
 import {
   BLE_MODE,
@@ -29,6 +30,8 @@ const copied = van.state(false);
 const preparedFor = van.state("");
 const manualCopyNeeded = van.state(false);
 const showCode = van.state(false);
+/** @typedef {{ saved: string | null, active: string | null, readFrom: string }} ShownPiKey */
+const piKey = van.state(/** @type {ShownPiKey | null} */ (null));
 
 export function DashboardBluetooth() {
   return div(
@@ -78,8 +81,25 @@ export function DashboardBluetooth() {
         )
       ),
       SaveResult("dashboardBluetoothSecret"),
+      PiKeyReadout(),
+      SaveResult("bluetoothKey"),
       div(
         { class: "settings-actions" },
+        // Not beside a draft: its Show key reveals the draft, and two would read as one control.
+        () =>
+          (settings.val?.saved.bluetoothCodeId || settings.val?.active.bluetoothCodeId) &&
+          !(generatedCode.val && preparedFor.val === settings.val?.instanceId)
+            ? button(
+                {
+                  class: "settings-button",
+                  disabled: () => !!settingsBusy.val || !!settingsError.val || !settingsConfirmed.val,
+                  onclick: () => {
+                    void togglePiKey();
+                  },
+                },
+                piKeyShown() ? "Hide key" : "Show key"
+              )
+            : div({ hidden: true }),
         () =>
           generatedCode.val && preparedFor.val === settings.val?.instanceId
             ? button(
@@ -139,6 +159,49 @@ export function DashboardBluetooth() {
       "On another phone, open the Bluetooth dashboard and import your saved key or password-manager copy. Connect this phone chooses the Pi; it never replaces the shared key."
     )
   );
+}
+
+/**
+ * A read is valid for one Pi, one saved revision and one running process. A save or restart
+ * changes which key is saved or in use, so the old readout hides rather than show a stale key.
+ * @param {import("../../src/settings/view.ts").SettingsReply | null} current
+ */
+function settingsSnapshot(current) {
+  return current ? `${current.instanceId}:${current.revision}:${current.processGeneration}` : "";
+}
+
+function piKeyShown() {
+  return piKey.val !== null && settingsConfirmed.val && piKey.val.readFrom === settingsSnapshot(settings.val);
+}
+
+async function togglePiKey() {
+  if (piKeyShown()) {
+    piKey.val = null;
+    return;
+  }
+  const readFrom = settingsSnapshot(settings.rawVal);
+  const reply = await fetchBluetoothKey();
+  if (reply && settingsSnapshot(settings.rawVal) === readFrom) {
+    piKey.val = { saved: reply.saved, active: reply.active, readFrom };
+  }
+}
+
+// Saved and active are both shown because they differ until the explicit Restart, which is
+// exactly the state that produces "wrong secret" while the phone holds the new key.
+function PiKeyReadout() {
+  return () => {
+    const shown = piKeyShown() ? piKey.val : null;
+    if (!shown) return div({ hidden: true });
+    return div(
+      { class: "settings-note ble-key-readout" },
+      ...(shown.saved === shown.active
+        ? [div(`In use and saved: ${shown.active ?? "none"}`)]
+        : [
+            div(`In use now: ${shown.active ?? "none (Bluetooth off)"}`),
+            div(`Saved, applies after restart: ${shown.saved ?? "none (Bluetooth off)"}`),
+          ])
+    );
+  };
 }
 
 async function copyCode() {
