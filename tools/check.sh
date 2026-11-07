@@ -25,7 +25,8 @@
 #     scripted bus — transmits the same frames and resolves to the same outcome in the C++ port
 #   - the automatic charge controller's decision and its support match cool-eva bit-for-bit, and
 #     cool-eva's own controller driven through scripted charges commands and reports the same
-#   - the settings and the serial console's commands behave
+#   - the settings and the serial console's commands behave, and the dashboard's Bike console runs
+#     them with the same checks, refuses a stale page's save, and guards its restart
 #   - the ride log's rules hold, and the decoder corpus pushed through the whole C++ pipeline
 #     onto disk reads back exactly on the laptop, survives simulated power cuts and card
 #     damage, and imports into rides.db through cool-eva's db.ts
@@ -133,6 +134,10 @@ node "${node_flags[@]}" "$root/tools/generate-golden-charge-auto-loop.mts" "$coo
 
 "$build/check_settings" 2>"$build/check_settings.stderr" || {
   cat "$build/check_settings.stderr" >&2
+  exit 1
+}
+"$build/check_console" 2>"$build/check_console.stderr" || {
+  grep -vE '^[IW] console: ' "$build/check_console.stderr" >&2
   exit 1
 }
 

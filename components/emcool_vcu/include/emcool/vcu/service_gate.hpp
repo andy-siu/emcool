@@ -58,6 +58,11 @@ struct ServiceGateVerdict {
 
 ServiceGateVerdict evaluateServiceGate(const GateReadings& readings);
 
+// What stops a restart: the rules whose FRESH reading says the bike is moving, in drive or asked to
+// be. A missing or stale reading blocks nothing (a parked, sleeping bike restarts), and "energized"
+// never does, since a charge keeps the drive energized. The reference's restartMotionBlockers().
+std::vector<std::string> restartMotionBlockers(const GateReadings& readings);
+
 // The verdict as cool-eva's JSON.stringify writes it.
 void writeVerdictJson(text::TextBuffer& out, const ServiceGateVerdict& verdict);
 

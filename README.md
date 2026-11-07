@@ -95,7 +95,7 @@ The CAN and microSD pins default to this board's (GPIO25/26, and the SPI header)
 
 ## Settings
 
-Per-bike settings live in the ESP32's NVS, emcool's counterpart of cool-eva's `/etc/default/cool-eva`. They survive reflashing and firmware updates; only `idf.py erase-flash` clears them. Set them from the serial console that `idf.py monitor` opens. [`docs/setup.md`](docs/setup.md) is the complete reference — every console command and every setting with its type, default, range and dependencies; the summary here covers the common ones.
+Per-bike settings live in the ESP32's NVS, emcool's counterpart of cool-eva's `/etc/default/cool-eva`. They survive reflashing and firmware updates; only `idf.py erase-flash` clears them. Set them from the serial console that `idf.py monitor` opens, or from the dashboard's **Settings → Bike console**, which runs the same commands over Bluetooth. [`docs/setup.md`](docs/setup.md) is the complete reference — every console command and every setting with its type, default, range and dependencies; the summary here covers the common ones.
 
 ```
 emcool> show

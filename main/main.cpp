@@ -25,6 +25,7 @@
 #include "ble_link.hpp"
 #include "bootloader_random.h"
 #include "can_bus.hpp"
+#include "dashboard_console.hpp"
 #include "emcool/ble/crypto.hpp"
 #include "emcool/ble/session.hpp"
 #include "emcool/ble_server/endpoints.hpp"
@@ -108,7 +109,8 @@ Type* allocate(const char* what, Arguments&&... arguments);
 bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
                     std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
                     emcool::DiagnosticsTask& diagnostics, emcool::ride_log::LogDownload* download,
-                    const emcool::ride_log::SessionId& session, emcool::BleLinkCounters& counters);
+                    const emcool::ride_log::SessionId& session, emcool::BleLinkCounters& counters,
+                    emcool::ble_server::ConsoleEndpoints& console);
 std::string dashboardInstanceId();
 std::string bluetoothCodeId(const std::string& key);
 void logSettings(const emcool::settings::Settings& settings);
@@ -177,16 +179,20 @@ extern "C" void app_main() {
   auto* diagnostics = allocate<emcool::DiagnosticsTask>("the diagnostics task", bus, store, storeMutex, settings,
                                                         std::string(emcool::kSdMountPoint) + "/vcu-params");
   if (diagnostics == nullptr || !diagnostics->start()) return;
+  // Settings → Bike console: the console's commands and status report over the Bluetooth link.
+  static emcool::StatusText statusText;
+  static emcool::DashboardConsoleHost consoleHost(statusText, store, storeMutex, *diagnostics);
+  static emcool::ble_server::ConsoleEndpoints consoleEndpoints(settingsStorage, runtimeSettings, consoleHost);
   // NimBLE keeps PHY calibration in NVS; without it the radio can't start.
-  const bool bluetooth =
-      nvsReady &&
-      startBluetooth(settings, store, storeMutex, storageReport, *diagnostics, download, session, bleLinkCounters);
+  const bool bluetooth = nvsReady && startBluetooth(settings, store, storeMutex, storageReport, *diagnostics, download,
+                                                    session, bleLinkCounters, consoleEndpoints);
   // Wi-Fi after Bluetooth: they share the radio, and coexistence wants the Bluetooth controller up first.
   static emcool::WifiCounters wifiCounters;
   const bool wifi = nvsReady && emcool::startWifi(settings, settingsStorage, runtimeSettings,
                                                   download != nullptr ? &cardAccess : nullptr, wifiCounters);
   static emcool::StatusReport status({bus, store, storeMutex, rideLog, writer, rideLogTaskCounters, clock,
-                                      bleLinkCounters, bluetooth, wifiCounters, wifi, runtimeSettings, diagnostics});
+                                      bleLinkCounters, bluetooth, wifiCounters, wifi, runtimeSettings, diagnostics,
+                                      statusText});
   static DecodeContext context{bus, decoder, packTemperature, store, storeMutex, rideLog, clock, status, *diagnostics};
   if (xTaskCreatePinnedToCore(decodeTask, "decode", kDecodeTaskStackBytes, &context, kDecodeTaskPriority, nullptr,
                               kDecodeTaskCore) != pdPASS) {
@@ -286,7 +292,8 @@ bool initNvs() {
 bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
                     std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
                     emcool::DiagnosticsTask& diagnostics, emcool::ride_log::LogDownload* download,
-                    const emcool::ride_log::SessionId& session, emcool::BleLinkCounters& counters) {
+                    const emcool::ride_log::SessionId& session, emcool::BleLinkCounters& counters,
+                    emcool::ble_server::ConsoleEndpoints& console) {
   if (!emcool::ble::BleSession::secretIsUsable(settings.bleSecret)) {
     emcool::logWarning(kTag, "Bluetooth is off: no Bluetooth key. On the serial console: new-ble-key, then restart");
     return false;
@@ -301,7 +308,7 @@ bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals:
       settings, {esp_app_get_description()->version, session.hex.data(), instanceId, download != nullptr, codeId});
   auto* endpoints = allocate<emcool::ble_server::DashboardEndpoints>(
       "the dashboard endpoints", store, storeMutex, storage, diagnostics, &diagnostics, download,
-      std::move(settingsReply));
+      std::move(settingsReply), &console);
   auto* server = endpoints == nullptr ? nullptr
                                       : allocate<emcool::ble_server::BleServer>("the Bluetooth server",
                                                                                  settings.bleSecret, store, storeMutex,

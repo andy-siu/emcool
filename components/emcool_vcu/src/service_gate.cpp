@@ -267,6 +267,17 @@ ServiceGateVerdict evaluateServiceGate(const GateReadings& readings) {
   return verdict;
 }
 
+std::vector<std::string> restartMotionBlockers(const GateReadings& readings) {
+  std::vector<std::string> blockers;
+  for (const Rule& rule : kRules) {
+    if (rule.whileCharging == WhileCharging::kExcuseUnsafe) continue;
+    const GateSample* sample = readings.find(rule.key);
+    if (sample == nullptr || !sample->value || !sample->ageMs || *sample->ageMs > rule.maxAgeMs) continue;
+    if (*sample->value != 0) blockers.emplace_back(rule.requirement);
+  }
+  return blockers;
+}
+
 void writeVerdictJson(text::TextBuffer& out, const ServiceGateVerdict& verdict) {
   out.append(verdict.safe ? "{\"safe\":true,\"blockers\":[" : "{\"safe\":false,\"blockers\":[");
   for (std::size_t at = 0; at < verdict.blockers.size(); at++) {

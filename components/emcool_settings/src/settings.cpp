@@ -105,14 +105,7 @@ std::string storedOrDefault(SettingsStorage& storage, const SettingSpec& spec) {
   return normalizeValue(spec, *stored);
 }
 
-// The secret itself is never printed: only whether it's set, and its length.
-std::string describe(const SettingSpec& spec, std::string_view value) {
-  if (spec.type != SettingType::kSecret) return value.empty() ? "(empty)" : std::string(value);
-  if (value.empty()) return "not set";
-  // The key is always 64 characters, so its length says nothing.
-  if (spec.name == "BLE_SECRET") return "set";
-  return "set (" + std::to_string(value.size()) + " characters)";
-}
+std::string describe(const SettingSpec& spec, std::string_view value) { return describeValue(spec, value); }
 
 void appendLine(std::string& output, const std::string& line) {
   output += line;
@@ -153,6 +146,7 @@ int save(SettingsStorage& storage, RuntimeSettings& running, const SettingSpec& 
     return 1;
   }
   running.apply(spec, normalized);
+  running.noteChange();
   appendLine(output, std::string(spec.name) + " saved; " + whenItApplies(spec));
   return 0;
 }
@@ -187,6 +181,7 @@ int unset(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
     return 1;
   }
   running.apply(*spec, spec->defaultValue);
+  running.noteChange();
   appendLine(output, std::string(spec->name) + " is back to its default (" + describe(*spec, spec->defaultValue) +
                          "); " + whenItApplies(*spec));
   return 0;
@@ -299,6 +294,15 @@ std::optional<std::string> validate(const SettingSpec& spec, std::string_view va
   return std::nullopt;
 }
 
+// The secret itself is never printed: only whether it's set, and its length.
+std::string describeValue(const SettingSpec& spec, std::string_view value) {
+  if (spec.type != SettingType::kSecret) return value.empty() ? "(empty)" : std::string(value);
+  if (value.empty()) return "not set";
+  // The key is always 64 characters, so its length says nothing.
+  if (spec.name == "BLE_SECRET") return "set";
+  return "set (" + std::to_string(value.size()) + " characters)";
+}
+
 std::string normalizeValue(const SettingSpec& spec, std::string_view value) {
   if (spec.type == SettingType::kFlag) return *parseFlag(value) ? "1" : "0";
   if (spec.type == SettingType::kInteger) return std::to_string(*parseInteger(value));
@@ -306,22 +310,29 @@ std::string normalizeValue(const SettingSpec& spec, std::string_view value) {
   return std::string(value);
 }
 
+std::string savedValue(SettingsStorage& storage, const SettingSpec& spec, bool& stored) {
+  const std::optional<std::string> value = storage.read(spec.storageKey);
+  stored = value.has_value();
+  if (!value || validate(spec, *value)) return std::string(spec.defaultValue);
+  return normalizeValue(spec, *value);
+}
+
 Settings Settings::load(SettingsStorage& storage) {
+  const auto value = [&](std::string_view name) { return storedOrDefault(storage, *findSetting(name)); };
   Settings settings;
-  settings.bleSecret = storedOrDefault(storage, *findSetting("BLE_SECRET"));
-  settings.bleName = storedOrDefault(storage, *findSetting("BLE_NAME"));
-  settings.customBmsConfig = storedOrDefault(storage, *findSetting("CUSTOM_BMS_CONFIG")) == "1";
-  settings.obdEnabled = storedOrDefault(storage, *findSetting("OBD_ENABLED")) == "1";
-  settings.elockEnabled = storedOrDefault(storage, *findSetting("ELOCK_ENABLED")) == "1";
-  settings.serviceModeEnabled = storedOrDefault(storage, *findSetting("SERVICE_MODE_ENABLED")) == "1";
-  settings.serviceWriteEnabled = storedOrDefault(storage, *findSetting("SERVICE_WRITE_ENABLED")) == "1";
-  settings.chargeAutoEnabled = storedOrDefault(storage, *findSetting("CHARGE_AUTO_ENABLED")) == "1";
-  settings.wifiSsid = storedOrDefault(storage, *findSetting("WIFI_SSID"));
-  settings.wifiPassword = storedOrDefault(storage, *findSetting("WIFI_PASSWORD"));
-  settings.adminPassword = storedOrDefault(storage, *findSetting("ADMIN_PASSWORD"));
-  settings.statusReport = storedOrDefault(storage, *findSetting("STATUS_REPORT")) == "1";
-  settings.statusIntervalSeconds =
-      static_cast<std::uint32_t>(*parseInteger(storedOrDefault(storage, *findSetting("STATUS_INTERVAL_S"))));
+  settings.bleSecret = value("BLE_SECRET");
+  settings.bleName = value("BLE_NAME");
+  settings.customBmsConfig = value("CUSTOM_BMS_CONFIG") == "1";
+  settings.obdEnabled = value("OBD_ENABLED") == "1";
+  settings.elockEnabled = value("ELOCK_ENABLED") == "1";
+  settings.serviceModeEnabled = value("SERVICE_MODE_ENABLED") == "1";
+  settings.serviceWriteEnabled = value("SERVICE_WRITE_ENABLED") == "1";
+  settings.chargeAutoEnabled = value("CHARGE_AUTO_ENABLED") == "1";
+  settings.wifiSsid = value("WIFI_SSID");
+  settings.wifiPassword = value("WIFI_PASSWORD");
+  settings.adminPassword = value("ADMIN_PASSWORD");
+  settings.statusReport = value("STATUS_REPORT") == "1";
+  settings.statusIntervalSeconds = static_cast<std::uint32_t>(*parseInteger(value("STATUS_INTERVAL_S")));
   return settings;
 }
 
@@ -356,8 +367,10 @@ void RuntimeSettings::apply(const SettingSpec& spec, std::string_view normalized
   }
 }
 
-int runSettingsCommand(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
-                       const char* const* arguments, std::string& output, const RandomFill& fillRandom) {
+namespace {
+
+int runCommand(SettingsStorage& storage, RuntimeSettings& running, int argumentCount, const char* const* arguments,
+               std::string& output, const RandomFill& fillRandom) {
   const std::string_view command = argumentCount > 0 ? arguments[0] : "";
   if (command == "show") return show(storage, running, output);
   if (command == "set") return set(storage, running, argumentCount, arguments, output);
@@ -366,6 +379,31 @@ int runSettingsCommand(SettingsStorage& storage, RuntimeSettings& running, int a
   if (command == "new-ble-key") return newBluetoothKey(storage, running, argumentCount, arguments, fillRandom, output);
   appendLine(output, "unknown command");
   return 1;
+}
+
+}  // namespace
+
+int runSettingsCommand(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
+                       const char* const* arguments, std::string& output, const RandomFill& fillRandom) {
+  const std::lock_guard<std::mutex> lock(running.commandMutex());
+  return runCommand(storage, running, argumentCount, arguments, output, fillRandom);
+}
+
+int runSettingsCommandAt(SettingsStorage& storage, RuntimeSettings& running, std::uint32_t expectedRevision,
+                         int argumentCount, const char* const* arguments, std::string& output) {
+  const std::lock_guard<std::mutex> lock(running.commandMutex());
+  if (running.revision() != expectedRevision) {
+    appendLine(output, "the settings changed since this page read them (another console or phone saved one); read "
+                       "them again, then retry");
+    return 2;
+  }
+  return runCommand(storage, running, argumentCount, arguments, output, nullptr);
+}
+
+bool commandChangesSettings(int argumentCount, const char* const* arguments) {
+  const std::string_view command = argumentCount > 0 ? arguments[0] : "";
+  return command == "set" || command == "unset" || command == "new-ble-key" ||
+         (command == "status" && argumentCount > 1);
 }
 
 StatusSchedule::Decision StatusSchedule::decide(const RuntimeSettings& running, bool reportRequested,

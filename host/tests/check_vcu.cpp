@@ -276,6 +276,7 @@ std::string multiFrameReplyJson(const VcuMultiFrameReply& reply) {
   });
 }
 
+// SG: the verdict; SR: what blocks a restart, from the same readings.
 void checkGate(const std::string& line) {
   const std::vector<std::string> words = fields(line, 3);
   GateReadings readings;
@@ -308,6 +309,20 @@ void checkGate(const std::string& line) {
     readings.samples.emplace_back(gateKeys[keyIndex], sample);
     keyIndex++;
     at = end + 1;
+  }
+  if (words[0] == "SR") {
+    compare("restartMotionBlockers", words[1], build([&](TextBuffer& out) {
+              out.append("[");
+              bool first = true;
+              for (const std::string& blocker : restartMotionBlockers(readings)) {
+                if (!first) out.append(",");
+                first = false;
+                out.appendJsonString(blocker);
+              }
+              out.append("]");
+            }),
+            words[2]);
+    return;
   }
   const ServiceGateVerdict verdict = evaluateServiceGate(readings);
   compare("evaluateServiceGate", words[1], build([&](TextBuffer& out) { writeVerdictJson(out, verdict); }), words[2]);
@@ -396,7 +411,7 @@ int main(int argumentCount, char** arguments) {
       const std::vector<std::string> words = fields(line, 4);
       compare("decodeMultiFrameReply", words[1],
               multiFrameReplyJson(decodeMultiFrameReply(parseHex(words[1]), std::stoi(words[2]))), words[3]);
-    } else if (kind == "SG") {
+    } else if (kind == "SG" || kind == "SR") {
       checkGate(line);
     } else if (kind == "DT") {
       const std::vector<std::string> words = fields(line, 3);

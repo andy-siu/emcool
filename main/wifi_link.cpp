@@ -11,6 +11,7 @@
 #include <mutex>
 #include <string>
 
+#include "dashboard_console.hpp"
 #include "emcool/log.hpp"
 #include "emcool/settings/remote_console.hpp"
 #include "esp_console.h"
@@ -138,10 +139,7 @@ void runCommand(int argumentCount, char** arguments, std::string& output) {
     output += "restarting\n";
     logWarning(kTag, "restart asked for over the Wi-Fi console");
     // After the reply has gone.
-    xTaskCreatePinnedToCore([](void*) {
-      vTaskDelay(pdMS_TO_TICKS(500));
-      esp_restart();
-    }, "restart", 2048, nullptr, 5, nullptr, kCore);
+    restartAfter(500);
     return;
   }
   if (command == "new-ble-key") {

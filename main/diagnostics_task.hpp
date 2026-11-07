@@ -37,6 +37,8 @@ struct DiagnosticsSummary {
   std::string heldBy;
   bool sweepRunning = false;
   std::uint32_t framesDropped = 0;
+  // What holds the bus for service mode (a parameter read, a service write), or empty.
+  std::string busHeldBy;
 };
 
 class DiagnosticsTask final : public ble_server::ServiceDesk, public ble_server::TroubleCodeSource {

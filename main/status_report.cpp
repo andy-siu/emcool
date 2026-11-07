@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <cstdarg>
 #include <cstdio>
 
 #include "emcool/log.hpp"
@@ -17,6 +18,16 @@ constexpr const char* kTag = "emcool";
 constexpr const char* kReportedSignals[] = {
     "soc", "pack_v", "pack_a", "speed_can_kmh", "vehicle_state_can", "key_on", "gps_satellites",
 };
+
+[[gnu::format(printf, 2, 3)]] void appendLine(std::string& out, const char* format, ...) {
+  char line[512];
+  va_list arguments;
+  va_start(arguments, format);
+  vsnprintf(line, sizeof line, format, arguments);
+  va_end(arguments);
+  out += line;
+  out += '\n';
+}
 
 }  // namespace
 
@@ -46,7 +57,17 @@ void StatusReport::reportIfDue(std::int64_t nowMs) {
   const settings::StatusSchedule::Decision decision =
       schedule_.decide(sources_.settings, sources_.settings.takeReportRequest(), nowMs);
   if (decision.report && windowStartedMs_ >= 0) {
-    report(nowMs);
+    const std::string text = describe(nowMs);
+    std::size_t start = 0;
+    while (start < text.size()) {
+      const std::size_t end = text.find('\n', start);
+      logInfo(kTag, "%.*s", static_cast<int>(end - start), text.data() + start);
+      start = end + 1;
+    }
+  }
+  // Over the window so far, as an on-demand `status` is, and leaving the window alone.
+  if (sources_.text.takeRequest()) {
+    sources_.text.publish(windowStartedMs_ >= 0 ? describe(nowMs) : std::string("the first report is not ready yet\n"));
   }
   if (decision.restartWindow) {
     windowStartedMs_ = nowMs;
@@ -54,7 +75,8 @@ void StatusReport::reportIfDue(std::int64_t nowMs) {
   }
 }
 
-void StatusReport::report(std::int64_t nowMs) {
+std::string StatusReport::describe(std::int64_t nowMs) {
+  std::string out;
   const Totals now = current();
   // A `status` straight after a window began covers very little time; never divide by none.
   const double seconds = std::max(static_cast<double>(nowMs - windowStartedMs_), 1.0) / 1000.0;
@@ -65,7 +87,7 @@ void StatusReport::report(std::int64_t nowMs) {
     unknownKeys = sources_.store.unknownKeyCount();
   }
 
-  logInfo(kTag,
+  appendLine(out,
           "can: %.0f frames/s, %" PRIu32 " dropped, %" PRIu32 " bus errors, %s (rx errors %u) | %.0f values/s, "
           "%" PRIu32 " unknown keys, %llu overflowed frames | heap %u free, %u lowest",
           (now.received - windowStart_.received) / seconds, now.dropped - windowStart_.dropped,
@@ -77,7 +99,7 @@ void StatusReport::report(std::int64_t nowMs) {
 
   const ride_log::RideLogCounters& rideLog = sources_.rideLog.counters();
   const ride_log::LogWriterCounters& writer = sources_.writer.counters();
-  logInfo(kTag,
+  appendLine(out,
           "ride log: card %s, boot %05u part %u | %.0f readings/s, %.1f KB/s to the card | %llu dropped, %u lost "
           "without a card, %llu write errors, %u old parts deleted for room | clock %s",
           sources_.rideLogTask.cardMounted.load(std::memory_order_relaxed) ? "mounted" : "ABSENT",
@@ -92,10 +114,10 @@ void StatusReport::report(std::int64_t nowMs) {
           clock::clockTrustName(sources_.clock.trust()));
 
   if (!sources_.bluetooth) {
-    logInfo(kTag, "bluetooth: off");
+    appendLine(out, "bluetooth: off");
   } else {
     const BleLinkCounters& link = sources_.bleLink;
-    logInfo(kTag, "bluetooth: %s, MTU %u | %.0f notifications/s | %u writes dropped, %u notify failures",
+    appendLine(out, "bluetooth: %s, MTU %u | %.0f notifications/s | %u writes dropped, %u notify failures",
             !link.connected.load(std::memory_order_relaxed)       ? "advertising"
             : link.authenticated.load(std::memory_order_relaxed) ? "phone connected and authenticated"
                                                                   : "phone connected, not authenticated",
@@ -106,7 +128,7 @@ void StatusReport::report(std::int64_t nowMs) {
   }
 
   if (!sources_.wifiOn) {
-    logInfo(kTag, "wifi: off");
+    appendLine(out, "wifi: off");
   } else {
     const WifiCounters& wifi = sources_.wifi;
     const std::uint32_t address = wifi.address.load(std::memory_order_relaxed);
@@ -116,7 +138,7 @@ void StatusReport::report(std::int64_t nowMs) {
                     static_cast<unsigned>((address >> 8) & 0xff), static_cast<unsigned>((address >> 16) & 0xff),
                     static_cast<unsigned>(address >> 24));
     }
-    logInfo(kTag,
+    appendLine(out,
             "wifi: %s | console %s, %u logins, %u refused | page %u served, %u refused, %.1f MB downloaded | %u "
             "reconnects",
             where, wifi.consoleClient.load(std::memory_order_relaxed) ? "in use" : "free",
@@ -131,10 +153,10 @@ void StatusReport::report(std::int64_t nowMs) {
   const CanBusCounters& bus = sources_.bus.counters();
   const DiagnosticsSummary diagnostics = sources_.diagnostics->summary();
   if (!diagnostics.obd) {
-    logInfo(kTag, "obd: off, %s%s", sources_.bus.transmitting() ? "but the bus is active" : "listen-only",
+    appendLine(out, "obd: off, %s%s", sources_.bus.transmitting() ? "but the bus is active" : "listen-only",
             diagnostics.sweepRunning ? " | service mode: sweep running" : "");
   } else {
-    logInfo(kTag,
+    appendLine(out,
             "obd: round %" PRIu32 " | %.1f frames/s sent, %" PRIu32 " never acknowledged, %" PRIu32
             " refused, %" PRIu32 " bus-off recoveries | stored codes: %s | poller %s%s",
             diagnostics.rounds, static_cast<double>(now.sent - windowStart_.sent) / seconds,
@@ -154,7 +176,8 @@ void StatusReport::report(std::int64_t nowMs) {
     if (written < 0 || static_cast<std::size_t>(written) >= sizeof line - used) break;
     used += static_cast<std::size_t>(written);
   }
-  logInfo(kTag, "live: %s", line);
+  appendLine(out, "live: %s", line);
+  return out;
 }
 
 }  // namespace emcool

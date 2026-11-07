@@ -13,6 +13,8 @@
 //                        one stays a console job; a PATCH gets a 405 saying so
 //   POST /settings/bluetooth-key  cool-eva's Show key read-back, refused: emcool never returns
 //                        its Bluetooth key (docs/ble.md)
+//   /console, /console/status  the serial console's commands and status report, for Settings →
+//                        Bike console (console_endpoints.hpp). The one way here to change a setting
 // Everything else is a 404 saying the endpoint isn't on emcool yet. None of these touches the
 // bus: like cool-eva's, they serve what is already known, so refreshing a page can't make the
 // bike answer anything.
@@ -32,6 +34,7 @@
 #include <string>
 #include <string_view>
 
+#include "emcool/ble_server/console_endpoints.hpp"
 #include "emcool/obd/stored_codes.hpp"
 #include "emcool/ride_log/download.hpp"
 #include "emcool/signals/signal_store.hpp"
@@ -54,6 +57,8 @@ struct HttpRequest {
   std::string_view path;  // with its query
   // The X-Cool-Eva header: what a request that changes something is for ("service-mode", …).
   std::string_view coolEva;
+  // What came with it, if anything; valid only during begin().
+  std::string_view body = {};
 };
 
 class RequestHandler {
@@ -124,16 +129,19 @@ class DashboardEndpoints final : public RequestHandler {
 
   // `settingsBody`: /settings's JSON, built once at boot (the settings it describes can't change
   // until a restart); empty answers 404, as on a bike with no such endpoint.
+  // `console`: /console's commands; null answers 404, as on a bike without them.
   DashboardEndpoints(const signals::SignalStore& store, std::mutex& storeMutex, StorageReport& storage,
                      TroubleCodeSource& troubleCodes, ServiceDesk* service = nullptr,
-                     ride_log::LogDownload* download = nullptr, std::string settingsBody = {})
+                     ride_log::LogDownload* download = nullptr, std::string settingsBody = {},
+                     ConsoleEndpoints* console = nullptr)
       : store_(store),
         storeMutex_(storeMutex),
         storage_(storage),
         troubleCodes_(troubleCodes),
         service_(service),
         download_(download),
-        settingsBody_(std::move(settingsBody)) {}
+        settingsBody_(std::move(settingsBody)),
+        console_(console) {}
 
   std::optional<HttpResponse> begin(const HttpRequest& request, std::int64_t nowMonotonicMs) override;
   std::optional<HttpResponse> poll(std::int64_t nowMonotonicMs) override;
@@ -144,7 +152,7 @@ class DashboardEndpoints final : public RequestHandler {
  private:
   enum class Source : std::uint8_t { kBuffer, kStatic, kStoredCodes, kParts, kText, kDownload };
   // What a request answered later is waiting on.
-  enum class Waiting : std::uint8_t { kNothing, kService, kDownload };
+  enum class Waiting : std::uint8_t { kNothing, kService, kDownload, kConsole };
 
   HttpResponse status(std::int64_t nowMonotonicMs);
   HttpResponse fromBuffer(int status, const char* contentType, std::size_t length);
@@ -162,6 +170,7 @@ class DashboardEndpoints final : public RequestHandler {
   ServiceDesk* service_;
   ride_log::LogDownload* download_;
   const std::string settingsBody_;
+  ConsoleEndpoints* console_;
   Waiting waiting_ = Waiting::kNothing;
   std::string downloadName_;
   // A body read a part at a time: the parts, and where the one in hand sits in the body.

@@ -20,7 +20,7 @@ With Wi-Fi set up, the same console is also on the network: `nc <bike> 23`, behi
 
 NVS settings **survive reflashing and firmware updates**. Only `idf.py erase-flash` clears them (which also wipes the Bluetooth key, so the link goes off until you make one again).
 
-The phone dashboard shows these settings (Menu → Settings) but can't change them: they change here.
+The phone dashboard runs the same commands over Bluetooth, in **Menu → Settings → Bike console**. See [The dashboard's Bike console](#the-dashboards-bike-console).
 
 ## Commands
 
@@ -76,6 +76,27 @@ OBD_ENABLED=1                 the CAN controller becomes an active node; polls O
 `ELOCK_ENABLED=1` hangs off `OBD_ENABLED` on its own (a one-shot read at startup).
 
 ⚠️ `SERVICE_WRITE_ENABLED` is the one that lets a web page change a calibration EEPROM, stamp the service record, clear the fault memory or actuate charging. It is off by default and would be even if the others weren't, and the boot journal says so loudly when it's on.
+
+## The dashboard's Bike console
+
+**Menu → Settings → Bike console** runs this console's commands over the Bluetooth link. It writes the same NVS, with the same checks. A change made there is a change made at `emcool>`, and `show` here reports it. It offers:
+
+- **Every setting**, each on its own card: its saved value, the value in use now, a note when it is waiting for a restart, and its help text. Flags get an on/off menu, integers a number field, and text and passwords a text field. **Save** runs `set NAME VALUE`. **Default** runs `unset NAME`. The two status-report settings save as `status on|off` and `status every SECONDS`, so they apply at once, as here.
+- **Status**, the status report this console prints, read on request over the window since the last report, followed by the `network` report.
+- **Restart**, with two taps.
+- **A command line** for `show`, `status`, `network`, `help` and any `set`/`unset`, with a transcript. A secret typed into it shows as `••••••••` in the transcript.
+
+What differs from this console:
+
+- **`new-ble-key` stays here.** The key would be made on the bike and sent back over the link it is about to replace. The `BLE_SECRET` card has its own **New key**, which makes one on the phone and shows it for you to keep before **Save**. `set BLE_SECRET <64 hex>` works too.
+- **Passwords are never sent back.** As with `show`, a secret reads as `set` or `not set`, plus a password's length.
+- **A stale page can't overwrite a newer change.** The page saves against the revision it read. If anything was saved since (here, over Wi-Fi, or from another phone), the save is refused with *the settings changed since this page read them*, and the page reads them again.
+- **Two taps for writes.** Turning `SERVICE_WRITE_ENABLED` or `CHARGE_AUTO_ENABLED` on needs a second tap, as the dashboard's other bike-changing controls do. The command line refuses `set` for those two, and refuses `restart`, so the two taps can't be skipped. Turning them off is one tap.
+- **Restart is refused while the bike isn't parked.** That means while a fresh reading says it is moving, in drive, being asked for drive, or the throttle is open. It is also refused while a service-mode read or write holds the bus, or while something holds the OBD poller. A charging bike can restart.
+- **A restart can't lock the phone out.** If a new `BLE_SECRET` is saved but not yet running, **Restart** asks for that key and the bike checks it before restarting. The phone then keeps it for the reconnect. If `BLE_SECRET` is unset, the page refuses to restart, since Bluetooth would come back off; restart from here or over Wi-Fi.
+- **Access:** anyone holding the Bluetooth key can change any setting, including turning on VCU writes, just as anyone with `ADMIN_PASSWORD` can over Wi-Fi. The link is encrypted (AES-256-GCM), unlike the Wi-Fi console. Each change is logged with the setting's name (never its value) under the `console` tag.
+
+The endpoints behind it, `GET /console`, `GET /console/status` and `POST /console`, are in [`ble.md`](ble.md).
 
 ## A worked example
 

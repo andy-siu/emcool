@@ -35,4 +35,7 @@ struct DashboardReplyContext {
 
 std::string dashboardSettingsReply(const Settings& settings, const DashboardReplyContext& context);
 
+// A JSON string literal for `text`: quotes, backslashes and control characters escaped.
+std::string jsonString(std::string_view text);
+
 }  // namespace emcool::settings
