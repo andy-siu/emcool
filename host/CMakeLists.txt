@@ -47,9 +47,8 @@ target_link_libraries(check_ble_wire PRIVATE emcool_ble_wire ZLIB::ZLIB)
 add_subdirectory(../components/emcool_obd emcool_obd)
 add_subdirectory(../components/emcool_async emcool_async)
 add_subdirectory(../components/emcool_vcu emcool_vcu)
-add_subdirectory(../components/emcool_ble_server emcool_ble_server)
-
 add_subdirectory(../components/emcool_settings emcool_settings)
+add_subdirectory(../components/emcool_ble_server emcool_ble_server)
 
 add_executable(ble_server_host tests/ble_server_host.cpp)
 target_link_libraries(ble_server_host PRIVATE emcool_ble_server emcool_can emcool_settings)
@@ -59,6 +58,9 @@ target_link_libraries(check_pack_temperature PRIVATE emcool_can)
 
 add_executable(check_settings tests/check_settings.cpp)
 target_link_libraries(check_settings PRIVATE emcool_settings)
+
+add_executable(check_console tests/check_console.cpp)
+target_link_libraries(check_console PRIVATE emcool_ble_server emcool_settings)
 
 
 

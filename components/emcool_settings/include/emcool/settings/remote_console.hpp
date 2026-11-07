@@ -16,6 +16,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace emcool::settings {
 
@@ -58,6 +59,10 @@ class RemoteConsole {
   int failuresInARow_ = 0;
   std::int64_t lockedUntilMs_ = 0;
 };
+
+// The words of a line, as the USB console splits them: spaces separate, double quotes group, and a
+// backslash escapes the next character.
+std::vector<std::string> splitWords(std::string_view line);
 
 // Equal in time that doesn't depend on where they differ.
 bool constantTimeEquals(std::string_view left, std::string_view right);

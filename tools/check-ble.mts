@@ -336,12 +336,14 @@ async function exchange(
   phone: Phone,
   id: number,
   path: string,
-  { method = "GET", headers = { accept: "*/*" } as Record<string, string>, ...options }: GatherOptions & {
+  { method = "GET", headers = { accept: "*/*" } as Record<string, string>, body, ...options }: GatherOptions & {
     method?: string;
     headers?: Record<string, string>;
+    body?: string;
   } = {}
 ): Promise<Answer> {
-  await phone.send(MessageKind.REQUEST, { id, method, path, headers });
+  // The body as ble-link.js sends one: the message's bytes after its header.
+  await phone.send(MessageKind.REQUEST, { id, method, path, headers }, body === undefined ? undefined : new TextEncoder().encode(body));
   const answer: Answer = {
     status: -1,
     headers: {},
@@ -506,9 +508,48 @@ for (const [path, method] of [["/settings", "PATCH"], ["/settings/apply", "POST"
   const refused = await request(phone, 4, path, method, { "X-Emcool": "settings" });
   const reply = JSON.parse(refused.body);
   check(
-    refused.status === 405 && reply.ok === false && reply.message.includes("serial console"),
+    refused.status === 405 && reply.ok === false && reply.message.includes("Bike console"),
     `${method} ${path}: ${refused.status} ${refused.body}`
   );
+}
+// Settings → Bike console: the console's commands over the link, the body carried in the REQUEST.
+{
+  const listed = await request(phone, 5, "/console");
+  const list = JSON.parse(listed.body);
+  check(listed.status === 200 && Array.isArray(list.settings) && list.revision === 0, `GET /console: ${listed.status}`);
+  check(!listed.body.includes(SECRET), "GET /console sent the Bluetooth key back");
+  const consoleHeaders = { "X-Emcool": "console", "Content-Type": "application/json" };
+  const saved = await exchange(phone, 6, "/console", {
+    method: "POST",
+    headers: consoleHeaders,
+    body: JSON.stringify({ line: 'set WIFI_SSID "garage wifi"', revision: list.revision }),
+  });
+  const reply = JSON.parse(saved.bytes.toString("utf-8"));
+  check(
+    saved.status === 200 && reply.ok === true && reply.revision === 1 && reply.output.includes("WIFI_SSID saved"),
+    `POST /console set: ${saved.status} ${saved.bytes.toString("utf-8")}`
+  );
+  const shown = await exchange(phone, 7, "/console", { method: "POST", headers: consoleHeaders, body: '{"line":"show"}' });
+  check(
+    JSON.parse(shown.bytes.toString("utf-8")).output.includes("WIFI_SSID          garage wifi"),
+    `POST /console show: ${shown.bytes.toString("utf-8")}`
+  );
+  const stale = await exchange(phone, 8, "/console", {
+    method: "POST",
+    headers: consoleHeaders,
+    body: JSON.stringify({ line: "set OBD_ENABLED 0", revision: 0 }),
+  });
+  check(stale.status === 409, `POST /console at a stale revision: ${stale.status}`);
+  const unheadered = await exchange(phone, 9, "/console", { method: "POST", body: '{"line":"show"}' });
+  check(unheadered.status === 403, `POST /console without the header: ${unheadered.status}`);
+  const oversized = await exchange(phone, 10, "/console", {
+    method: "POST",
+    headers: consoleHeaders,
+    body: JSON.stringify({ line: `set BLE_NAME ${"x".repeat(2000)}`, revision: 1 }),
+  });
+  check(oversized.status === 413 && oversized.ended, `POST /console with an oversized body: ${oversized.status}`);
+  const report = await request(phone, 11, "/console/status");
+  check(report.status === 200 && report.body === "can: 812 frames/s\n\nwifi: off\n", `GET /console/status: ${report.body}`);
 }
 // cool-eva's Show key (POST /settings/bluetooth-key) reads the key back; emcool refuses, in the
 // BluetoothKeyReply shape the dashboard reads, and the key appears nowhere in the reply.

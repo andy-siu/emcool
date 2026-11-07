@@ -88,7 +88,15 @@ The key lives in NVS, not in the firmware image or the build directory. The cons
   - Charge links to the automatic-current permission (`CHARGE_AUTO_ENABLED`);
   - the header raises a fault if there is one, and there never is.
 
-  The Settings pages open and show these values, under a card saying the serial console is where they change. A `PATCH /settings` or anything under `/settings/` answers 405 with cool-eva's `{ ok: false, message }`, so the page says why beside the button. `POST /settings/bluetooth-key` gets a 405 too, in cool-eva's `BluetoothKeyReply` shape, with `saved` and `active` both null (see [Turning it on](#turning-it-on)). `instanceId` is the factory MAC in a UUID's shape, and `processGeneration` is the boot's ride-log session id, so the dashboard can tell a restart from a reconnect.
+  The Settings pages open and show these values, under a card pointing at **Bike console**, which is where they change (below). A `PATCH /settings` or anything under `/settings/` answers 405 with cool-eva's `{ ok: false, message }`, so the page says why beside the button. `POST /settings/bluetooth-key` gets a 405 too, in cool-eva's `BluetoothKeyReply` shape, with `saved` and `active` both null (see [Turning it on](#turning-it-on)). `instanceId` is the factory MAC in a UUID's shape, and `processGeneration` is the boot's ride-log session id, so the dashboard can tell a restart from a reconnect.
+- **`/console`: Settings → Bike console.** These are the serial console's commands, over the link (`console_endpoints.hpp`; the rider's side is in [`setup.md`](setup.md#the-dashboards-bike-console)). It is emcool's own; cool-eva has nothing like it.
+  - **`GET /console`:** every setting as JSON. Each has its name, type, saved value, value in use now, whether it is a default, whether it is waiting for a restart, whether it applies at once, its range and its help. There is also the `revision`, a count of saves since boot from any console. Secrets come back only as `set (N characters)` or `not set`.
+  - **`GET /console/status`:** the status report as text, then the `network` report. The decode task owns the report's counters, so it writes the text when it next runs, and the request waits for it, as a service request does.
+  - **`POST /console`**, behind `X-Emcool: console`, takes a JSON body of `{"line": "set OBD_ENABLED 1", "revision": 7}`. The line is split into words as the consoles split it. It answers `{ok, output, revision, restarting}`. Its rules:
+    - **The revision:** a line that saves needs the `revision` the page read, and gets a 409 if anything has been saved since. The check and the save happen together, under the lock all three consoles take for a command.
+    - **Refusals:** a missing header gets the 403 shape that tells the page to reload. `new-ble-key` and anything but one line of at most 512 characters and eight words get a 400.
+    - **`restart`:** answered 409 when the bike isn't parked or the bus is in use. If a new `BLE_SECRET` is saved, it also needs `"bluetoothKey"` in the body to match that key. The bike restarts 1.5 s after the reply.
+  - **Request bodies:** the server now keeps a REQUEST's body, up to 1 KB, and hands it to the endpoint. A larger body gets the server's own 413, and is never cut short and acted on.
 - **Everything else** answers 404, with a body saying the endpoint isn't on emcool yet. That covers fan control, `/update`, `/can-restart`, `/recording/flush` and `/waypoint`. The dashboard shows the error where it would show the result.
 
 ## How it differs from cool-eva's server
@@ -129,7 +137,7 @@ With Bluetooth on, the static-data region is too small for them. The 10 s status
   - **Handshake:** a wrong key's refusal carries its nonce; a burst of wrong HELLOs gets four refusals per 2 s and no more; non-HELLO frames before authentication are dropped unanswered; the WELCOME opens with the phone's key, and the server nonce rotates afterwards.
   - **Snapshots:** every snapshot equals the server's live state exactly, value and timestamp, with cool-eva's units and groups. This holds at MTU 185 (180-byte notifications) and at MTU 23 (18-byte).
   - **Patches:** they carry the latest values, including after a link that drained nothing for a second.
-  - **Requests:** `/status` has the right shape and counts. `/settings` carries every field the dashboard reads, with this boot's values, and a PATCH or a `/settings/…` action is refused as JSON. `/settings/bluetooth-key` is refused without the key anywhere in the body. `/dtc-table` and `/fault-infokeys` are byte-identical to cool-eva's, over seven and three 4 KB pieces. `/stored-dtcs`, after a 60-code mode 03 reply, equals what cool-eva's own `stored-codes.ts` serves for that reply, apart from the read's time. 404 and 400 come back as expected.
+  - **Requests:** `/status` has the right shape and counts. `/settings` carries every field the dashboard reads, with this boot's values, and a PATCH or a `/settings/…` action is refused as JSON. `/console` lists the settings without the key, and saves a `set` sent as a request body. It refuses a stale revision, a missing header and an oversized body (413). `/console/status` comes back as text. `/settings/bluetooth-key` is refused without the key anywhere in the body. `/dtc-table` and `/fault-infokeys` are byte-identical to cool-eva's, over seven and three 4 KB pieces. `/stored-dtcs`, after a 60-code mode 03 reply, equals what cool-eva's own `stored-codes.ts` serves for that reply, apart from the read's time. 404 and 400 come back as expected.
   - **`/dl`:** served from the ride log the corpus run wrote, it holds exactly the newest parts' records, byte for byte. The laptop's reader gets the same readings from it as from those parts' files, and it imports through cool-eva's `db.ts`. Also checked:
     - its name, `?boot=`, and the refusals (bad `mb=` or `boot=`, POST, a boot that isn't there)
     - 503 with no card configured
@@ -146,6 +154,16 @@ With Bluetooth on, the static-data region is too small for them. The 10 s status
   - **Tampering and replay:** a tampered envelope and a replayed one are both dropped, and the session carries on.
   - **Unsubscribe and disconnect:** unsubscribe stops the stream, and a disconnect ends the session.
 - **The test can fail.** With the outbound direction byte wrong, the phone can't open anything and the check fails.
+
+- **`check_console`.** This drives Bike console's endpoints directly, against an in-memory NVS:
+  - **Listing:** every setting is listed, and no secret's characters appear.
+  - **Saving:** a `set` saves and moves the revision on. A stale revision, or one made stale by the serial console's save, is refused with nothing saved.
+  - **Checks:** the console's own checks still hold, including quoted and escaped values.
+  - **Status:** `status` returns the report rather than printing it.
+  - **Refusals:** `new-ble-key`, a missing or wrong header, a second line, an overlong line, nine words and an unknown command are all refused.
+  - **Restart:** refused while blocked, with the old key or none when a new one is saved, and with the key unset. It goes ahead with the new key, and with the running key saved back.
+
+  Removing the revision check, the secret masking or the restart's key check each makes it fail.
 
 **Not verified yet** (nothing has run on the ESP32):
 

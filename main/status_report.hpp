@@ -3,11 +3,14 @@
 // The serial console's status report: the CAN bus, the ride log, the clock, Bluetooth and Wi-Fi, and a
 // few live values to recognise a healthy bike at a glance. Every 10 s by default; `status off`,
 // `status on` and `status every SECONDS` on the console change that at once, and `status` asks
-// for one now.
+// for one now. The dashboard's Settings → Bike console reads the same lines (StatusText).
 
 #include <cstdint>
 
+#include <atomic>
 #include <mutex>
+#include <optional>
+#include <string>
 
 #include "ble_link.hpp"
 #include "can_bus.hpp"
@@ -21,6 +24,35 @@
 #include "wifi_link.hpp"
 
 namespace emcool {
+
+// The report's lines for the dashboard, without printing them: asked for from the Bluetooth task,
+// written by the decode task, which owns the counters the report reads.
+class StatusText {
+ public:
+  void request() {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    ready_ = false;
+    requested_.store(true, std::memory_order_relaxed);
+  }
+  bool takeRequest() { return requested_.exchange(false, std::memory_order_relaxed); }
+  void publish(std::string text) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    text_ = std::move(text);
+    ready_ = true;
+  }
+  std::optional<std::string> take() {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (!ready_) return std::nullopt;
+    ready_ = false;
+    return std::move(text_);
+  }
+
+ private:
+  std::mutex mutex_;
+  std::atomic<bool> requested_{false};
+  bool ready_ = false;
+  std::string text_;
+};
 
 struct StatusSources {
   const CanBus& bus;
@@ -36,6 +68,7 @@ struct StatusSources {
   bool wifiOn;
   settings::RuntimeSettings& settings;
   DiagnosticsTask* diagnostics;
+  StatusText& text;
 };
 
 class StatusReport {
@@ -43,10 +76,12 @@ class StatusReport {
   explicit StatusReport(const StatusSources& sources) : sources_(sources) {}
 
   void noteFrame(std::size_t valueCount, bool overflowed);
+  // From the decode task: the periodic report, and the dashboard's text when it asked for it.
   void reportIfDue(std::int64_t nowMs);
 
  private:
-  void report(std::int64_t nowMs);
+  // The report's lines, each ending in a newline, over the window so far.
+  std::string describe(std::int64_t nowMs);
 
   struct Totals {
     std::uint32_t received = 0;

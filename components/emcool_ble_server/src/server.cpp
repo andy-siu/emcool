@@ -18,6 +18,7 @@ namespace {
 using text::TextBuffer;
 
 constexpr std::string_view kBadPath = "path must start with /";
+constexpr std::string_view kBodyTooLarge = "the request body is larger than the bike accepts";
 
 constexpr const char* kTag = "ble-server";
 // MTU − 5, as cool-eva sends: it also fits BlueZ's multiple-notification format, so the phone sees
@@ -237,7 +238,7 @@ void BleServer::endSession(const char* reason) {
 void BleServer::dispatch(const ble::Message& message, std::int64_t nowMonotonicMs) {
   switch (static_cast<ble::MessageKind>(message.kind)) {
     case ble::MessageKind::kRequest:
-      queueRequest(message.header);
+      queueRequest(message.header, message.body);
       return;
     case ble::MessageKind::kSubscribe:
       if (streaming_) return;
@@ -262,7 +263,7 @@ void BleServer::dispatch(const ble::Message& message, std::int64_t nowMonotonicM
   }
 }
 
-void BleServer::queueRequest(std::string_view header) {
+void BleServer::queueRequest(std::string_view header, std::span<const std::uint8_t> body) {
   ble::JsonObjectReader reader;
   char scratch[512];
   const ble::JsonMember* id = nullptr;
@@ -285,6 +286,8 @@ void BleServer::queueRequest(std::string_view header) {
   copyTruncated(path != nullptr && path->type == ble::JsonType::kString ? path->text : "", request.path.data(),
                 request.path.size());
   request.coolEva[0] = '\0';
+  request.bodyTooLarge = body.size() > kMaxRequestBodyBytes;
+  request.body.assign(request.bodyTooLarge ? std::string_view() : std::string_view(reinterpret_cast<const char*>(body.data()), body.size()));
   if (const ble::JsonMember* headers = reader.find("headers"); headers != nullptr && headers->type == ble::JsonType::kObject) {
     ble::JsonObjectReader headerReader;
     char headerScratch[512];
@@ -343,7 +346,7 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
   while (true) {
     if (responseStage_ == ResponseStage::kNone) {
       if (requestCount_ == 0) return;
-      const PendingRequest request = requestQueue_[0];
+      const PendingRequest request = std::move(requestQueue_[0]);
       std::move(requestQueue_.begin() + 1, requestQueue_.begin() + requestCount_, requestQueue_.begin());
       requestCount_--;
       counters_.requests++;
@@ -351,14 +354,15 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
       responseId_ = request.id;
       responseOffset_ = 0;
       bodyShortBy_ = 0;
-      if (request.path[0] != '/') {
-        response_ = {400, "text/plain; charset=utf-8", kBadPath.size()};
-        badPath_ = true;
+      ownBody_ = request.path[0] != '/' ? kBadPath : request.bodyTooLarge ? kBodyTooLarge : std::string_view();
+      if (!ownBody_.empty()) {
+        response_ = {request.path[0] != '/' ? 400 : 413, "text/plain; charset=utf-8", ownBody_.size()};
         responseStage_ = ResponseStage::kHead;
       } else {
-        badPath_ = false;
-        const std::optional<HttpResponse> response =
-            requests_.begin({request.method.data(), request.path.data(), request.coolEva.data()}, nowMonotonicMs);
+        const std::optional<HttpResponse> response = requests_.begin(
+            {request.method.data(), request.path.data(), request.coolEva.data(),
+             request.body},
+            nowMonotonicMs);
         if (response) {
           response_ = *response;
           responseStage_ = ResponseStage::kHead;
@@ -406,8 +410,8 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
     } else if (responseStage_ == ResponseStage::kBody) {
       const std::size_t wanted = std::min(kResponseChunkBytes, response_.bodyLength - responseOffset_);
       const std::span<const char> piece =
-          badPath_ ? std::span<const char>(kBadPath.substr(responseOffset_, wanted))
-                   : requests_.body(responseOffset_, wanted);
+          !ownBody_.empty() ? std::span<const char>(ownBody_.substr(responseOffset_, wanted))
+                            : requests_.body(responseOffset_, wanted);
       if (piece.empty()) {
         // The handler came up short of the length it promised: end it, rather than loop, and say so
         // in the END, so the phone never hands over a truncated file as whole.

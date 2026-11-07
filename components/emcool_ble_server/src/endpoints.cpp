@@ -72,8 +72,17 @@ std::optional<HttpResponse> DashboardEndpoints::begin(const HttpRequest& request
   // why beside the button rather than "no confirmed reply".
   if (!settingsBody_.empty() && (route.starts_with("/settings/") || (route == "/settings" && method != "GET"))) {
     return fromText(405, kJson,
-                    "{\"ok\":false,\"message\":\"emcool changes settings on its serial console (show, set NAME "
-                    "VALUE, then restart), not from the dashboard.\",\"candidates\":[]}");
+                    "{\"ok\":false,\"message\":\"emcool changes settings with its console commands, not from this "
+                    "page: Settings → Bike console here, or the serial console (show, set NAME VALUE, then "
+                    "restart).\",\"candidates\":[]}");
+  }
+  if (console_ != nullptr && ConsoleEndpoints::handles(route)) {
+    std::optional<ConsoleAnswer> answer = console_->begin(method, route, request.coolEva, request.body);
+    if (!answer) {
+      waiting_ = Waiting::kConsole;
+      return std::nullopt;
+    }
+    return fromText(answer->status, answer->contentType, answer->body);
   }
   if (route == "/settings" && !settingsBody_.empty()) {
     source_ = Source::kStatic;
@@ -327,6 +336,12 @@ void DashboardEndpoints::endDownload() {
 
 std::optional<HttpResponse> DashboardEndpoints::poll(std::int64_t) {
   if (waiting_ == Waiting::kDownload) return pollDownload();
+  if (waiting_ == Waiting::kConsole) {
+    std::optional<ConsoleAnswer> answer = console_->poll();
+    if (!answer) return std::nullopt;
+    waiting_ = Waiting::kNothing;
+    return fromText(answer->status, answer->contentType, answer->body);
+  }
   if (waiting_ != Waiting::kService) return timedOut();
   std::optional<ServiceAnswer> answer = service_->take();
   if (!answer) return std::nullopt;
@@ -335,6 +350,7 @@ std::optional<HttpResponse> DashboardEndpoints::poll(std::int64_t) {
 }
 
 HttpResponse DashboardEndpoints::timedOut() {
+  if (waiting_ == Waiting::kConsole) console_->abandon();
   endDownload();
   waiting_ = Waiting::kNothing;
   return {504, kText, 0};
@@ -342,6 +358,7 @@ HttpResponse DashboardEndpoints::timedOut() {
 
 void DashboardEndpoints::abandon() {
   if (waiting_ == Waiting::kService && service_ != nullptr) service_->abandon();
+  if (waiting_ == Waiting::kConsole) console_->abandon();
   endDownload();
   waiting_ = Waiting::kNothing;
 }

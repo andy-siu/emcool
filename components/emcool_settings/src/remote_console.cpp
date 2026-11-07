@@ -16,8 +16,8 @@ constexpr unsigned char kDont = 254;
 constexpr unsigned char kEcho = 1;
 constexpr std::size_t kMaxArguments = 8;
 
-// The words of a line, as the USB console splits them: spaces separate, double quotes group, and a
-// backslash escapes the next character.
+}  // namespace
+
 std::vector<std::string> splitWords(std::string_view line) {
   std::vector<std::string> words;
   std::string word;
@@ -43,8 +43,6 @@ std::vector<std::string> splitWords(std::string_view line) {
   if (inWord) words.push_back(std::move(word));
   return words;
 }
-
-}  // namespace
 
 bool constantTimeEquals(std::string_view left, std::string_view right) {
   if (left.size() != right.size()) return false;

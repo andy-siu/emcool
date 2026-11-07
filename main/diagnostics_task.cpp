@@ -416,6 +416,7 @@ DiagnosticsSummary DiagnosticsTask::summary() {
   DiagnosticsSummary summary;
   summary.framesDropped = framesDropped_;
   summary.sweepRunning = runner_->running();
+  if (const std::string* holder = lease_.heldBy()) summary.busHeldBy = *holder;
   if (!obd_) return summary;
   summary.obd = true;
   summary.rounds = obd_->poller().rounds();

@@ -19,6 +19,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 
 #include "emcool/ble/session.hpp"
@@ -45,6 +46,10 @@ class BleServer {
   static constexpr std::int64_t kHeartbeatMs = 5000;
   static constexpr std::size_t kOutboundSlots = 3;
   static constexpr std::size_t kMaxQueuedRequests = 8;
+  // The most of a request's body kept, held only while the request waits: a console command with a
+  // 128-character password fits with every character escaped twice. A longer body is answered 413,
+  // never cut short and acted on.
+  static constexpr std::size_t kMaxRequestBodyBytes = 1024;
   // cool-eva sends response bodies in pieces of at most this much, each its own message.
   static constexpr std::size_t kResponseChunkBytes = 4 * 1024;
   static constexpr std::uint16_t kDefaultAttMtu = 23;
@@ -91,6 +96,8 @@ class BleServer {
     std::array<char, 128> path;
     // The X-Cool-Eva header's value, which says what a state-changing request is for.
     std::array<char, 24> coolEva;
+    std::string body;
+    bool bodyTooLarge;
   };
 
   // kWaiting: the handler will answer later (a probe, say), and is asked each tick.
@@ -102,7 +109,7 @@ class BleServer {
   void flushProblems(std::int64_t nowMonotonicMs);
   void endSession(const char* reason);
   void dispatch(const ble::Message& message, std::int64_t nowMonotonicMs);
-  void queueRequest(std::string_view header);
+  void queueRequest(std::string_view header, std::span<const std::uint8_t> body);
   Slot* freeSlot();
   void commitSlot(Slot& slot, bool response = false);
   bool mayTakeSlot(bool response) const;
@@ -136,8 +143,8 @@ class BleServer {
   HttpResponse response_ = {};
   std::size_t responseOffset_ = 0;
   std::int64_t waitingSinceMs_ = 0;
-  // The response is the server's own 400, not the handler's.
-  bool badPath_ = false;
+  // The response is the server's own (a 400 for the path, a 413 for the body), not the handler's.
+  std::string_view ownBody_;
   // How far the body fell short of its promised length; the END says so.
   std::size_t bodyShortBy_ = 0;
   std::array<char, ble::kMaxMessageBytes - 64> header_ = {};

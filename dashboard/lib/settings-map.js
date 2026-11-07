@@ -1,6 +1,7 @@
 // @ts-check
 // Daniel approved this map; keep its destinations together for feedback on the built screens.
 export const SETTINGS_MAP = [
+  { key: "console", title: "Bike console", detail: "Every setting · Status report · Restart · Commands" },
   { key: "phone", title: "This phone", detail: "Screen · Units" },
   { key: "bike", title: "Bike setup", detail: "Coolant probes · Radiator fan · Custom BMS" },
   { key: "charging", title: "Charging", detail: "Allow automatic current reduction" },

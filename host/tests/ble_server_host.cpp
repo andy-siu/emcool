@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -31,6 +32,7 @@
 #include <vector>
 
 #include "emcool/ble/crypto.hpp"
+#include "emcool/ble_server/console_endpoints.hpp"
 #include "emcool/ble_server/endpoints.hpp"
 #include "emcool/ble_server/server.hpp"
 #include "emcool/can/frame_decoder.hpp"
@@ -103,6 +105,37 @@ class DiscardingRecorder final : public emcool::obd::SignalRecorder {
   void record(std::string_view, double) override {}
 };
 
+class MemoryStorage final : public emcool::settings::SettingsStorage {
+ public:
+  std::optional<std::string> read(std::string_view key) override {
+    const auto found = values.find(std::string(key));
+    if (found == values.end()) return std::nullopt;
+    return found->second;
+  }
+  bool write(std::string_view key, std::string_view value) override {
+    values[std::string(key)] = std::string(value);
+    return true;
+  }
+  bool erase(std::string_view key) override {
+    values.erase(std::string(key));
+    return true;
+  }
+  std::map<std::string, std::string> values;
+};
+
+// /console's firmware side: a report ready on the second look, nothing blocking a restart.
+class StubConsoleHost final : public emcool::ble_server::ConsoleHost {
+ public:
+  bool statusReport(bool first, std::string& text) override {
+    if (first) return false;
+    text = "can: 812 frames/s\n";
+    return true;
+  }
+  std::string network() override { return "wifi: off\n"; }
+  std::vector<std::string> restartBlockers() override { return {}; }
+  void restartSoon() override {}
+};
+
 class FixedTroubleCodes final : public emcool::ble_server::TroubleCodeSource {
  public:
   emcool::obd::StoredCodes troubleCodes() override { return codes; }
@@ -158,11 +191,17 @@ int main(int argumentCount, char** arguments) {
   settings.customBmsConfig = true;
   settings.obdEnabled = true;
   settings.wifiSsid = "garage \"wifi\"";
+  MemoryStorage settingsStorage;
+  settingsStorage.values["ble_secret"] = arguments[1];
+  emcool::settings::RuntimeSettings running(emcool::settings::Settings::load(settingsStorage));
+  StubConsoleHost consoleHost;
+  emcool::ble_server::ConsoleEndpoints console(settingsStorage, running, consoleHost);
   emcool::ble_server::DashboardEndpoints endpoints(
       store, storeMutex, storage, troubleCodes, &desk, download.get(),
       emcool::settings::dashboardSettingsReply(
           settings, {"v-test", "0011223344556677", "00000000-0000-0000-0000-a1b2c3d4e5f6", download != nullptr,
-                     "0123abcd-0123-4567-89ab-0123456789ab"}));
+                     "0123abcd-0123-4567-89ab-0123456789ab"}),
+      &console);
   emcool::ble_server::BleServer server(arguments[1], store, storeMutex, endpoints);
   emcool::can::FrameDecoder decoder;
   std::int64_t monotonicMs = 1'000'000;

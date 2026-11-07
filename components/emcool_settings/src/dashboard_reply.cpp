@@ -4,8 +4,6 @@
 
 namespace emcool::settings {
 
-namespace {
-
 std::string jsonString(std::string_view text) {
   std::string out = "\"";
   for (const char character : text) {
@@ -31,6 +29,8 @@ std::string jsonString(std::string_view text) {
   }
   return out + "\"";
 }
+
+namespace {
 
 const char* jsonBoolean(bool value) { return value ? "true" : "false"; }
 

@@ -20,7 +20,7 @@ There is no server component here, and the ESP32 serves nothing over HTTP: the b
 
 This is protocol 2, cool-eva's since its #332; the handshake and framing are in `lib/ble-wire.js`, `lib/ble-handshake.js` and `lib/ble-link.js`.
 
-**Settings** (Menu → Settings) shows what the bike runs with, read from `GET /settings`, but saving there is refused. Settings change on the serial console (`show`, `set NAME VALUE`, `restart`), as [`../docs/setup.md`](../docs/setup.md) describes.
+**Settings** (Menu → Settings) shows what the bike runs with, read from `GET /settings`, but saving on those pages is refused. Settings change through the bike's console commands, in **Settings → Bike console** (`views/bike-console.js`, over `/console`) or on the serial console, as [`../docs/setup.md`](../docs/setup.md#the-dashboards-bike-console) describes.
 
 ## Syncing from cool-eva
 
@@ -35,15 +35,15 @@ The tool copies `public/` and applies two layers.
 - **Patches, each matching exactly once:**
   - the allowed hosted origin;
   - the ride-log download (emcool's card is plain text, so there is no `/recording/flush`, and Bluetooth is slow, so `?mb=16` of the newest parts);
-  - a Settings card saying where settings change.
+  - a Settings card saying where settings change, and Bike console's place in the Settings menu and router.
 
-If a cool-eva change moves a patched line, the tool stops and names it rather than shipping half a patch. `README.md`, `CNAME` and `lib/hosted-origin.js` are emcool's own and survive a sync. Don't edit the other files here by hand: the next sync overwrites them. Change the tool's renames or patches instead.
+If a cool-eva change moves a patched line, the tool stops and names it rather than shipping half a patch. `README.md`, `CNAME`, `lib/hosted-origin.js` and `views/bike-console.js` are emcool's own and survive a sync. Don't edit the other files here by hand: the next sync overwrites them. Change the tool's renames or patches instead.
 
 ## What was renamed from cool-eva
 
 - **Branding:** "Cool Eva" becomes **emcool** in page titles, the PWA manifest, the header and the CSS banner.
 - **Wire protocol, in lockstep with the firmware**, so the two ends still agree:
-  - the request header **`X-Emcool`** (was `X-Cool-Eva`), with its values (`service-mode`, `service-write`, `charge-auto`, `expected-faults`, `fan`, `settings`) unchanged;
+  - the request header **`X-Emcool`** (was `X-Cool-Eva`), with its values (`service-mode`, `service-write`, `charge-auto`, `expected-faults`, `fan`, `settings`) unchanged, plus emcool's own `console`;
   - the handshake HMAC salts **`emcool/hello`** and **`emcool/session`** (were `cool-eva/*`), in `lib/ble-wire.js`.
 - **Client-only names:** the `emcool.*` localStorage keys (`emcool.ble-secret`, `emcool.lightHealthyMax`, …) and the download names (`emcool.log`, `emcool-bluetooth-key.txt`). They touch nothing on the bike.
 

@@ -19,6 +19,7 @@ import { DashboardBluetooth } from "./settings-bluetooth.js";
 import { MotorcycleConnection } from "./settings-hub.js";
 import { CanRestartButton, UpdateButton } from "./pi-actions.js";
 import { ScreenGeometry } from "./screen-geometry.js";
+import { BikeConsole } from "./bike-console.js";
 
 const { a, button, div, h2 } = van.tags;
 import { SETTINGS_MAP } from "../lib/settings-map.js";
@@ -26,19 +27,29 @@ import { SETTINGS_MAP } from "../lib/settings-map.js";
 export function SettingsPage() {
   return div(
     { class: "settings-page" },
-    SettingsCard(
-      "Changed on the bike's serial console",
-      "emcool shows its settings here but changes them only from the serial console (idf.py monitor, or nc <bike> 23 over Wi-Fi): show, set NAME VALUE, then restart. Save buttons on these pages are refused.",
-      a(
-        {
-          href: "https://github.com/andy-siu/emcool/blob/main/docs/setup.md",
-          target: "_blank",
-          rel: "noopener",
-          class: "settings-link",
-        },
-        "Every setting and console command →"
-      )
-    ),
+    () =>
+      destinationSection.val === "console"
+        ? div()
+        : SettingsCard(
+            "Changed with the bike's console",
+            "emcool's settings change through its console commands: in Bike console here, over Bluetooth, or on the serial console (idf.py monitor, or nc <bike> 23 over Wi-Fi). Save buttons on the other pages are refused.",
+            div(
+              { class: "settings-links" },
+              button(
+                { class: "settings-link", onclick: () => openDestination("settings", "console") },
+                "Open Bike console →"
+              ),
+              a(
+                {
+                  href: "https://github.com/andy-siu/emcool/blob/main/docs/setup.md",
+                  target: "_blank",
+                  rel: "noopener",
+                  class: "settings-link",
+                },
+                "Every setting and command →"
+              )
+            )
+          ),
     () =>
       settingsError.val
         ? SettingsCard(
@@ -65,7 +76,7 @@ export function SettingsPage() {
       settingsInstance.val;
       return SettingsContent(destinationSection.val);
     },
-    () => (destinationSection.val ? SettingsRestart(!["phone", "access"].includes(destinationSection.val)) : div())
+    () => (destinationSection.val ? SettingsRestart(!["phone", "access", "console"].includes(destinationSection.val)) : div())
   );
 }
 
@@ -110,6 +121,8 @@ function SettingsContent(section) {
       );
     case "access":
       return div(h2("Who can control my bike?"), AccessExplanation());
+    case "console":
+      return div(h2("Bike console"), BikeConsole());
     case "charging":
       return div(
         h2("Charging"),

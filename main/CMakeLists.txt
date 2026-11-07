@@ -1,5 +1,5 @@
 idf_component_register(
-  SRCS main.cpp ble_link.cpp can_bus.cpp diagnostics_task.cpp ride_log_task.cpp sd_card.cpp settings_console.cpp status_report.cpp system_time.cpp wifi_link.cpp
+  SRCS main.cpp ble_link.cpp can_bus.cpp dashboard_console.cpp diagnostics_task.cpp ride_log_task.cpp sd_card.cpp settings_console.cpp status_report.cpp system_time.cpp wifi_link.cpp
   INCLUDE_DIRS .
   REQUIRES
     bootloader_support

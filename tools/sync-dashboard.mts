@@ -8,6 +8,7 @@
 //     cool-eva/hello and cool-eva/session handshake salts (dashboard/README.md);
 //   - the brand: "Cool Eva" in titles, the header and the manifest;
 //   - phone-side storage keys and file names (cool-eva.* → emcool.*), which touch nothing on the bike.
+// emcool's own files (README.md, CNAME, lib/hosted-origin.js, views/bike-console.js) are kept as they are.
 // It keeps cool-eva's wording ("the Pi") and its native-app names (cooleva:, coolEvaNative), as the
 // first copy did. Then it re-applies emcool's own differences, each a fixed replacement that must
 // match exactly once, so a cool-eva change that moves one fails loudly here instead of shipping
@@ -127,7 +128,9 @@ const DOWNLOAD_MB = 16;`,
     // answers only inside the Bluetooth session, so only a phone holding the key can pull it
     // (docs/ble.md, docs/ride-log-format.md).`,
   },
-  // Settings are read-only here: the serial console changes them (docs/setup.md).
+  // Settings change through the bike's console commands: on the serial console, or here in Bike
+  // console (views/bike-console.js, emcool's own), which runs them over Bluetooth (docs/setup.md).
+  // These pages' own Save buttons are refused.
   {
     file: "views/settings-page.js",
     from: `export function SettingsPage() {
@@ -136,19 +139,60 @@ const DOWNLOAD_MB = 16;`,
     to: `export function SettingsPage() {
   return div(
     { class: "settings-page" },
-    SettingsCard(
-      "Changed on the bike's serial console",
-      "emcool shows its settings here but changes them only from the serial console (idf.py monitor, or nc <bike> 23 over Wi-Fi): show, set NAME VALUE, then restart. Save buttons on these pages are refused.",
-      a(
-        {
-          href: "https://github.com/andy-siu/emcool/blob/main/docs/setup.md",
-          target: "_blank",
-          rel: "noopener",
-          class: "settings-link",
-        },
-        "Every setting and console command →"
-      )
-    ),`,
+    () =>
+      destinationSection.val === "console"
+        ? div()
+        : SettingsCard(
+            "Changed with the bike's console",
+            "emcool's settings change through its console commands: in Bike console here, over Bluetooth, or on the serial console (idf.py monitor, or nc <bike> 23 over Wi-Fi). Save buttons on the other pages are refused.",
+            div(
+              { class: "settings-links" },
+              button(
+                { class: "settings-link", onclick: () => openDestination("settings", "console") },
+                "Open Bike console →"
+              ),
+              a(
+                {
+                  href: "https://github.com/andy-siu/emcool/blob/main/docs/setup.md",
+                  target: "_blank",
+                  rel: "noopener",
+                  class: "settings-link",
+                },
+                "Every setting and command →"
+              )
+            )
+          ),`,
+  },
+  {
+    file: "views/settings-page.js",
+    from: `import { ScreenGeometry } from "./screen-geometry.js";
+`,
+    to: `import { ScreenGeometry } from "./screen-geometry.js";
+import { BikeConsole } from "./bike-console.js";
+`,
+  },
+  {
+    file: "views/settings-page.js",
+    from: `    case "access":
+      return div(h2("Who can control my bike?"), AccessExplanation());`,
+    to: `    case "access":
+      return div(h2("Who can control my bike?"), AccessExplanation());
+    case "console":
+      return div(h2("Bike console"), BikeConsole());`,
+  },
+  // Bike console has its own Restart, which works; the page-wide one posts /settings/apply, refused.
+  {
+    file: "views/settings-page.js",
+    from: `SettingsRestart(!["phone", "access"].includes(destinationSection.val))`,
+    to: `SettingsRestart(!["phone", "access", "console"].includes(destinationSection.val))`,
+  },
+  {
+    file: "lib/settings-map.js",
+    from: `export const SETTINGS_MAP = [
+`,
+    to: `export const SETTINGS_MAP = [
+  { key: "console", title: "Bike console", detail: "Every setting · Status report · Restart · Commands" },
+`,
   },
 ];
 
@@ -175,7 +219,7 @@ try {
     await writeFile(path, text.replace(patch.from, patch.to));
   }
   // emcool's own files, kept across a sync.
-  for (const own of ["CNAME", "README.md", "lib/hosted-origin.js"]) {
+  for (const own of ["CNAME", "README.md", "lib/hosted-origin.js", "views/bike-console.js"]) {
     await cp(join(dashboardDirectory, own), join(staging, own));
   }
 

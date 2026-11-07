@@ -2,7 +2,8 @@
 
 // The per-bike settings: what cool-eva keeps in /etc/default/cool-eva, under the same names
 // where cool-eva has one. Kept in the ESP32's NVS, so they survive reflashing and firmware
-// updates (only `idf.py erase-flash` clears them), and set from the serial console.
+// updates (only `idf.py erase-flash` clears them), and set from the serial console — or from the
+// dashboard's Settings → Bike console, which runs the same commands (ble_server/settings_endpoints.hpp).
 // Most are read once at boot, so a change takes effect at the next restart and `show` says
 // when one is waiting; the few marked live (the status report's) apply the moment they're set.
 // Only settings for what emcool actually does are here; cool-eva's others return with the
@@ -12,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -43,6 +45,9 @@ const SettingSpec* findSetting(std::string_view name);
 // true/false or yes/no; normalizeValue() turns any of those into "1" or "0".
 std::optional<std::string> validate(const SettingSpec& spec, std::string_view value);
 std::string normalizeValue(const SettingSpec& spec, std::string_view value);
+// How `show` prints a value: "(empty)" for empty text, and a secret only as set or not (with a
+// password's length), never its characters.
+std::string describeValue(const SettingSpec& spec, std::string_view value);
 
 class SettingsStorage {
  public:
@@ -80,6 +85,10 @@ struct Settings {
   static Settings load(SettingsStorage& storage);
 };
 
+// What `spec` is saved as, as `show` reads it: the stored value if it validates, else the default.
+// `stored` says whether anything is stored at all. Logs nothing.
+std::string savedValue(SettingsStorage& storage, const SettingSpec& spec, bool& stored);
+
 // What the firmware is running with: the boot values, plus the live settings, which the
 // console changes while other tasks read them.
 class RuntimeSettings {
@@ -99,11 +108,20 @@ class RuntimeSettings {
   // Puts a live setting into force; a value that isn't live waits for the restart.
   void apply(const SettingSpec& spec, std::string_view normalizedValue);
 
+  // How many times a setting has been saved or unset since boot, from any console, so the
+  // dashboard can tell that what it read has changed.
+  std::uint32_t revision() const { return revision_.load(std::memory_order_relaxed); }
+  void noteChange() { revision_.fetch_add(1, std::memory_order_relaxed); }
+  // Held while a command runs: the USB console, the Wi-Fi console and the dashboard each have a task.
+  std::mutex& commandMutex() { return commandMutex_; }
+
  private:
   Settings boot_;
   std::atomic<bool> statusReport_;
   std::atomic<std::uint32_t> statusIntervalSeconds_;
   std::atomic<bool> reportRequested_{false};
+  std::atomic<std::uint32_t> revision_{0};
+  std::mutex commandMutex_;
 };
 
 // Fills a buffer with cryptographically random bytes; the firmware's draws on the hardware RNG.
@@ -115,6 +133,12 @@ using RandomFill = std::function<void(std::span<std::uint8_t>)>;
 // `new-ble-key` needs `fillRandom`, and fails without one.
 int runSettingsCommand(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
                        const char* const* arguments, std::string& output, const RandomFill& fillRandom = nullptr);
+// The same, refused unless nothing has been saved since `expectedRevision`: the check and the
+// command are one step, so another console's save can't land between them. 2 when refused.
+int runSettingsCommandAt(SettingsStorage& storage, RuntimeSettings& running, std::uint32_t expectedRevision,
+                         int argumentCount, const char* const* arguments, std::string& output);
+// Whether a command line saves or unsets anything: `set`, `unset`, `status on|off|every`, `new-ble-key`.
+bool commandChangesSettings(int argumentCount, const char* const* arguments);
 
 // When the periodic status report is due. Each periodic report covers the time since the last
 // window began. Turning reporting on or off starts a fresh window, so the first report after

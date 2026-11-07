@@ -170,6 +170,7 @@ for (let index = 0; index < 6000; index++) {
     .map(key => `${key}=${readings[key].value ?? "null"}@${readings[key].ageMs ?? "null"}`)
     .join(";");
   emit(`SG ${flat} ${JSON.stringify(gate.evaluateServiceGate(readings))}`);
+  emit(`SR ${flat} ${JSON.stringify(gate.restartMotionBlockers(readings))}`);
   count("gate verdicts");
 }
 
