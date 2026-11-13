@@ -9,7 +9,7 @@ import { request } from "../lib/transport.js";
 import { connection } from "../lib/store.js";
 import { arm, armDwellElapsed, armed, refuseKeyRepeat } from "../lib/arming.js";
 import { BLE_MODE, rememberSecret } from "../lib/ble-link.js";
-import { generateBleSecret, validBleSecret } from "../lib/ble-secret.js";
+import { canonicalBleSecret, generateBleSecret, validBleSecret } from "../lib/ble-secret.js";
 import { SettingsCard } from "./settings-fields.js";
 
 const { button, div, input, label, option, pre, select, span } = van.tags;
@@ -237,7 +237,7 @@ function RestartCard(current) {
             spellcheck: false,
             value: () => restartKey.val,
             oninput: event => {
-              restartKey.val = /** @type {HTMLInputElement} */ (event.target).value.trim().toLowerCase();
+              restartKey.val = canonicalBleSecret(/** @type {HTMLInputElement} */ (event.target).value);
             },
           })
         )
@@ -444,7 +444,7 @@ async function save(setting, draft) {
   if (setting.type === "secret") draft.value.val = "";
   if (setting.name === "BLE_SECRET") {
     // Restart asks for the new key; this phone already has it.
-    restartKey.val = value.trim().toLowerCase();
+    restartKey.val = canonicalBleSecret(value);
     generatedKey.val = "";
     generatedKept.val = false;
   }

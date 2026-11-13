@@ -293,6 +293,20 @@ int main() {
   run = console.post("restart", std::nullopt);
   EMCOOL_CHECK(run.status == 200 && run.restarting && console.host.restarts == 2,
                "restart with the running key saved again: %s", run.body.c_str());
+  // A typed key: saved as typed, and Restart needs it exactly, case and all.
+  run = console.postNow("set BLE_SECRET Bike2024key");
+  EMCOOL_CHECK(run.ok && storage.values["ble_secret"] == "Bike2024key" && !contains(run.body, "Bike2024key"),
+               "a typed key: %s", run.body.c_str());
+  run = console.postNow("set BLE_SECRET bikekey");
+  EMCOOL_CHECK(!run.ok && storage.values["ble_secret"] == "Bike2024key" && contains(run.output, "letter and one digit"),
+               "a key with no digit: %s", run.body.c_str());
+  run = console.post("restart", std::nullopt, ",\"bluetoothKey\":\"bike2024key\"");
+  EMCOOL_CHECK(run.status == 409 && console.host.restarts == 2, "restart with the typed key in the wrong case: %s",
+               run.body.c_str());
+  run = console.post("restart", std::nullopt, ",\"bluetoothKey\":\"Bike2024key\"");
+  EMCOOL_CHECK(run.status == 200 && run.restarting && console.host.restarts == 3, "restart with the typed key: %s",
+               run.body.c_str());
+  run = console.postNow("set BLE_SECRET " + kKey);
 
   // Through DashboardEndpoints: the body reaches /console, and the status report is waited for.
   {

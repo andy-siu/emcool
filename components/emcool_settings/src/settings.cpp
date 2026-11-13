@@ -15,9 +15,10 @@ namespace {
 constexpr const char* kTag = "settings";
 
 constexpr SettingSpec kSpecs[] = {
-    {"BLE_SECRET", "ble_secret", SettingType::kSecret, "", 64, 64, false,
-     "The phone dashboard's Bluetooth key: 64 lower-case hex characters, as cool-eva's generated key. `new-ble-key` "
-     "makes one and prints it once; unset keeps Bluetooth off."},
+    {"BLE_SECRET", "ble_secret", SettingType::kSecret, "", 8, 64, false,
+     "The phone dashboard's Bluetooth key: the 64 hex characters `new-ble-key` makes and prints once, or one you "
+     "type, 8-64 characters with at least one letter and one digit (no spaces, quotes or backslashes). A short typed "
+     "key can be guessed from one overheard connection, so make it long. Unset keeps Bluetooth off."},
     // The scan response has room for a 29-byte name.
     {"BLE_NAME", "ble_name", SettingType::kText, "emcool", 1, 29, false,
      "The name the phone's device list shows. The dashboard finds the bike by its service UUID, not this."},
@@ -71,10 +72,26 @@ std::string lowerCased(std::string_view value) {
   return lowered;
 }
 
-bool isBluetoothKey(std::string_view value) {
+// What `new-ble-key` and the dashboard's New key make: 32 random bytes as 64 lower-case hex.
+bool isGeneratedKey(std::string_view value) {
   return value.size() == 64 && std::all_of(value.begin(), value.end(), [](char character) {
            return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
          });
+}
+
+// A generated key, or a typed one: 8-64 printable ASCII characters with at least one letter and one
+// digit, and no spaces, quotes or backslashes, which the consoles would split or unescape. Must
+// match BleSession::secretIsUsable() and the dashboard's validBleSecret() (lib/ble-secret.js).
+bool isBluetoothKey(std::string_view value) {
+  if (isGeneratedKey(value)) return true;
+  const auto has = [&](auto test) { return std::any_of(value.begin(), value.end(), test); };
+  return value.size() >= 8 && value.size() <= 64 && std::all_of(value.begin(), value.end(), [](char character) {
+           return character > ' ' && character <= '~' && character != '"' && character != '\\';
+         }) &&
+         has([](char character) {
+           return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z');
+         }) &&
+         has([](char character) { return character >= '0' && character <= '9'; });
 }
 
 std::optional<bool> parseFlag(std::string_view value) {
@@ -273,9 +290,10 @@ std::optional<std::string> validate(const SettingSpec& spec, std::string_view va
     return std::nullopt;
   }
   const auto length = static_cast<std::int64_t>(value.size());
-  // Generated, never typed: a phrase is what the 2 s lockout protected, and protocol 2 has none.
-  if (spec.name == "BLE_SECRET" && !isBluetoothKey(lowerCased(value))) {
-    return std::string("must be a generated key, 64 lower-case hex characters; `new-ble-key` makes one");
+  // Protocol 2 has no lockout, so a typed key must at least mix letters and digits.
+  if (spec.name == "BLE_SECRET" && !isBluetoothKey(normalizeValue(spec, value))) {
+    return std::string("must be 8-64 characters with at least one letter and one digit, and no spaces, quotes or "
+                       "backslashes; or the key `new-ble-key` makes");
   }
   // A Wi-Fi password is WPA's 8-63 characters, or nothing for an open network.
   if (spec.name == "WIFI_PASSWORD" && length > 0 && length < 8) {
@@ -298,7 +316,7 @@ std::optional<std::string> validate(const SettingSpec& spec, std::string_view va
 std::string describeValue(const SettingSpec& spec, std::string_view value) {
   if (spec.type != SettingType::kSecret) return value.empty() ? "(empty)" : std::string(value);
   if (value.empty()) return "not set";
-  // The key is always 64 characters, so its length says nothing.
+  // A typed key's length would narrow a guess at it, so the key shows no length.
   if (spec.name == "BLE_SECRET") return "set";
   return "set (" + std::to_string(value.size()) + " characters)";
 }
@@ -306,7 +324,11 @@ std::string describeValue(const SettingSpec& spec, std::string_view value) {
 std::string normalizeValue(const SettingSpec& spec, std::string_view value) {
   if (spec.type == SettingType::kFlag) return *parseFlag(value) ? "1" : "0";
   if (spec.type == SettingType::kInteger) return std::to_string(*parseInteger(value));
-  if (spec.name == "BLE_SECRET") return lowerCased(value);
+  // A generated key pasted in upper case is the same key; a typed key keeps its case.
+  if (spec.name == "BLE_SECRET") {
+    std::string lowered = lowerCased(value);
+    return isGeneratedKey(lowered) ? lowered : std::string(value);
+  }
   return std::string(value);
 }
 

@@ -113,7 +113,7 @@ export function BleSection() {
         autocomplete: "current-password",
         autocapitalize: "off",
         spellcheck: false,
-        placeholder: "Paste the Pi’s generated Bluetooth key",
+        placeholder: "Paste or type the bike’s Bluetooth key",
         value: storedSecret(),
       }),
       button({ class: "settings-button", type: "submit" }, () =>

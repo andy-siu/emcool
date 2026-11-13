@@ -25,10 +25,25 @@ BleSession::BleSession(std::string_view secret) : serverNonce_(randomNonce()) {
   }
 }
 
-// cool-eva's validBleSecret(): 32 random bytes as 64 lower-case hex characters, never a phrase.
+// The dashboard's validBleSecret() and the BLE_SECRET setting's rule: a generated key, 32 random bytes
+// as 64 lower-case hex characters, or a typed one of 8-64 printable ASCII characters with at least one
+// letter and one digit and no spaces, quotes or backslashes. ASCII, so the HMAC key is the same bytes
+// as the phone's TextEncoder makes.
 bool BleSession::secretIsUsable(std::string_view secret) {
-  return secret.size() == kSecretLength &&
-         std::all_of(secret.begin(), secret.end(), [](char character) { return isLowerHex(character); });
+  if (secret.size() == kSecretLength &&
+      std::all_of(secret.begin(), secret.end(), [](char character) { return isLowerHex(character); })) {
+    return true;
+  }
+  const auto has = [&](auto test) { return std::any_of(secret.begin(), secret.end(), test); };
+  return secret.size() >= kMinimumSecretLength && secret.size() <= kSecretLength &&
+         std::all_of(secret.begin(), secret.end(),
+                     [](char character) {
+                       return character > ' ' && character <= '~' && character != '"' && character != '\\';
+                     }) &&
+         has([](char character) {
+           return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z');
+         }) &&
+         has([](char character) { return character >= '0' && character <= '9'; });
 }
 
 void BleSession::end() {

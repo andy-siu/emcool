@@ -194,6 +194,59 @@ import { BikeConsole } from "./bike-console.js";
   { key: "console", title: "Bike console", detail: "Every setting · Status report · Restart · Commands" },
 `,
   },
+  // The Bluetooth key: the generated 64 hex, or one typed with `set BLE_SECRET` (8-64 characters,
+  // a letter and a digit), as the firmware's BleSession::secretIsUsable() allows. A typed key
+  // keeps its case; only a generated one is lowered.
+  {
+    file: "lib/ble-secret.js",
+    from: `/** @param {unknown} secret */
+export function validBleSecret(secret) {
+  return typeof secret === "string" && /^[0-9a-f]{64}$/.test(secret);
+}
+
+/** @param {string} secret */
+export function normalizeBleSecret(secret) {
+  const normalized = secret.trim().toLowerCase();
+  if (!validBleSecret(normalized)) {
+    throw new Error("Paste the generated 64-character Bluetooth key from the Pi.");
+  }
+  return normalized;
+}`,
+    to: `/**
+ * A generated key (64 lower-case hex), or a typed one: 8-64 printable ASCII characters with at
+ * least one letter and one digit, and no spaces, quotes or backslashes. The firmware's
+ * BleSession::secretIsUsable() and its BLE_SECRET setting check the same.
+ * @param {unknown} secret
+ */
+export function validBleSecret(secret) {
+  if (typeof secret !== "string") return false;
+  if (/^[0-9a-f]{64}$/.test(secret)) return true;
+  return /^[\\x21\\x23-\\x5b\\x5d-\\x7e]{8,64}$/.test(secret) && /[A-Za-z]/.test(secret) && /[0-9]/.test(secret);
+}
+
+/** The key as the bike keeps it: trimmed, and a generated key in lower case. @param {string} secret */
+export function canonicalBleSecret(secret) {
+  const trimmed = secret.trim();
+  const lowered = trimmed.toLowerCase();
+  return /^[0-9a-f]{64}$/.test(lowered) ? lowered : trimmed;
+}
+
+/** @param {string} secret */
+export function normalizeBleSecret(secret) {
+  const normalized = canonicalBleSecret(secret);
+  if (!validBleSecret(normalized)) {
+    throw new Error(
+      "Paste the bike’s Bluetooth key: the 64 characters new-ble-key printed, or the 8-64 you set, with a letter and a digit and no spaces."
+    );
+  }
+  return normalized;
+}`,
+  },
+  {
+    file: "views/ble-connect.js",
+    from: `placeholder: "Paste the Pi’s generated Bluetooth key",`,
+    to: `placeholder: "Paste or type the bike’s Bluetooth key",`,
+  },
 ];
 
 const staging = await mkdtemp(join(tmpdir(), "emcool-dashboard-"));
