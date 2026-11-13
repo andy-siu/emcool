@@ -24,7 +24,7 @@ The phone dashboard runs the same commands over Bluetooth, in **Menu → Setting
 
 ## Commands
 
-Six change the settings and the bike; the rest work on the microSD card ([below](#the-card)).
+Seven change the settings and the firmware; the rest work on the microSD card ([below](#the-card)).
 
 | Command | What it does |
 | --- | --- |
@@ -34,6 +34,7 @@ Six change the settings and the bike; the rest work on the microSD card ([below]
 | `status [on \| off \| every SECONDS]` | The periodic status report. `status` prints one now; `status off` / `status on` / `status every SECONDS` (5–3600) change it and save at once. |
 | `network` | The Wi-Fi network joined and its signal, the address, netmask, gateway and DNS server it handed out, the hostname and MAC address, and where to find the console and the ride-log page. With Wi-Fi off, says so. |
 | `restart` | Reboots, so saved settings take effect. |
+| `update FILE`, `update status` | Installs new firmware from the card (`update /emcool.bin`): checked, written beside the running firmware, and run at the next `restart`, on trial. `update status` says what's running, what's waiting and whether an update was rolled back. See the README's *Updating without the cable*. |
 
 There is deliberately **no `get`** — `show` prints everything, and it is short. An unknown name tells you so and points at `show`.
 

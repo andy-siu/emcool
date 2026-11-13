@@ -29,6 +29,8 @@
 #   - the card commands (dir, cd, type, rm, cp, mv, …) work on a folder standing in for the card,
 #     refuse the ride being recorded, RIDES and vcu-params, let one console at a time change it, and
 #     leave nothing half-done when the card goes or the phone gives up
+#   - an over-the-air update writes exactly the image it's given, and refuses another chip's, another
+#     project's, a bootloader, and one cut short or running long, never choosing a part-written slot
 #   - the ride log's rules hold, and the decoder corpus pushed through the whole C++ pipeline
 #     onto disk reads back exactly on the laptop, survives simulated power cuts and card
 #     damage, and imports into rides.db
@@ -144,6 +146,13 @@ node "${node_flags[@]}" "$root/tools/generate-golden-charge-auto-loop.mts" "$ref
 }
 "$build/check_card_shell" 2>"$build/check_card_shell.stderr" || {
   grep -vE '^[IW] card: ' "$build/check_card_shell.stderr" >&2
+  exit 1
+}
+# The real firmware image when it has been built (idf.py build), else one laid out the same way.
+update_image=()
+[[ -f "$root/build/emcool.bin" ]] && update_image=("$root/build/emcool.bin")
+"$build/check_update" "${update_image[@]}" 2>"$build/check_update.stderr" || {
+  grep -vE '^[IW] update: ' "$build/check_update.stderr" >&2
   exit 1
 }
 

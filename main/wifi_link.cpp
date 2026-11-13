@@ -13,6 +13,7 @@
 
 #include "card_files.hpp"
 #include "dashboard_console.hpp"
+#include "firmware_update.hpp"
 #include "emcool/log.hpp"
 #include "emcool/settings/remote_console.hpp"
 #include "esp_console.h"
@@ -129,6 +130,10 @@ std::unique_ptr<files::CardShell> cardShell;
 
 void runCommand(int argumentCount, char** arguments, std::string& output) {
   const std::string_view command = arguments[0];
+  if (command == "update") {
+    runUpdateCommand(argumentCount, arguments, cardFiles().card, [&](std::string& piece) { output += piece; });
+    return;
+  }
   if (files::CardShell::handles(command)) {
     if (cardFiles().card == nullptr) {
       output += kNoCardConfigured;
@@ -141,6 +146,7 @@ void runCommand(int argumentCount, char** arguments, std::string& output) {
   if (command == "help") {
     output += "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | network | restart | exit\n"
               "`show` lists every setting and what it does is in the USB console's `help`.\n"
+              "update FILE | update status\n"
               "The card: ";
     output += files::CardShell::summary();
     output += "\n";
@@ -279,6 +285,49 @@ esp_err_t sendText(httpd_req_t* request, const char* status, const std::string& 
   return httpd_resp_send(request, text.data(), static_cast<ssize_t>(text.size()));
 }
 
+// PUT /update: a new firmware image as the request body, streamed into the spare slot:
+//   curl -u :PASSWORD -T build/emcool.bin http://emcool/update
+// It boots at the next restart, on trial. Only the image's own checks and ADMIN_PASSWORD stand
+// between this and new firmware, and both cross the network in plain text.
+esp_err_t serveUpdate(httpd_req_t* request) {
+  if (!authorised(request)) return ESP_OK;
+  if (request->content_len == 0) {
+    return sendText(request, "411 Length Required",
+                    "emcool: send the image as the body: curl -u :PASSWORD -T build/emcool.bin http://emcool/update\n");
+  }
+  if (const std::string refusal = updateRefusal(); !refusal.empty()) {
+    return sendText(request, "409 Conflict", "emcool: not updating now: " + refusal + "\n");
+  }
+  update::Updater& updater = firmwareUpdater();
+  std::string why;
+  if (!updater.start(request->content_len, "Wi-Fi", why)) {
+    return sendText(request, "409 Conflict", "emcool: not updating: " + why + "\n");
+  }
+  logWarning(kTag, "firmware update over Wi-Fi: %u bytes", static_cast<unsigned>(request->content_len));
+  const auto buffer = std::make_unique<std::uint8_t[]>(kHttpPieceBytes);
+  int timeouts = 0;
+  while (updater.state() == update::Updater::State::kWriting && updater.received() < updater.total()) {
+    const std::size_t want = std::min(kHttpPieceBytes, updater.total() - updater.received());
+    const int got = httpd_req_recv(request, reinterpret_cast<char*>(buffer.get()), want);
+    if (got == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts < 6) continue;  // a slow network: up to 30 s of silence
+    if (got <= 0) {
+      updater.cancel("the upload stopped after " + std::to_string(updater.received()) + " bytes");
+      break;
+    }
+    timeouts = 0;
+    if (!updater.feed(std::span<const std::uint8_t>(buffer.get(), static_cast<std::size_t>(got)))) break;
+  }
+  const bool done = updater.state() == update::Updater::State::kWriting && updater.finish();
+  if (!done) {
+    return sendText(request, "400 Bad Request",
+                    "emcool: not updated: " + updater.problem() + "\nThe running firmware is unchanged.\n");
+  }
+  return sendText(request, "200 OK",
+                  "emcool: written and checked: " + update::describe(*updater.incoming()) +
+                      "\nRestart it to run it (the console's `restart`). It boots on trial: let it run 30 s, since a crash "
+                      "or a restart before then goes back to the firmware running now.\n");
+}
+
 // GET /: every boot and part, with links to download them.
 esp_err_t servePage(httpd_req_t* request) {
   if (!authorised(request)) return ESP_OK;
@@ -385,8 +434,10 @@ bool startWebServer() {
   }
   const httpd_uri_t page = {.uri = "/", .method = HTTP_GET, .handler = servePage, .user_ctx = nullptr};
   const httpd_uri_t download = {.uri = "/dl", .method = HTTP_GET, .handler = serveDownload, .user_ctx = nullptr};
+  const httpd_uri_t upload = {.uri = "/update", .method = HTTP_PUT, .handler = serveUpdate, .user_ctx = nullptr};
   httpd_register_uri_handler(link.http, &page);
   httpd_register_uri_handler(link.http, &download);
+  httpd_register_uri_handler(link.http, &upload);
   return true;
 }
 

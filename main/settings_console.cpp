@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "card_files.hpp"
+#include "firmware_update.hpp"
 #include "emcool/log.hpp"
 #include "esp_console.h"
 #include "esp_system.h"
@@ -39,6 +40,13 @@ int card(int argumentCount, char** arguments) {
   }
   if (!cardShell) cardShell = std::make_unique<files::CardShell>(*cardFiles().card, cardFiles().gate, "USB console", 64 * 1024);
   return cardShell->run(argumentCount, arguments, [](std::string& piece) {
+    std::fputs(piece.c_str(), stdout);
+    std::fflush(stdout);
+  });
+}
+
+int updateFirmware(int argumentCount, char** arguments) {
+  return runUpdateCommand(argumentCount, arguments, cardFiles().card, [](std::string& piece) {
     std::fputs(piece.c_str(), stdout);
     std::fflush(stdout);
   });
@@ -157,6 +165,8 @@ bool startSettingsConsole(settings::SettingsStorage& storage, settings::RuntimeS
        .hint = nullptr, .func = network, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
       {.command = "restart", .help = "Restart, so saved settings take effect.", .hint = nullptr, .func = restart,
        .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
+      {.command = "update", .help = kUpdateHelp, .hint = kUpdateHint, .func = updateFirmware, .argtable = nullptr,
+       .func_w_context = nullptr, .context = nullptr},
   };
 
   esp_console_repl_t* repl = nullptr;

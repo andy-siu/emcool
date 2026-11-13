@@ -4,6 +4,7 @@ Wi-Fi is off until two settings are set. Then the bike joins your network as a c
 
 - **The console** on port 23: the same commands as the USB console, with the log following it.
 - **The ride log** on port 80: a page listing every boot and part, and downloads of them.
+- **Firmware updates** on port 80: `PUT /update` with the new `emcool.bin`.
 
 Bluetooth carries on beside it, sharing the radio.
 
@@ -94,6 +95,16 @@ curl -u x:'the admin password' -OJ 'http://192.168.1.42/dl?boot=12&mb=256'
 
 **If a download fails partway** (the card is pulled, or a read fails), the bike drops the connection before the final chunk. `curl` then reports a transfer error, and a browser marks the download failed. A short file is never passed off as whole.
 
+## Firmware updates
+
+```bash
+curl -u x:'the admin password' -T build/emcool.bin http://192.168.1.42/update
+```
+
+The bike checks the image as it arrives, writes it into the spare app slot, checks its hash, and answers with what it will run. It runs at the next `restart`, on trial: a crash in its first 30 s goes back to the old firmware. One update at a time, from here or a console's `update`. The README has the rest, under *Updating without the cable*.
+
+⚠️ The admin password is the only thing between this network and new firmware, and it crosses the network in plain text. Anyone who has seen it can install firmware of their own. Use a network you control, or update from the card instead.
+
 ## What the password does and doesn't protect
 
 - **The password crosses the network in plain text, and so does everything after it.** That includes the console's commands, `set ADMIN_PASSWORD` itself, and the ride log. Anyone on the same network can see all of it: on an open network that's anyone in range, and on WPA2 it's anyone who knows the network's password.
@@ -103,7 +114,7 @@ curl -u x:'the admin password' -OJ 'http://192.168.1.42/dl?boot=12&mb=256'
 
 ## What it costs
 
-- **Flash:** Wi-Fi took the firmware from 1.46 MB to 1.74 MB, even after building for size. That leaves 143 KB free in its 1.875 MB slot, so the next feature of any size will need the two firmware-update slots merged into one (nothing uses the second).
+- **Flash:** Wi-Fi took the firmware from 1.46 MB to 1.74 MB, even after building for size; with the card commands and updates it's 1.81 MB of its 1.875 MB slot. Both slots are in use now (updates write the spare one), so they can't be merged to make room. More room would come from a bigger flash chip, or from shrinking the 128 KB core-dump partition.
 - **The firmware is now built for size (`-Os`), not for debugging (`-Og`).** Both stacks don't fit otherwise: the fast instruction RAM overflowed by 2 KB, and the image outgrew its slot. One cost: a crash's backtrace and variables are a little harder to read, since the compiler inlines and reorders more.
 - **Wi-Fi features left out** (`sdkconfig.defaults`): being an access point, enterprise (802.1X) logins, OWE, and a receive-path speed-up that lives in instruction RAM. Joining a home network or a phone hotspot with WPA2 or WPA3 needs none of them.
 - **The Wi-Fi stack is linked in either way.** Turning Wi-Fi off doesn't make the firmware smaller; it just never starts the radio.

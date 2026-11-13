@@ -3,6 +3,9 @@ CONFIG_IDF_TARGET="esp32"
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+# Over-the-air updates boot on trial: a new image that doesn't confirm itself (main/firmware_update.cpp)
+# goes back to the old one. A bootloader setting, so it takes one USB flash to turn on.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 # A crash on the bike can't be watched over serial; keep the dump for `idf.py coredump-info`.
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
