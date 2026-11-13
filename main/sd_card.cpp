@@ -47,8 +47,10 @@ bool SdCard::mount(int sckGpio, int mosiGpio, int misoGpio, int csGpio) {
   esp_vfs_fat_sdmmc_mount_config_t mountConfig = {};
   mountConfig.format_if_mount_failed = false;
   // The ride log's current part and the next being prepared, service mode's snapshot files (a copy
-  // takes two), and the ride-log download's one. Directory listings don't count against it.
-  mountConfig.max_files = 6;
+  // takes two), the Bluetooth and Wi-Fi ride-log downloads' one each, and a console's cp (two).
+  // Directory listings don't count against it. Each slot costs a few dozen bytes until it's used;
+  // an open file takes its 4 KB sector buffer.
+  mountConfig.max_files = 8;
   mountConfig.allocation_unit_size = 16 * 1024;
 
   const esp_err_t result = esp_vfs_fat_sdspi_mount(kSdMountPoint, &host, &slot, &mountConfig, &card_);

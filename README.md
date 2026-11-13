@@ -121,7 +121,7 @@ emcool> restart
 | `STATUS_REPORT` | `1` | Whether the console prints the periodic status report. Applies at once. |
 | `STATUS_INTERVAL_S` | `10` | Seconds between status reports, 5–3600. Applies at once. |
 
-The console's commands:
+The console's commands, and its [card commands](docs/setup.md#the-card) (`dir`, `cd`, `type`, `rm`, `cp`, `mv`, …):
 
 | Command | What it does |
 | --- | --- |

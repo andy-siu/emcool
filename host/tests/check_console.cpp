@@ -2,6 +2,10 @@
 // NVS: what it lists, what it runs and refuses, the revision check, the status report, and the
 // restart's guards. And, through DashboardEndpoints, that a request's body reaches it.
 
+#include <unistd.h>
+
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -13,6 +17,7 @@
 #include "emcool/ble/json_reader.hpp"
 #include "emcool/ble_server/console_endpoints.hpp"
 #include "emcool/ble_server/endpoints.hpp"
+#include "emcool/files/card_shell.hpp"
 #include "emcool/settings/settings.hpp"
 #include "emcool/signals/signal_store.hpp"
 
@@ -359,6 +364,77 @@ int main() {
     ble_server::DashboardEndpoints without(store, storeMutex, noStorage, noCodes, nullptr, nullptr, "{}");
     response = without.begin({"GET", "/console", "", ""}, 0);
     EMCOOL_CHECK(response && response->status == 404, "/console without a console: %d", response ? response->status : 0);
+  }
+
+  // --- The card's commands from the Bike console: run in slices across polls, and stopped when the
+  // phone gives up.
+  {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / ("emcool-console-card-" + std::to_string(::getpid()));
+    fs::remove_all(root);
+    fs::create_directories(root / "RIDES/00001");
+    std::ofstream(root / "NOTES.TXT") << "hello from the card\n";
+    std::ofstream(root / "BIG.BIN", std::ios::binary) << std::string(300000, 'b');
+    class TestCard final : public files::Card {
+     public:
+      explicit TestCard(std::string root) : root_(std::move(root)) {}
+      const std::string& mountPoint() const override { return root_; }
+      std::mutex& lock() override { return mutex_; }
+      files::CardState state() override { return {true, 1}; }
+      files::CardFacts facts() override { return {1, false}; }
+      std::optional<files::FreeSpace> freeSpace() override { return files::FreeSpace{1ull << 30, 2ull << 30}; }
+      void changed(bool) override {}
+
+     private:
+      std::string root_;
+      std::mutex mutex_;
+    } card(root.string());
+    files::CardShellGate gate;
+    files::CardShell shell(card, gate, "Bike console", ConsoleEndpoints::kMaxOutputBytes);
+    shell.setKeepFreeBytes(0);
+    shell.setMaxOperationsPerStep(4);
+    MemoryStorage storage;
+    settings::RuntimeSettings running(settings::Settings::load(storage));
+    FakeHost host;
+    ConsoleEndpoints endpoints(storage, running, host, &shell);
+    const auto post = [&](std::string_view line, int maxPolls, int& polls) {
+      const std::string body = "{\"line\":" + jsonText(line) + "}";
+      std::optional<ConsoleAnswer> got = endpoints.begin("POST", "/console", "console", body);
+      polls = 0;
+      while (!got && polls < maxPolls) {
+        got = endpoints.poll();
+        polls++;
+      }
+      return got;
+    };
+    int polls = 0;
+    std::optional<ConsoleAnswer> got = post("type NOTES.TXT", 0, polls);
+    Run r = got ? parse(*got) : Run{};
+    EMCOOL_CHECK(got && r.status == 200 && r.ok && contains(r.output, "hello from the card"), "type over /console: %s",
+                 got ? got->body.c_str() : "(none)");
+    got = post("help", 0, polls);
+    EMCOOL_CHECK(got && contains(parse(*got).output, "rm [-r] PATH"), "help lists the card's commands");
+    // A copy of 300 KB takes many polls; the link task is never held for the whole of it.
+    got = post("cp BIG.BIN COPY.BIN", 10000, polls);
+    r = got ? parse(*got) : Run{};
+    EMCOOL_CHECK(got && r.ok && polls > 3 && fs::file_size(root / "COPY.BIN") == 300000, "cp in slices: %d polls, %s",
+                 polls, r.output.c_str());
+    got = post("rm RIDES/00001", 0, polls);
+    EMCOOL_CHECK(got && got->status == 400 && contains(parse(*got).output, "being recorded"), "the live ride from the phone: %s",
+                 got ? got->body.c_str() : "(none)");
+    // The phone gives up mid-copy: the copy stops and the part-made file goes.
+    got = post("cp BIG.BIN COPY2.BIN", 1, polls);
+    EMCOOL_CHECK(!got, "still copying after one poll");
+    endpoints.abandon();
+    EMCOOL_CHECK(!fs::exists(root / "COPY2.BIN") && !shell.running(), "abandon removes the part-made copy");
+    got = post("dir", 0, polls);
+    EMCOOL_CHECK(got && parse(*got).ok && contains(parse(*got).output, "COPY.BIN"), "and the next command runs: %s",
+                 got ? got->body.c_str() : "(none)");
+    // Without a card, a card command says so.
+    ConsoleEndpoints cardless(storage, running, host);
+    got = cardless.begin("POST", "/console", "console", "{\"line\":\"dir\"}");
+    EMCOOL_CHECK(got && got->status == 503 && contains(parse(*got).output, "no card"), "no card from the phone");
+    fs::remove_all(root);
   }
 
   std::printf("check_console: %d failures\n", emcool::test::failures());

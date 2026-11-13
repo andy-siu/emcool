@@ -24,6 +24,7 @@
 
 #include "ble_link.hpp"
 #include "boot_guard.hpp"
+#include "card_files.hpp"
 #include "bootloader_random.h"
 #include "can_bus.hpp"
 #include "dashboard_console.hpp"
@@ -187,6 +188,9 @@ extern "C" void app_main() {
   // /dl reads the card from the Bluetooth task; with no card configured there is nothing to read.
   static emcool::ride_log::LogDownload logDownload(cardAccess);
   emcool::ride_log::LogDownload* download = emcool::startRideLogTask(rideLogTaskContext) ? &logDownload : nullptr;
+  // The consoles' card commands (dir, cd, rm, cp, …), on the card the ride-log task mounts.
+  static emcool::BikeCard bikeCard(cardAccess, writer, rideLogTaskCounters);
+  if (download != nullptr) emcool::setCardFiles(&bikeCard);
   emcool::noteHeap("the ride log");
 
   auto* storeAllocation = allocate<emcool::signals::SignalStore>("live state", rideLog);
@@ -205,7 +209,10 @@ extern "C" void app_main() {
   // Settings → Bike console: the console's commands and status report over the Bluetooth link.
   static emcool::StatusText statusText;
   static emcool::DashboardConsoleHost consoleHost(statusText, store, storeMutex, *diagnostics);
-  static emcool::ble_server::ConsoleEndpoints consoleEndpoints(settingsStorage, runtimeSettings, consoleHost);
+  static emcool::files::CardShell bikeConsoleCard(bikeCard, emcool::cardFiles().gate, "Bike console",
+                                                 emcool::ble_server::ConsoleEndpoints::kMaxOutputBytes);
+  static emcool::ble_server::ConsoleEndpoints consoleEndpoints(settingsStorage, runtimeSettings, consoleHost,
+                                                               download != nullptr ? &bikeConsoleCard : nullptr);
   // NimBLE keeps PHY calibration in NVS; without it the radio can't start.
   static BluetoothParts bluetoothParts{settings, store,           storeMutex,      storageReport,  *diagnostics,
                                        download, session,         bleLinkCounters, consoleEndpoints};

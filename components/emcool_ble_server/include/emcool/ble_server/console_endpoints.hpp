@@ -13,7 +13,9 @@
 //                          Answers {ok, output, revision, restarting}.
 //
 // The commands: show, set NAME VALUE, unset NAME, status [on | off | every SECONDS], network,
-// restart and help. `revision` counts what has been saved since boot, from any console. A command
+// restart and help, and the card's (emcool/files/card_shell.hpp): dir, cd, pwd, type, mkdir, rmdir,
+// rm, cp and mv. A card command that takes a while (rm -r, a big cp) runs a slice per poll(), so it
+// never holds up the link; its output comes back when it has finished, capped at kMaxOutputBytes. `revision` counts what has been saved since boot, from any console. A command
 // that saves is refused once another console or phone has saved since the page read it, so a
 // stale page can't overwrite a change it never saw. Reads and `restart` need no revision.
 //
@@ -36,6 +38,7 @@
 #include <vector>
 
 #include "emcool/ble/json_reader.hpp"
+#include "emcool/files/card_shell.hpp"
 #include "emcool/settings/settings.hpp"
 
 namespace emcool::ble_server {
@@ -66,9 +69,13 @@ class ConsoleEndpoints {
   static constexpr std::string_view kHeaderValue = "console";
   // As the Wi-Fi console's: a command needs far less, a secret 128 characters.
   static constexpr std::size_t kMaxLineBytes = 512;
+  // What a card command prints, at most: a reply is one message the phone holds whole.
+  static constexpr std::size_t kMaxOutputBytes = 6 * 1024;
 
-  ConsoleEndpoints(settings::SettingsStorage& storage, settings::RuntimeSettings& running, ConsoleHost& host)
-      : storage_(storage), running_(running), host_(host) {}
+  // `card`, when the bike has one, runs the card's commands; without it they say there's no card.
+  ConsoleEndpoints(settings::SettingsStorage& storage, settings::RuntimeSettings& running, ConsoleHost& host,
+                   files::CardShell* card = nullptr)
+      : storage_(storage), running_(running), host_(host), card_(card) {}
 
   static bool handles(std::string_view route) { return route == "/console" || route == "/console/status"; }
 
@@ -76,10 +83,8 @@ class ConsoleEndpoints {
   std::optional<ConsoleAnswer> begin(std::string_view method, std::string_view route, std::string_view header,
                                      std::string_view body);
   std::optional<ConsoleAnswer> poll();
-  void abandon() {
-    waitingForStatus_ = false;
-    askedForStatus_ = false;
-  }
+  // The phone gave up, or went: a card command still running is stopped, and its part-made copy removed.
+  void abandon();
 
  private:
   ConsoleAnswer settingsList();
@@ -89,6 +94,10 @@ class ConsoleEndpoints {
   settings::SettingsStorage& storage_;
   settings::RuntimeSettings& running_;
   ConsoleHost& host_;
+  files::CardShell* card_;
+  // A card command running across polls, and what it has printed so far.
+  bool cardRunning_ = false;
+  std::string cardOutput_;
   bool waitingForStatus_ = false;
   bool askedForStatus_ = false;
   // The report answers a typed `status`, as the command's JSON, rather than GET /console/status.

@@ -92,6 +92,11 @@ class LogWriter {
   // One step of background zero-filling. Returns false when there is nothing left to do.
   bool prepareAhead();
 
+  // A console changed the card (deleted parts, freed space): the writer counts its parts again,
+  // and tries again to prepare a next part it had no room for, at its next prepareAhead(). Safe
+  // from any task; the work happens on the writer's.
+  void cardChanged() { cardChanged_.store(true, std::memory_order_relaxed); }
+
   const LogWriterCounters& counters() const { return counters_; }
   std::uint32_t partBytes() const { return config_.partBytes; }
   const std::string& rootDirectory() const { return config_.rootDirectory; }
@@ -116,6 +121,7 @@ class LogWriter {
   bool writeMetadataRecords(clock::ClockTrust trust);
   bool writeRecordAtEnd(const std::uint8_t* record, std::size_t length);
   bool fail(const char* operation, const std::string& path);
+  void recountParts();
   std::string bootDirectory() const;
   std::string bootDirectory(std::uint32_t bootNumber) const;
   std::string partPath(std::uint32_t number) const;
@@ -129,8 +135,9 @@ class LogWriter {
   Part current_;
   Part next_;
   bool nextReady_ = false;
-  // No room for the next part even after rotating; set until the next open().
+  // No room for the next part even after rotating; set until the next open() or cardChanged().
   bool nextPartBlocked_ = false;
+  std::atomic<bool> cardChanged_{false};
   std::uint32_t nextRecordIndex_ = 0;
   LogWriterCounters counters_;
   // liveExtent()'s copy, set after each fsync and part switch.
