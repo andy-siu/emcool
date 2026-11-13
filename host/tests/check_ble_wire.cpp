@@ -103,7 +103,7 @@ void checkDeflate() {
   Deflater deflater;
   std::mt19937 random(7);
   checkRoundTrip(deflater, {}, "empty");
-  for (std::size_t size : {1u, 2u, 3u, 4u, 257u, 258u, 259u, 4095u, 4096u, 4097u, 4608u}) {
+  for (std::size_t size : {1u, 2u, 3u, 4u, 257u, 258u, 259u, 2559u, 2560u, 4095u, 4096u, 4097u, 4608u}) {
     std::vector<std::uint8_t> uniform(size);
     for (auto& byte : uniform) byte = static_cast<std::uint8_t>(random());
     checkRoundTrip(deflater, uniform, "random bytes");
@@ -173,7 +173,8 @@ void checkFrames() {
   std::mt19937 random(11);
   FrameAssembler assembler;
   for (std::size_t maxFrame : {23u - 3u, 180u, 182u, 244u, 512u}) {
-    for (std::size_t size : {0u, 1u, 177u, 178u, 179u, 1000u, 4000u}) {
+    for (std::size_t size : {std::size_t{0}, std::size_t{1}, std::size_t{177}, std::size_t{178}, std::size_t{179},
+                              std::size_t{1000}, kMaxEnvelopeBytes}) {
       std::vector<std::uint8_t> envelope(size);
       for (auto& byte : envelope) byte = static_cast<std::uint8_t>(random());
       FrameSplitter splitter(envelope, static_cast<std::uint8_t>(size), maxFrame);

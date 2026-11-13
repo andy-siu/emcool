@@ -33,3 +33,17 @@ CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
 CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
 CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA=n
 CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+
+# RAM. With Bluetooth, OBD and the card all on, the heap ran out at boot. The controller keeps
+# 1 KB per connection it allows, and emcool serves one phone. NimBLE's own buffers are sized
+# for many connections; one phone writing 180-byte frames needs far fewer. Wi-Fi uses ESP-IDF's
+# "memory saving" profile (api-guides/wifi-driver/wifi-performance-and-power-save.rst), which is
+# plenty for the console and the ride-log page.
+CONFIG_BTDM_CTRL_BLE_MAX_CONN=1
+CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT=8
+CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT=12
+CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=12
+CONFIG_BT_NIMBLE_TRANSPORT_EVT_COUNT=15
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=12
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=12

@@ -134,6 +134,8 @@ How the console behaves:
 
 The values loaded at boot are in the first lines of the console output. cool-eva's other environment variables come back with the features they configure.
 
+If a setting makes the board crash at boot, three crashes in a row within 30 s of boot start it in **safe mode**: only the serial console runs, so you can undo the setting and `restart`. See [`docs/setup.md`](docs/setup.md#when-a-setting-runs-the-memory-out).
+
 ### Transmitting
 
 emcool sends nothing on the bike's bus unless a setting asks it to, and every such setting defaults to `0`. Some of cool-eva's, such as `OBD_ENABLED`, default to on.

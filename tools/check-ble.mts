@@ -439,7 +439,7 @@ let stream = await phone.collect(0);
 const snapshot = mergeStream(stream, "snapshot");
 const snapshotChunks = stream.filter(message => message.header?.type === "snapshot").length;
 sameLiveState("first snapshot", snapshot, liveBefore);
-check(snapshotChunks > 1, `the snapshot came in ${snapshotChunks} chunk(s); expected several at ~4.5 KB each`);
+check(snapshotChunks > 1, `the snapshot came in ${snapshotChunks} chunk(s); expected several at ~2.5 KB each`);
 check(Math.max(...phone.frameSizes) <= 180, `a notification of ${Math.max(...phone.frameSizes)} bytes at MTU 185 (MTU − 5)`);
 
 // Patches carry the latest values of what changed; a heartbeat snapshot then matches the store.

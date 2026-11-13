@@ -36,8 +36,10 @@ inline constexpr std::string_view kInfoCharacteristicUuid = "7c0e0004-5f3a-4c8e-
 
 // The ATT ceiling on a characteristic value, and so on a phone → bike frame.
 inline constexpr std::size_t kMaxWriteFrameBytes = 512;
-// The largest message either way: snapshot chunks, patches and responses are built to fit.
-inline constexpr std::size_t kMaxMessageBytes = 4608;
+// The largest message either way: snapshot chunks, patches and responses are built to fit. Every
+// buffer on the link is sized by it (five of them, plus three outbound slots), so it is small to
+// leave the heap room for OBD, the card and Wi-Fi: a 2 KB response piece and its header fit.
+inline constexpr std::size_t kMaxMessageBytes = 2560;
 // Sealed: 9-byte prefix, deflate output (at most 5 bytes over its input), GCM tag.
 inline constexpr std::size_t kMaxEnvelopeBytes = 9 + kMaxMessageBytes + 5 + kGcmTagBytes;
 inline constexpr std::size_t kFrameHeaderBytes = 2;

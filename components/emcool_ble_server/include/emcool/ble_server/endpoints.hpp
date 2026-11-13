@@ -120,7 +120,8 @@ class DashboardEndpoints final : public RequestHandler {
  public:
   // cool-eva's FRESH_MS: a signal counts as live in /status if it arrived this recently.
   static constexpr std::int64_t kFreshMs = 10000;
-  // The largest body built whole (/status, the 404s), and the largest piece handed out.
+  // The largest body built whole (/status, the 404s), and the largest piece handed out: one
+  // response piece (BleServer::kResponseChunkBytes) at a time.
   static constexpr std::size_t kBufferBytes = 4 * 1024;
 
   // How many of the download's planning steps one poll may take. Each lists a directory or bisects
