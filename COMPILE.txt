@@ -1,0 +1,22 @@
+0. download silicon labs cp210x USB driver for windows
+1. Download IDF v6.1 from espressif.com
+
+2. theres a powershell installed on desktop.  Thats what we will use.
+ IDF_v6.1_Powershell
+3.  cd emcool; 
+    idf.py build
+    idf.py flash
+    idf.py -p COM5 monitor or idf.py monitor
+
+4. Or use the make shortcuts instead of step 3. Windows doesn't come with make,
+   so install it once, then open a new PowerShell:
+    winget install ezwinports.make
+
+    cd emcool
+    make build      (or just: make)
+    make flash      (or: make flash PORT=COM5)
+    make monitor    (or: make monitor PORT=COM5)
+
+   Ctrl-] quits the monitor. If make doesn't work in that PowerShell, use step 3.
+
+
