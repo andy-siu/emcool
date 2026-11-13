@@ -53,7 +53,7 @@ Pin 1 is CAN_**L**: the schematic crosses the two lines before the connector.
 
 ### Pins for add-on modules
 
-The microSD pins are firmware defaults (`idf.py menuconfig` → emcool → microSD card). The coolant-probe pins are planned only, not coded yet.
+The microSD pins are firmware defaults (`idf.py menuconfig` → emcool → microSD card); [`docs/sd-card-wiring.md`](docs/sd-card-wiring.md) has the card's pinout and the pull-ups it needs. The coolant-probe pins are planned only, not coded yet.
 
 | Function | GPIO | Header pin |
 | --- | --- | --- |
