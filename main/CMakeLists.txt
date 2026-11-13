@@ -1,5 +1,5 @@
 idf_component_register(
-  SRCS main.cpp ble_link.cpp boot_guard.cpp can_bus.cpp card_files.cpp dashboard_console.cpp diagnostics_task.cpp ride_log_task.cpp sd_card.cpp settings_console.cpp status_report.cpp system_time.cpp wifi_link.cpp
+  SRCS main.cpp ble_link.cpp boot_guard.cpp can_bus.cpp card_files.cpp dashboard_console.cpp diagnostics_task.cpp firmware_update.cpp ride_log_task.cpp sd_card.cpp settings_console.cpp status_report.cpp system_time.cpp wifi_link.cpp
   INCLUDE_DIRS .
   REQUIRES
     bootloader_support
@@ -11,11 +11,13 @@ idf_component_register(
     emcool_can
     emcool_clock
     emcool_files
+    emcool_update
     emcool_log
     emcool_ride_log
     emcool_settings
     emcool_signals
     emcool_vcu
+    app_update
     esp_app_format
     esp_driver_sdspi
     esp_driver_spi

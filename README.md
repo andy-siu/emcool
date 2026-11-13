@@ -92,7 +92,28 @@ idf.py build flash monitor
 
 - **Pins:** the CAN and microSD pins default to this board's (GPIO25/26, and the SPI header). For a different board, change them under `idf.py menuconfig` → emcool. Setting a pin to -1 turns that part off.
 - **Build options:** these live in `sdkconfig.defaults`. The generated `sdkconfig` isn't tracked, so after changing the defaults, delete `sdkconfig` and the build regenerates it.
-- **Optimised for size:** the firmware is built with `-Os`, not `-Og`, because Bluetooth and Wi-Fi together don't fit otherwise. It's 1.74 MB of the 1.875 MB app slot.
+- **Optimised for size:** the firmware is built with `-Os`, not `-Og`, because Bluetooth and Wi-Fi together don't fit otherwise. It's 1.81 MB of the 1.875 MB app slot.
+
+### Updating without the cable
+
+After the first USB flash, new firmware can go on over the air, from the microSD card or over Wi-Fi. Both write the new image into the spare app slot while the bike keeps running, check it, and boot it at the next `restart`:
+
+```
+emcool> update /emcool.bin      after copying build/emcool.bin onto the card
+emcool> restart
+```
+
+```bash
+curl -u :'the admin password' -T build/emcool.bin http://emcool.local/update
+```
+
+- **On trial:** a new image is kept once it has run 30 s. A crash, a watchdog reset, a power cut or a `restart` before then boots the old one again, and `update status` says so. So let it run 30 s before restarting it.
+- **Parked, with the bus free:** writing flash pauses the CAN bus's interrupt for tens of milliseconds at a time, which drops frames and could cut a service write short. So an update waits for what `restart` waits for: it's refused while a fresh reading says the bike is moving or in drive, and while service mode or the OBD poller's hold has the bus.
+- **Refused, with the slot untouched:** a file that isn't an ESP32 app, another project's firmware, the bootloader or a merged image. Anything cut short or corrupt is caught by the image's own hash before the boot slot changes.
+- **The first time needs the cable.** Trial boots are a bootloader setting (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`), and only `idf.py flash` writes the bootloader. A board flashed before this has no trial boot: an update still works, but nothing undoes a bad one.
+- **USB is always the way back.** `idf.py flash` writes slot 0 and points the boot at it, whatever the update did.
+
+Each slot holds a whole image, so the app has to stay under 1.875 MB.
 
 ## Settings
 

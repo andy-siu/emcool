@@ -25,6 +25,7 @@
 #include "ble_link.hpp"
 #include "boot_guard.hpp"
 #include "card_files.hpp"
+#include "firmware_update.hpp"
 #include "bootloader_random.h"
 #include "can_bus.hpp"
 #include "dashboard_console.hpp"
@@ -132,6 +133,7 @@ extern "C" void app_main() {
   const esp_app_desc_t* app = esp_app_get_description();
   emcool::logInfo(kTag, "emcool %s, ESP-IDF %s", app->version, app->idf_ver);
   const bool safeMode = emcool::beginBoot();
+  emcool::startFirmwareTrial();
   emcool::noteHeap("boot");
   const bool nvsReady = initNvs();
   // The settings, from NVS; defaults wherever nothing has been saved.
@@ -209,6 +211,8 @@ extern "C" void app_main() {
   // Settings → Bike console: the console's commands and status report over the Bluetooth link.
   static emcool::StatusText statusText;
   static emcool::DashboardConsoleHost consoleHost(statusText, store, storeMutex, *diagnostics);
+  // An update waits for what a restart waits for: flash writes pause the CAN interrupt.
+  emcool::setUpdateBlockers([] { return consoleHost.restartBlockers(); });
   static emcool::files::CardShell bikeConsoleCard(bikeCard, emcool::cardFiles().gate, "Bike console",
                                                  emcool::ble_server::ConsoleEndpoints::kMaxOutputBytes);
   static emcool::ble_server::ConsoleEndpoints consoleEndpoints(settingsStorage, runtimeSettings, consoleHost,
