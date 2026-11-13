@@ -15,21 +15,20 @@ Code:
 
 ## Turning it on
 
-Generate the Bluetooth key from the serial console that `idf.py monitor` opens, then restart:
+Set the Bluetooth key on the serial console that `idf.py monitor` (or `make monitor`) opens. Bluetooth turns on at once, with no restart:
 
 ```
-emcool> new-ble-key
-emcool> restart
+emcool> set BLE_SECRET <your key>
+BLE_SECRET saved; Bluetooth is on now. Enter the same key in the dashboard and tap Connect
 ```
 
-`new-ble-key` draws 32 random bytes, saves them as `BLE_SECRET` (64 lower-case hex characters) and prints the key **once**. Keep a copy: a password manager, or the note you'll paste it from. On the phone, open the dashboard's menu, paste the key under *Bluetooth → Use an existing access code*, and tap *Connect this phone*. A second phone gets the same key; `new-ble-key replace` makes a new one and locks out every phone holding the old.
+Keep a copy of the key: a password manager, or the note you'll paste it from. On the phone, open the dashboard's menu, paste the key under *Bluetooth → Use an existing access code*, and tap *Connect this phone*. A second phone gets the same key.
 
-- **Why generated:** protocol 2 has no lockout after a wrong key, as cool-eva's doesn't. A random 256-bit key leaves nothing to guess, where a typed phrase leaned on a 2 s cooldown.
-- **Typed keys:** `set BLE_SECRET <key>` takes a generated key made elsewhere (the dashboard's *New key*, say), or one you choose: 8-64 printable ASCII characters with at least one letter and one digit, and no spaces, quotes or backslashes. A generated key pasted in upper case is lowered, as the dashboard does; a typed key keeps its case, so `Bike2024` and `bike2024` are different keys. Anything else is refused, and the dashboard checks the same rule.
-- ⚠️ **A short typed key is weak.** There is no lockout, and anyone who records one connection's HELLO can test guesses against it offline, as fast as their computer allows. An 8-character key can fall in hours to days. Use `new-ble-key`, or type a long random key, all the more with `SERVICE_WRITE_ENABLED` on.
+- **The key:** 8-64 printable ASCII characters with at least one letter and one digit, and no spaces, quotes or backslashes, or 64 hex characters. `openssl rand -hex 32` makes a random one, and so does the Bike console's *New key*. A 64-hex key pasted in upper case is lowered, as the dashboard does; a typed key keeps its case, so `Bike2024` and `bike2024` are different keys. Anything else is refused, and the dashboard checks the same rule.
+- ⚠️ **A short typed key is weak.** Protocol 2 has no lockout after a wrong key, and anyone who records one connection's HELLO can test guesses against it offline, as fast as their computer allows. An 8-character key can fall in hours to days. Use a random 64-hex key, all the more with `SERVICE_WRITE_ENABLED` on.
+- **Once per boot:** the first `set BLE_SECRET` with Bluetooth off starts it. Once Bluetooth is on, a new key is saved for the next `restart`, and phones holding the running key stay connected until then; `show` marks it as waiting. If the start fails (the log says why), the key is still saved and `restart` tries again.
+- **Over Wi-Fi:** `set BLE_SECRET` works on the Wi-Fi console too, but the key then crosses the network in plain text. Prefer the USB console.
 - **An old phrase:** a key saved before this firmware with a space, or with no letter or no digit, no longer validates. The boot log warns, and Bluetooth stays off until you set a new one.
-- **Not over Wi-Fi:** `new-ble-key` runs only on the USB console, since the Wi-Fi console is plain text on the network.
-- **Randomness:** the ESP32's hardware RNG is only truly random while a radio runs or its SAR ADC source is on (ESP-IDF, "Random Number Generation"). With Bluetooth and Wi-Fi both off, which is the case before the first key, the console switches the bootloader's entropy source on for the draw.
 
 With no key, the bike doesn't advertise, and the boot log says `Bluetooth is off: no Bluetooth key`. cool-eva's [`docs/connecting-over-bluetooth.md`](https://github.com/andy-siu/cool-eva/blob/main/docs/connecting-over-bluetooth.md) has the phone-side steps.
 
@@ -37,10 +36,10 @@ After a reload or relaunch, the page asks the browser (`navigator.bluetooth.getD
 
 The bike advertises as **emcool** (`set BLE_NAME …` changes this). The phone finds it by cool-eva's service UUID, not by name, so a Pi running cool-eva would appear in the same list.
 
-The key lives in NVS, not in the firmware image or the build directory. The console prints it only once, as `new-ble-key` makes it; `show` says only `set`. The bike never sends it back:
+The key lives in NVS, not in the firmware image or the build directory. The console never prints it; `show` says only `set`. The bike never sends it back:
 
 - **The phone's copy:** after a `wrong secret`, tick **Show key** under the dashboard's Bluetooth box. It shows the key that page holds, in full, so you can compare it with your saved copy. Each origin keeps its own copy.
-- **Settings → Dashboard Bluetooth → Show key:** on cool-eva this reads the Pi's saved and active keys back (`POST /settings/bluetooth-key`, reachable over the Pi's Wi-Fi). emcool refuses it with a 405, and the page shows why beside the button. On emcool that request can only arrive over a Bluetooth session, which means the phone already holds the running key. The only new thing it could learn is a key saved by `new-ble-key replace` but not yet restarted into, and that key is meant to lock old phones out. If every copy is lost, `new-ble-key replace` on the USB console makes a new key. Anyone with the board and a flasher could still read NVS, which is the same exposure as cool-eva's `/etc/default/cool-eva` on the Pi's SD card. ESP32 flash encryption would close that hole, but it can't be undone and complicates reflashing.
+- **Settings → Dashboard Bluetooth → Show key:** on cool-eva this reads the Pi's saved and active keys back (`POST /settings/bluetooth-key`, reachable over the Pi's Wi-Fi). emcool refuses it with a 405, and the page shows why beside the button. On emcool that request can only arrive over a Bluetooth session, which means the phone already holds the running key. The only new thing it could learn is a replacement key saved but not yet restarted into, and that key is meant to lock old phones out. If every copy is lost, set a new `BLE_SECRET` on the USB console and restart. Anyone with the board and a flasher could still read NVS, which is the same exposure as cool-eva's `/etc/default/cool-eva` on the Pi's SD card. ESP32 flash encryption would close that hole, but it can't be undone and complicates reflashing.
 
 ## What works
 
@@ -95,7 +94,7 @@ The key lives in NVS, not in the firmware image or the build directory. The cons
   - **`GET /console/status`:** the status report as text, then the `network` report. The decode task owns the report's counters, so it writes the text when it next runs, and the request waits for it, as a service request does.
   - **`POST /console`**, behind `X-Emcool: console`, takes a JSON body of `{"line": "set OBD_ENABLED 1", "revision": 7}`. The line is split into words as the consoles split it. It answers `{ok, output, revision, restarting}`. Its rules:
     - **The revision:** a line that saves needs the `revision` the page read, and gets a 409 if anything has been saved since. The check and the save happen together, under the lock all three consoles take for a command.
-    - **Refusals:** a missing header gets the 403 shape that tells the page to reload. `new-ble-key` and anything but one line of at most 512 characters and eight words get a 400.
+    - **Refusals:** a missing header gets the 403 shape that tells the page to reload. An unknown command and anything but one line of at most 512 characters and eight words get a 400.
     - **`restart`:** answered 409 when the bike isn't parked or the bus is in use. If a new `BLE_SECRET` is saved, it also needs `"bluetoothKey"` in the body to match that key. The bike restarts 1.5 s after the reply.
   - **Request bodies:** the server now keeps a REQUEST's body, up to 1 KB, and hands it to the endpoint. A larger body gets the server's own 413, and is never cut short and acted on.
 - **Everything else** answers 404, with a body saying the endpoint isn't on emcool yet. That covers fan control, `/update`, `/can-restart`, `/recording/flush` and `/waypoint`. The dashboard shows the error where it would show the result.
@@ -161,7 +160,7 @@ With Bluetooth on, the static-data region is too small for them. The 10 s status
   - **Saving:** a `set` saves and moves the revision on. A stale revision, or one made stale by the serial console's save, is refused with nothing saved.
   - **Checks:** the console's own checks still hold, including quoted and escaped values.
   - **Status:** `status` returns the report rather than printing it.
-  - **Refusals:** `new-ble-key`, a missing or wrong header, a second line, an overlong line, nine words and an unknown command are all refused.
+  - **Refusals:** a missing or wrong header, a second line, an overlong line, nine words and an unknown command (`new-ble-key` among them) are all refused.
   - **Restart:** refused while blocked, with the old key or none when a new one is saved, and with the key unset. It goes ahead with the new key, and with the running key saved back.
 
   Removing the revision check, the secret masking or the restart's key check each makes it fail.

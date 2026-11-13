@@ -106,11 +106,19 @@ emcool::ride_log::SessionId newSessionId();
 bool initNvs();
 template <typename Type, typename... Arguments>
 Type* allocate(const char* what, Arguments&&... arguments);
-bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
-                    std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
-                    emcool::DiagnosticsTask& diagnostics, emcool::ride_log::LogDownload* download,
-                    const emcool::ride_log::SessionId& session, emcool::BleLinkCounters& counters,
-                    emcool::ble_server::ConsoleEndpoints& console);
+// What Bluetooth needs to start, kept for a start after boot: `set BLE_SECRET` on a console.
+struct BluetoothParts {
+  const emcool::settings::Settings& settings;
+  emcool::signals::SignalStore& store;
+  std::mutex& storeMutex;
+  emcool::ble_server::StorageReport& storage;
+  emcool::DiagnosticsTask& diagnostics;
+  emcool::ride_log::LogDownload* download;
+  const emcool::ride_log::SessionId& session;
+  emcool::BleLinkCounters& counters;
+  emcool::ble_server::ConsoleEndpoints& console;
+};
+bool startBluetooth(const BluetoothParts& parts, const std::string& key);
 std::string dashboardInstanceId();
 std::string bluetoothCodeId(const std::string& key);
 void logSettings(const emcool::settings::Settings& settings);
@@ -184,21 +192,32 @@ extern "C" void app_main() {
   static emcool::DashboardConsoleHost consoleHost(statusText, store, storeMutex, *diagnostics);
   static emcool::ble_server::ConsoleEndpoints consoleEndpoints(settingsStorage, runtimeSettings, consoleHost);
   // NimBLE keeps PHY calibration in NVS; without it the radio can't start.
-  const bool bluetooth = nvsReady && startBluetooth(settings, store, storeMutex, storageReport, *diagnostics, download,
-                                                    session, bleLinkCounters, consoleEndpoints);
+  static const BluetoothParts bluetoothParts{settings, store,           storeMutex,      storageReport,  *diagnostics,
+                                             download, session,         bleLinkCounters, consoleEndpoints};
+  const bool keyAtBoot = emcool::ble::BleSession::secretIsUsable(settings.bleSecret);
+  if (!keyAtBoot) {
+    emcool::logWarning(kTag, "Bluetooth is off: no Bluetooth key. On the serial console: set BLE_SECRET <key>, and "
+                             "Bluetooth starts at once");
+  }
+  const bool bluetooth = nvsReady && keyAtBoot && startBluetooth(bluetoothParts, settings.bleSecret);
+  // Started at most once per boot: with no key at boot, the first `set BLE_SECRET` starts it.
+  runtimeSettings.setBluetoothStarter(
+      nvsReady && !keyAtBoot ? emcool::settings::RuntimeSettings::BluetoothStarter(
+                                   [](const std::string& key) { return startBluetooth(bluetoothParts, key); })
+                             : nullptr,
+      bluetooth);
   // Wi-Fi after Bluetooth: they share the radio, and coexistence wants the Bluetooth controller up first.
   static emcool::WifiCounters wifiCounters;
   const bool wifi = nvsReady && emcool::startWifi(settings, settingsStorage, runtimeSettings,
                                                   download != nullptr ? &cardAccess : nullptr, wifiCounters);
   static emcool::StatusReport status({bus, store, storeMutex, rideLog, writer, rideLogTaskCounters, clock,
-                                      bleLinkCounters, bluetooth, wifiCounters, wifi, runtimeSettings, diagnostics,
-                                      statusText});
+                                      bleLinkCounters, wifiCounters, wifi, runtimeSettings, diagnostics, statusText});
   static DecodeContext context{bus, decoder, packTemperature, store, storeMutex, rideLog, clock, status, *diagnostics};
   if (xTaskCreatePinnedToCore(decodeTask, "decode", kDecodeTaskStackBytes, &context, kDecodeTaskPriority, nullptr,
                               kDecodeTaskCore) != pdPASS) {
     emcool::logError(kTag, "could not create the decode task (%" PRIu32 " bytes of stack)", kDecodeTaskStackBytes);
   }
-  emcool::startSettingsConsole(settingsStorage, runtimeSettings, bluetooth || wifi);
+  emcool::startSettingsConsole(settingsStorage, runtimeSettings);
 }
 
 namespace {
@@ -288,14 +307,11 @@ bool initNvs() {
   return true;
 }
 
-// The phone link, if it has a usable secret and the crypto passes its known-answer tests.
-bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals::SignalStore& store,
-                    std::mutex& storeMutex, emcool::ble_server::StorageReport& storage,
-                    emcool::DiagnosticsTask& diagnostics, emcool::ride_log::LogDownload* download,
-                    const emcool::ride_log::SessionId& session, emcool::BleLinkCounters& counters,
-                    emcool::ble_server::ConsoleEndpoints& console) {
-  if (!emcool::ble::BleSession::secretIsUsable(settings.bleSecret)) {
-    emcool::logWarning(kTag, "Bluetooth is off: no Bluetooth key. On the serial console: new-ble-key, then restart");
+// The phone link with `key`, if it is usable and the crypto passes its known-answer tests: at boot
+// with the saved key, or later from a console's `set BLE_SECRET`, at most once per boot.
+bool startBluetooth(const BluetoothParts& parts, const std::string& key) {
+  if (!emcool::ble::BleSession::secretIsUsable(key)) {
+    emcool::logWarning(kTag, "Bluetooth is off: the Bluetooth key isn't usable");
     return false;
   }
   if (!emcool::ble::initCrypto() || !emcool::ble::cryptoSelfTest()) {
@@ -303,17 +319,18 @@ bool startBluetooth(const emcool::settings::Settings& settings, emcool::signals:
     return false;
   }
   const std::string instanceId = dashboardInstanceId();
-  const std::string codeId = bluetoothCodeId(settings.bleSecret);
+  const std::string codeId = bluetoothCodeId(key);
   std::string settingsReply = emcool::settings::dashboardSettingsReply(
-      settings, {esp_app_get_description()->version, session.hex.data(), instanceId, download != nullptr, codeId});
+      parts.settings,
+      {esp_app_get_description()->version, parts.session.hex.data(), instanceId, parts.download != nullptr, codeId});
   auto* endpoints = allocate<emcool::ble_server::DashboardEndpoints>(
-      "the dashboard endpoints", store, storeMutex, storage, diagnostics, &diagnostics, download,
-      std::move(settingsReply), &console);
+      "the dashboard endpoints", parts.store, parts.storeMutex, parts.storage, parts.diagnostics, &parts.diagnostics,
+      parts.download, std::move(settingsReply), &parts.console);
   auto* server = endpoints == nullptr ? nullptr
-                                      : allocate<emcool::ble_server::BleServer>("the Bluetooth server",
-                                                                                 settings.bleSecret, store, storeMutex,
+                                      : allocate<emcool::ble_server::BleServer>("the Bluetooth server", key,
+                                                                                 parts.store, parts.storeMutex,
                                                                                  *endpoints);
-  return server != nullptr && emcool::startBleLink(*server, settings.bleName.c_str(), counters);
+  return server != nullptr && emcool::startBleLink(*server, parts.settings.bleName.c_str(), parts.counters);
 }
 
 // What this boot runs with — the secret only by its length — and cool-eva's BMS line.

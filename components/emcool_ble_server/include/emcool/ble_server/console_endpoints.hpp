@@ -17,10 +17,10 @@
 // that saves is refused once another console or phone has saved since the page read it, so a
 // stale page can't overwrite a change it never saw. Reads and `restart` need no revision.
 //
-// Not `new-ble-key`: the key would be made on the bike and sent back over the link it replaces.
-// The dashboard makes its own (Connections → Dashboard Bluetooth → New key). A typed
-// `set BLE_SECRET <64 hex>` works here as on the console. Secrets are never sent back: a password
-// reads as set or not, with its length, as `show` prints it.
+// `set BLE_SECRET <key>` works here as on the console; the Bike console's New key makes one on the
+// phone. Bluetooth is already on whenever this page can reach it, so a new key waits for the
+// restart. Secrets are never sent back: a password reads as set or not, with its length, as `show`
+// prints it.
 //
 // `restart` waits for a parked bike and a free bus: it is refused while a fresh reading says the
 // bike is moving, in drive or asked to be, or while a service read or write holds the bus. And, as

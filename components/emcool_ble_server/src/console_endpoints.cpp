@@ -49,8 +49,7 @@ ConsoleAnswer reply(int status, bool ok, const std::string& output, std::uint32_
 constexpr std::string_view kHelp =
     "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | network | restart\n"
     "Quote a value with spaces: set WIFI_SSID \"garage wifi\". Most settings take effect after restart; "
-    "the status report's apply at once.\n"
-    "(new-ble-key only on the USB console; Connections → Dashboard Bluetooth makes a key here)\n";
+    "the status report's apply at once.\n";
 
 }  // namespace
 
@@ -119,7 +118,7 @@ std::optional<std::string> ConsoleEndpoints::restartRefusal(const ble::JsonObjec
   const settings::SettingSpec& keySpec = *settings::findSetting("BLE_SECRET");
   bool stored = false;
   const std::string savedKey = settings::savedValue(storage_, keySpec, stored);
-  if (savedKey == running_.boot().bleSecret) return std::nullopt;
+  if (savedKey == running_.valueOf(keySpec)) return std::nullopt;
   if (savedKey.empty()) {
     return std::string("not restarting from here: BLE_SECRET is unset, so Bluetooth would be off after the restart "
                        "and this page could not reconnect. Restart from the USB or Wi-Fi console.\n");
@@ -170,12 +169,6 @@ std::optional<ConsoleAnswer> ConsoleEndpoints::run(std::string_view body) {
     return poll();
   }
   if (command == "network") return reply(200, true, host_.network(), revisionNow);
-  if (command == "new-ble-key") {
-    return reply(400, false,
-                 "new-ble-key runs only on the USB console. Here, Settings → Connections → Dashboard Bluetooth → New "
-                 "key makes one, or `set BLE_SECRET <64 hex>` saves a key you made elsewhere.\n",
-                 revisionNow);
-  }
   if (command == "restart") {
     if (count != 1) return reply(400, false, "usage: restart\n", revisionNow);
     if (const std::optional<std::string> refusal = restartRefusal(reader)) {

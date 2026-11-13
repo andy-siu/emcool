@@ -60,13 +60,13 @@ std::optional<HttpResponse> DashboardEndpoints::begin(const HttpRequest& request
   // cool-eva's Settings Show key reads its saved and active keys back (BluetoothKeyReply), which a
   // rider can reach over the Pi's Wi-Fi when Bluetooth refuses their key. emcool has no such path:
   // this answers only a phone already holding the running key, so all it could add is a key saved
-  // but not yet restarted into, and that is the one new-ble-key replace must keep from old phones.
+  // but not yet restarted into, and that is the one a replaced key must keep from old phones.
   // So it is refused, in the reply's shape, pointing at the page's own Show key (docs/ble.md).
   if (!settingsBody_.empty() && route == "/settings/bluetooth-key") {
     return fromText(405, kJson,
                     "{\"ok\":false,\"message\":\"emcool never sends its Bluetooth key back. Tick Show key under "
-                    "Bluetooth above to see the key this phone sends. If every copy is lost, new-ble-key replace "
-                    "on the serial console makes a new one.\",\"saved\":null,\"active\":null}");
+                    "Bluetooth above to see the key this phone sends. If every copy is lost, set a new BLE_SECRET "
+                    "on the serial console and restart.\",\"saved\":null,\"active\":null}");
   }
   // cool-eva's SettingsActionReply (and HubCandidatesReply's empty list), so the dashboard shows
   // why beside the button rather than "no confirmed reply".

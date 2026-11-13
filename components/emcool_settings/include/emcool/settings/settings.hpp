@@ -103,7 +103,7 @@ class RuntimeSettings {
   void requestReport() { reportRequested_.store(true, std::memory_order_relaxed); }
   bool takeReportRequest() { return reportRequested_.exchange(false, std::memory_order_relaxed); }
 
-  // The value in force now, as `show` prints it.
+  // The value in force now, as `show` prints it. For BLE_SECRET, the key Bluetooth runs with.
   std::string valueOf(const SettingSpec& spec) const;
   // Puts a live setting into force; a value that isn't live waits for the restart.
   void apply(const SettingSpec& spec, std::string_view normalizedValue);
@@ -115,6 +115,18 @@ class RuntimeSettings {
   // Held while a command runs: the USB console, the Wi-Fi console and the dashboard each have a task.
   std::mutex& commandMutex() { return commandMutex_; }
 
+  // Bluetooth starts at boot when BLE_SECRET is set, and otherwise the moment a console sets it:
+  // `set BLE_SECRET` calls the firmware's starter. It starts at most once per boot, so once it is
+  // on, a changed key waits for the restart like any other setting.
+  using BluetoothStarter = std::function<bool(const std::string& key)>;
+  enum class BluetoothStart { kStarted, kFailed, kAlreadyOn, kNoStarter };
+  // From the firmware, before any console runs: how to start Bluetooth (none if boot already
+  // tried), and whether boot started it.
+  void setBluetoothStarter(BluetoothStarter starter, bool alreadyOn);
+  bool bluetoothOn() const { return bluetoothOn_.load(std::memory_order_relaxed); }
+  // Starts Bluetooth with `key` unless it is on or there is no starter, and says what happened.
+  BluetoothStart startBluetooth(const std::string& key);
+
  private:
   Settings boot_;
   std::atomic<bool> statusReport_;
@@ -122,22 +134,23 @@ class RuntimeSettings {
   std::atomic<bool> reportRequested_{false};
   std::atomic<std::uint32_t> revision_{0};
   std::mutex commandMutex_;
+  // The key Bluetooth runs with: the boot key, or the one it was started with since.
+  mutable std::mutex bluetoothMutex_;
+  std::string bluetoothKey_;
+  std::atomic<bool> bluetoothOn_{false};
+  BluetoothStarter bluetoothStarter_;
 };
 
-// Fills a buffer with cryptographically random bytes; the firmware's draws on the hardware RNG.
-using RandomFill = std::function<void(std::span<std::uint8_t>)>;
-
 // The console's commands, writing what to print into `output`:
-//   show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | new-ble-key [replace]
+//   show | set NAME VALUE | unset NAME | status [on | off | every SECONDS]
 // Returns 0 on success, 1 on a usage or storage error, as an esp_console command does.
-// `new-ble-key` needs `fillRandom`, and fails without one.
 int runSettingsCommand(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
-                       const char* const* arguments, std::string& output, const RandomFill& fillRandom = nullptr);
+                       const char* const* arguments, std::string& output);
 // The same, refused unless nothing has been saved since `expectedRevision`: the check and the
 // command are one step, so another console's save can't land between them. 2 when refused.
 int runSettingsCommandAt(SettingsStorage& storage, RuntimeSettings& running, std::uint32_t expectedRevision,
                          int argumentCount, const char* const* arguments, std::string& output);
-// Whether a command line saves or unsets anything: `set`, `unset`, `status on|off|every`, `new-ble-key`.
+// Whether a command line saves or unsets anything: `set`, `unset`, `status on|off|every`.
 bool commandChangesSettings(int argumentCount, const char* const* arguments);
 
 // When the periodic status report is due. Each periodic report covers the time since the last

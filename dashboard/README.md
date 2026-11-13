@@ -15,7 +15,7 @@ There is no server component here, and the ESP32 serves nothing over HTTP: the b
 
 ## Connecting
 
-1. **Make the key:** run `new-ble-key` on the bike's serial console, then `restart` ([`../docs/ble.md`](../docs/ble.md#turning-it-on)).
+1. **Set the key:** `set BLE_SECRET <your key>` on the bike's serial console; Bluetooth turns on at once ([`../docs/ble.md`](../docs/ble.md#turning-it-on)).
 2. **Connect:** paste the printed 64-character key (or the one you set with `set BLE_SECRET`) in the menu under **Bluetooth → Use an existing access code** and tap **Connect this phone**.
 
 This is protocol 2, cool-eva's since its #332; the handshake and framing are in `lib/ble-wire.js`, `lib/ble-handshake.js` and `lib/ble-link.js`.

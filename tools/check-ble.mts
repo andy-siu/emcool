@@ -558,7 +558,7 @@ for (const [path, method] of [["/settings", "PATCH"], ["/settings/apply", "POST"
   const reply = JSON.parse(refused.body);
   check(
     refused.status === 405 && reply.ok === false && reply.saved === null && reply.active === null &&
-      reply.message.includes("new-ble-key") && !refused.body.includes(SECRET),
+      reply.message.includes("set a new BLE_SECRET") && !refused.body.includes(SECRET),
     `POST /settings/bluetooth-key: ${refused.status} ${refused.body}`
   );
 }
