@@ -43,7 +43,7 @@ const transcript = van.state(/** @type {{ line: string, output: string }[]} */ (
 const commandLine = van.state("");
 // The key a pending BLE_SECRET restart needs: typed, or kept from saving it here.
 const restartKey = van.state("");
-// A key made here (the dashboard's new-ble-key), shown until it is saved.
+// A key made here (New key), shown until it is saved.
 const generatedKey = van.state("");
 const generatedKept = van.state(false);
 /** What each card's field holds, so a refresh after another card's save keeps it. @type {Map<string, { value: TextState, edited: boolean }>} */
@@ -367,7 +367,7 @@ function SettingCard(setting) {
 }
 
 /**
- * The dashboard's `new-ble-key`: a key made on this phone, as Connections → Dashboard Bluetooth
+ * New key: a key made on this phone, as Connections → Dashboard Bluetooth
  * makes one, shown so it can be kept before it is saved on the bike.
  * @param {{ value: TextState, edited: boolean }} draft
  */

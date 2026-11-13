@@ -113,7 +113,7 @@ std::string StatusReport::describe(std::int64_t nowMs) {
           static_cast<unsigned>(writer.partsRotated.load(std::memory_order_relaxed)),
           clock::clockTrustName(sources_.clock.trust()));
 
-  if (!sources_.bluetooth) {
+  if (!sources_.settings.bluetoothOn()) {
     appendLine(out, "bluetooth: off");
   } else {
     const BleLinkCounters& link = sources_.bleLink;

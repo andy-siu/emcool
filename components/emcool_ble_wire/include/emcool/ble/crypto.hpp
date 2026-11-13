@@ -26,18 +26,20 @@ bool hmacSha256(std::span<const std::uint8_t> key, std::initializer_list<std::sp
                 Sha256Digest& out);
 
 // Writes ciphertext then the 16-byte tag — WebCrypto's layout — so `out` must hold
-// plaintext.size() + kGcmTagBytes. `out` must not overlap `plaintext`.
+// plaintext.size() + kGcmTagBytes. `out` must not overlap `plaintext`. The plaintext must not be
+// empty: ESP-IDF 6.1's GCM refuses one, so both backends do. The link never seals one, since a
+// sealed message is deflated first and raw deflate is never empty.
 bool aesGcmSeal(const AesKey& key, const GcmIv& iv, std::span<const std::uint8_t> aad,
                 std::span<const std::uint8_t> plaintext, std::span<std::uint8_t> out);
 
 // `sealed` is ciphertext then tag; `out` must hold sealed.size() - kGcmTagBytes. False when
-// the tag doesn't verify: wrong key, or tampering.
+// the tag doesn't verify (wrong key, or tampering), and for a tag alone, an empty message.
 bool aesGcmOpen(const AesKey& key, const GcmIv& iv, std::span<const std::uint8_t> aad,
                 std::span<const std::uint8_t> sealed, std::span<std::uint8_t> out);
 
 void fillRandom(std::span<std::uint8_t> bytes);
 
-// RFC 4231 test case 2 and GCM test cases 13 and 14 (McGrew & Viega) through the functions
+// RFC 4231 test case 2 and GCM test cases 16 and 14 (McGrew & Viega) through the functions
 // above, including a tampered tag that must be refused.
 bool cryptoSelfTest();
 

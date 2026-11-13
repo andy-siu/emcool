@@ -242,9 +242,9 @@ int main() {
                  "POST /console/status was not refused");
   }
 
-  // new-ble-key stays on the USB console; a typed key still works.
+  // new-ble-key is gone: an unknown command, and the key stays as it was.
   run = console.postNow("new-ble-key replace");
-  EMCOOL_CHECK(run.status == 400 && storage.values["ble_secret"] == kKey && contains(run.output, "USB console"),
+  EMCOOL_CHECK(run.status == 400 && storage.values["ble_secret"] == kKey && contains(run.output, "no command called"),
                "new-ble-key over the dashboard: %s", run.body.c_str());
 
   // Refusals: the header, the method, the body.

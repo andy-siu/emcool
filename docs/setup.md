@@ -24,23 +24,22 @@ The phone dashboard runs the same commands over Bluetooth, in **Menu → Setting
 
 ## Commands
 
-There are seven, no more:
+There are six, no more:
 
 | Command | What it does |
 | --- | --- |
 | `show` | Lists every setting: its saved value, `(default)` if nothing is saved, and — for a setting changed since boot — `<- takes effect after restart (running: …)`. |
-| `set NAME VALUE` | Saves one setting. Quote a value with spaces: `set WIFI_SSID "garage wifi"`. |
+| `set NAME VALUE` | Saves one setting. Quote a value with spaces: `set WIFI_SSID "garage wifi"`. `set BLE_SECRET <key>` with Bluetooth off turns it on at once; see [`ble.md`](ble.md#turning-it-on). |
 | `unset NAME` | Puts one setting back to its default (removes it from NVS). |
 | `status [on \| off \| every SECONDS]` | The periodic status report. `status` prints one now; `status off` / `status on` / `status every SECONDS` (5–3600) change it and save at once. |
-| `new-ble-key [replace]` | Generates the dashboard's Bluetooth key, saves it as `BLE_SECRET` and prints it once. With a key already saved it refuses unless you say `replace`, since every phone holding the old key then stops connecting. USB console only. See [`ble.md`](ble.md#turning-it-on). |
 | `network` | The Wi-Fi network joined and its signal, the address, netmask, gateway and DNS server it handed out, the hostname and MAC address, and where to find the console and the ride-log page. With Wi-Fi off, says so. |
 | `restart` | Reboots, so saved settings take effect. |
 
 There is deliberately **no `get`** — `show` prints everything, and it is short. An unknown name tells you so and points at `show`.
 
-**When a change applies.** Settings are read at boot, so almost every change takes effect at the next `restart`; `show` marks any change still waiting for one. The two status-report settings (`STATUS_REPORT`, `STATUS_INTERVAL_S`) are the exception — they apply the instant they're set. `set`/`unset` tell you which case you're in.
+**When a change applies.** Settings are read at boot, so almost every change takes effect at the next `restart`; `show` marks any change still waiting for one. Two exceptions apply the instant they're set: the status-report settings (`STATUS_REPORT`, `STATUS_INTERVAL_S`), and `BLE_SECRET` while Bluetooth is off, which turns it on. `set`/`unset` tell you which case you're in.
 
-**Secrets are never printed back.** `show` reports only whether a secret is set (and, for the passwords, its length), never its characters. The one exception is the Bluetooth key, printed once as `new-ble-key` makes it.
+**Secrets are never printed back.** `show` reports only whether a secret is set (and, for the passwords, its length), never its characters.
 
 ## Every setting
 
@@ -48,7 +47,7 @@ Types: **flag** is `0`/`1`; **integer** is a whole number in a range; **text**/*
 
 | Setting | Type | Default | Range | Applies | What it does |
 | --- | --- | --- | --- | --- | --- |
-| `BLE_SECRET` | secret | *not set* | 8–64 chars | restart | The phone dashboard's Bluetooth key: the one `new-ble-key` generates, or one you type, with at least one letter and one digit and no spaces, quotes or backslashes. A typed key keeps its case. Unset keeps Bluetooth off entirely. See [`ble.md`](ble.md#turning-it-on). |
+| `BLE_SECRET` | secret | *not set* | 8–64 chars | **now** if Bluetooth is off, else restart | The phone dashboard's Bluetooth key: 8-64 characters with at least one letter and one digit and no spaces, quotes or backslashes, or 64 hex characters (`openssl rand -hex 32`). A typed key keeps its case. Setting it with Bluetooth off turns Bluetooth on at once; unset keeps it off entirely. See [`ble.md`](ble.md#turning-it-on). |
 | `BLE_NAME` | text | `emcool` | 1–29 chars | restart | The name the phone's device list shows. The dashboard finds the bike by its service UUID, not this. |
 | `CUSTOM_BMS_CONFIG` | flag | `0` | — | restart | `1` only if the BMS runs the custom LiBAL config (cool-eva's `CUSTOM_BMS_CONFIG`), for working out which frame carries the true pack temperature. The frames still win. |
 | `OBD_ENABLED` | flag | `0` | — | restart | `1` to poll OBD-II and read trouble codes. This puts the CAN controller on the bus as an active node; off, emcool is listen-only and doesn't even acknowledge frames. |
@@ -88,7 +87,7 @@ OBD_ENABLED=1                 the CAN controller becomes an active node; polls O
 
 What differs from this console:
 
-- **`new-ble-key` stays here.** The key would be made on the bike and sent back over the link it is about to replace. The `BLE_SECRET` card has its own **New key**, which makes one on the phone and shows it for you to keep before **Save**. `set BLE_SECRET <key>` works too, for a generated key or a typed one.
+- **A new key waits for the restart.** Bluetooth is already on whenever this page can reach the bike, so a new `BLE_SECRET` takes effect at the next restart. The `BLE_SECRET` card's **New key** makes one on the phone and shows it for you to keep before **Save**. `set BLE_SECRET <key>` works too, for a generated key or a typed one.
 - **Passwords are never sent back.** As with `show`, a secret reads as `set` or `not set`, plus a password's length.
 - **A stale page can't overwrite a newer change.** The page saves against the revision it read. If anything was saved since (here, over Wi-Fi, or from another phone), the save is refused with *the settings changed since this page read them*, and the page reads them again.
 - **Two taps for writes.** Turning `SERVICE_WRITE_ENABLED` or `CHARGE_AUTO_ENABLED` on needs a second tap, as the dashboard's other bike-changing controls do. The command line refuses `set` for those two, and refuses `restart`, so the two taps can't be skipped. Turning them off is one tap.
@@ -103,7 +102,7 @@ The endpoints behind it, `GET /console`, `GET /console/status` and `POST /consol
 Enable the live stream and service-mode reads, nothing that writes:
 
 ```
-emcool> new-ble-key
+emcool> set BLE_SECRET <your key>
 emcool> set OBD_ENABLED 1
 emcool> set SERVICE_MODE_ENABLED 1
 emcool> show

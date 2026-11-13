@@ -42,19 +42,11 @@ struct Result {
   std::string output;
 };
 
-Result run(MemoryStorage& storage, RuntimeSettings& running, std::vector<const char*> arguments,
-           const RandomFill& fillRandom = nullptr) {
+Result run(MemoryStorage& storage, RuntimeSettings& running, std::vector<const char*> arguments) {
   Result result{0, ""};
-  result.status = runSettingsCommand(storage, running, static_cast<int>(arguments.size()), arguments.data(),
-                                     result.output, fillRandom);
+  result.status =
+      runSettingsCommand(storage, running, static_cast<int>(arguments.size()), arguments.data(), result.output);
   return result;
-}
-
-// Counts up from `next`, so each generated key is known and differs from the last.
-RandomFill countingRandom(std::uint8_t& next) {
-  return [&next](std::span<std::uint8_t> bytes) {
-    for (std::uint8_t& byte : bytes) byte = next++;
-  };
 }
 
 bool contains(const std::string& text, const std::string& part) { return text.find(part) != std::string::npos; }
@@ -80,7 +72,7 @@ int main() {
                                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"}) {
     result = run(storage, booted, {"set", "BLE_SECRET", rejected});
     EMCOOL_CHECK(result.status == 1 && contains(result.output, "letter and one digit") &&
-                     contains(result.output, "new-ble-key") && storage.values.count("ble_secret") == 0,
+                     contains(result.output, "openssl rand -hex 32") && storage.values.count("ble_secret") == 0,
                  "BLE_SECRET %s was accepted: %s", rejected, result.output.c_str());
   }
   for (const char* typed : {"bike2024", "Bike2024", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
@@ -94,27 +86,81 @@ int main() {
                  "show with a typed key:\n%s", result.output.c_str());
   }
   storage.erase("ble_secret");
-  result = run(storage, booted, {"new-ble-key"});
-  EMCOOL_CHECK(result.status == 1 && contains(result.output, "no random source") &&
-                   storage.values.count("ble_secret") == 0,
-               "new-ble-key ran without a random source: %s", result.output.c_str());
-  std::uint8_t nextRandom = 0;
-  result = run(storage, booted, {"new-ble-key"}, countingRandom(nextRandom));
   const std::string generated = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-  EMCOOL_CHECK(result.status == 0 && storage.values["ble_secret"] == generated && contains(result.output, generated),
-               "new-ble-key did not save and print its key: %s", result.output.c_str());
-  result = run(storage, booted, {"new-ble-key"}, countingRandom(nextRandom));
-  EMCOOL_CHECK(result.status == 1 && contains(result.output, "new-ble-key replace") &&
-                   storage.values["ble_secret"] == generated,
-               "new-ble-key replaced a saved key without `replace`: %s", result.output.c_str());
-  result = run(storage, booted, {"new-ble-key", "replace"}, countingRandom(nextRandom));
   const std::string secret = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f";
-  EMCOOL_CHECK(result.status == 0 && storage.values["ble_secret"] == secret, "new-ble-key replace: %s",
-               result.output.c_str());
+  EMCOOL_CHECK(run(storage, booted, {"new-ble-key"}).status == 1 && storage.values.count("ble_secret") == 0,
+               "new-ble-key is still a command");
+
+  // Bluetooth turns on the moment BLE_SECRET is set, once per boot, with the key as saved.
+  {
+    MemoryStorage fresh;
+    RuntimeSettings running(Settings::load(fresh));
+    std::vector<std::string> started;
+    running.setBluetoothStarter(
+        [&](const std::string& key) {
+          started.push_back(key);
+          return true;
+        },
+        false);
+    EMCOOL_CHECK(!running.bluetoothOn(), "Bluetooth is on before a key is set");
+    result = run(fresh, running, {"set", "BLE_SECRET", "bike 2024"});
+    EMCOOL_CHECK(result.status == 1 && started.empty() && !running.bluetoothOn(), "a refused key started Bluetooth");
+    std::string upper = generated;
+    for (char& character : upper) character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+    result = run(fresh, running, {"set", "BLE_SECRET", upper.c_str()});
+    EMCOOL_CHECK(result.status == 0 && started.size() == 1 && started[0] == generated && running.bluetoothOn() &&
+                     contains(result.output, "Bluetooth is on now") && !contains(result.output, generated),
+                 "set BLE_SECRET did not start Bluetooth with the saved key: %s", result.output.c_str());
+    result = run(fresh, running, {"show"});
+    EMCOOL_CHECK(contains(result.output, "BLE_SECRET         set") && !contains(result.output, "BLE_SECRET         set   <-"),
+                 "show waits for a restart that Bluetooth no longer needs:\n%s", result.output.c_str());
+    // On now, so another key waits for the restart, and the phone keeps the running one.
+    result = run(fresh, running, {"set", "BLE_SECRET", secret.c_str()});
+    EMCOOL_CHECK(result.status == 0 && started.size() == 1 && contains(result.output, "after `restart`") &&
+                     running.valueOf(*findSetting("BLE_SECRET")) == generated,
+                 "a second key started Bluetooth again: %s", result.output.c_str());
+    result = run(fresh, running, {"show"});
+    EMCOOL_CHECK(contains(result.output, "BLE_SECRET         set   <- takes effect after `restart`"),
+                 "show did not mark the second key as waiting:\n%s", result.output.c_str());
+  }
+  // A start that fails says so, saves the key all the same, and isn't tried again before the restart.
+  {
+    MemoryStorage fresh;
+    RuntimeSettings running(Settings::load(fresh));
+    int attempts = 0;
+    running.setBluetoothStarter(
+        [&](const std::string&) {
+          attempts++;
+          return false;
+        },
+        false);
+    result = run(fresh, running, {"set", "BLE_SECRET", "Bike2024key"});
+    EMCOOL_CHECK(result.status == 0 && attempts == 1 && !running.bluetoothOn() && fresh.values["ble_secret"] == "Bike2024key" &&
+                     contains(result.output, "did not start"),
+                 "a failed start: %s", result.output.c_str());
+    result = run(fresh, running, {"set", "BLE_SECRET", "Bike2025key"});
+    EMCOOL_CHECK(result.status == 0 && attempts == 1 && contains(result.output, "after `restart`"),
+                 "a failed start was tried again: %s", result.output.c_str());
+  }
+  // Bluetooth already on from boot: a key is saved for the restart, and nothing starts.
+  {
+    MemoryStorage fresh;
+    fresh.values["ble_secret"] = generated;
+    RuntimeSettings running(Settings::load(fresh));
+    running.setBluetoothStarter(nullptr, true);
+    EMCOOL_CHECK(running.bluetoothOn(), "Bluetooth from boot is not on");
+    result = run(fresh, running, {"set", "BLE_SECRET", secret.c_str()});
+    EMCOOL_CHECK(result.status == 0 && contains(result.output, "after `restart`") &&
+                     running.valueOf(*findSetting("BLE_SECRET")) == generated,
+                 "a new key with Bluetooth on: %s", result.output.c_str());
+  }
+
+  result = run(storage, booted, {"set", "BLE_SECRET", secret.c_str()});
+  EMCOOL_CHECK(result.status == 0 && storage.values["ble_secret"] == secret, "set BLE_SECRET: %s", result.output.c_str());
   result = run(storage, booted, {"show"});
   EMCOOL_CHECK(!contains(result.output, secret.substr(0, 16)) && contains(result.output, "BLE_SECRET         set") &&
                    contains(result.output, "takes effect after `restart`"),
-               "show after making a key:\n%s", result.output.c_str());
+               "show after setting a key:\n%s", result.output.c_str());
   // A generated key pasted in upper case is the same key, as the dashboard treats it; a typed key
   // keeps its case (above).
   std::string upper = generated;

@@ -62,7 +62,17 @@ int main() {
 
 namespace {
 
-void checkCrypto() { EMCOOL_CHECK(cryptoSelfTest(), "the crypto self-test failed"); }
+void checkCrypto() {
+  EMCOOL_CHECK(cryptoSelfTest(), "the crypto self-test failed");
+  // An empty message is refused, as ESP-IDF 6.1's GCM refuses it, so the host can't pass with
+  // what the bike would fail; and so is a sealed one that is a tag alone.
+  const AesKey key = {};
+  const GcmIv iv = {};
+  std::uint8_t sealed[kGcmTagBytes] = {};
+  std::uint8_t opened[1] = {};
+  EMCOOL_CHECK(!aesGcmSeal(key, iv, {}, {}, sealed), "an empty message was sealed");
+  EMCOOL_CHECK(!aesGcmOpen(key, iv, {}, sealed, std::span<std::uint8_t>(opened, 0)), "a tag alone was opened");
+}
 
 void checkRoundTrip(Deflater& deflater, std::span<const std::uint8_t> input, const char* what) {
   std::vector<std::uint8_t> compressed(input.size() + 5);

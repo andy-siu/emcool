@@ -50,7 +50,7 @@ bool hmacSha256(std::span<const std::uint8_t> key, std::initializer_list<std::sp
 
 bool aesGcmSeal(const AesKey& key, const GcmIv& iv, std::span<const std::uint8_t> aad,
                 std::span<const std::uint8_t> plaintext, std::span<std::uint8_t> out) {
-  if (out.size() < plaintext.size() + kGcmTagBytes) return false;
+  if (plaintext.empty() || out.size() < plaintext.size() + kGcmTagBytes) return false;
   std::unique_ptr<EVP_CIPHER_CTX, CipherContextDeleter> context(EVP_CIPHER_CTX_new());
   if (!context) return false;
   int written = 0;
@@ -73,7 +73,7 @@ bool aesGcmSeal(const AesKey& key, const GcmIv& iv, std::span<const std::uint8_t
 
 bool aesGcmOpen(const AesKey& key, const GcmIv& iv, std::span<const std::uint8_t> aad,
                 std::span<const std::uint8_t> sealed, std::span<std::uint8_t> out) {
-  if (sealed.size() < kGcmTagBytes) return false;
+  if (sealed.size() <= kGcmTagBytes) return false;
   const std::size_t ciphertextBytes = sealed.size() - kGcmTagBytes;
   if (out.size() < ciphertextBytes) return false;
   std::unique_ptr<EVP_CIPHER_CTX, CipherContextDeleter> context(EVP_CIPHER_CTX_new());

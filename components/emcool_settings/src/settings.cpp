@@ -1,7 +1,6 @@
 #include "emcool/settings/settings.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <charconv>
 #include <cstdio>
@@ -16,9 +15,10 @@ constexpr const char* kTag = "settings";
 
 constexpr SettingSpec kSpecs[] = {
     {"BLE_SECRET", "ble_secret", SettingType::kSecret, "", 8, 64, false,
-     "The phone dashboard's Bluetooth key: the 64 hex characters `new-ble-key` makes and prints once, or one you "
-     "type, 8-64 characters with at least one letter and one digit (no spaces, quotes or backslashes). A short typed "
-     "key can be guessed from one overheard connection, so make it long. Unset keeps Bluetooth off."},
+     "The phone dashboard's Bluetooth key: 8-64 characters with at least one letter and one digit (no spaces, "
+     "quotes or backslashes), or 64 hex characters, such as `openssl rand -hex 32` or the dashboard's New key makes. "
+     "A short key can be guessed from one overheard connection, so make it long. Setting it turns Bluetooth on at "
+     "once; unset, Bluetooth stays off."},
     // The scan response has room for a 29-byte name.
     {"BLE_NAME", "ble_name", SettingType::kText, "emcool", 1, 29, false,
      "The name the phone's device list shows. The dashboard finds the bike by its service UUID, not this."},
@@ -72,7 +72,7 @@ std::string lowerCased(std::string_view value) {
   return lowered;
 }
 
-// What `new-ble-key` and the dashboard's New key make: 32 random bytes as 64 lower-case hex.
+// What the dashboard's New key makes: 32 random bytes as 64 lower-case hex.
 bool isGeneratedKey(std::string_view value) {
   return value.size() == 64 && std::all_of(value.begin(), value.end(), [](char character) {
            return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
@@ -164,6 +164,20 @@ int save(SettingsStorage& storage, RuntimeSettings& running, const SettingSpec& 
   }
   running.apply(spec, normalized);
   running.noteChange();
+  if (spec.name == "BLE_SECRET") {
+    switch (running.startBluetooth(normalized)) {
+      case RuntimeSettings::BluetoothStart::kStarted:
+        appendLine(output, "BLE_SECRET saved; Bluetooth is on now. Enter the same key in the dashboard and tap Connect");
+        return 0;
+      case RuntimeSettings::BluetoothStart::kFailed:
+        appendLine(output, "BLE_SECRET saved, but Bluetooth did not start (the log above says why); `restart` tries "
+                           "again");
+        return 0;
+      case RuntimeSettings::BluetoothStart::kAlreadyOn:
+      case RuntimeSettings::BluetoothStart::kNoStarter:
+        break;
+    }
+  }
   appendLine(output, std::string(spec.name) + " saved; " + whenItApplies(spec));
   return 0;
 }
@@ -201,41 +215,6 @@ int unset(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
   running.noteChange();
   appendLine(output, std::string(spec->name) + " is back to its default (" + describe(*spec, spec->defaultValue) +
                          "); " + whenItApplies(*spec));
-  return 0;
-}
-
-// Generates BLE_SECRET from 32 random bytes and prints it, the only time it is ever shown. Replacing
-// a key locks out every phone holding the old one, so that needs saying twice.
-int newBluetoothKey(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
-                    const char* const* arguments, const RandomFill& fillRandom, std::string& output) {
-  const bool replacing = argumentCount == 2 && std::string_view(arguments[1]) == "replace";
-  if (argumentCount > 2 || (argumentCount == 2 && !replacing)) {
-    appendLine(output, "usage: new-ble-key [replace]");
-    return 1;
-  }
-  if (!fillRandom) {
-    appendLine(output, "new-ble-key: this console has no random source");
-    return 1;
-  }
-  const SettingSpec& spec = *findSetting("BLE_SECRET");
-  if (storage.read(spec.storageKey) && !replacing) {
-    appendLine(output, "a Bluetooth key is already saved; `new-ble-key replace` makes a new one, and every phone "
-                       "holding the old key must then be given the new one");
-    return 1;
-  }
-  std::array<std::uint8_t, 32> bytes = {};
-  fillRandom(bytes);
-  static constexpr char kHex[] = "0123456789abcdef";
-  std::string key;
-  for (const std::uint8_t byte : bytes) {
-    key += kHex[byte >> 4];
-    key += kHex[byte & 0x0f];
-  }
-  bytes.fill(0);
-  if (save(storage, running, spec, key, output) != 0) return 1;
-  appendLine(output, "The new Bluetooth key, shown only now. Keep a copy, then paste it into the dashboard "
-                     "(Menu → Bluetooth → Use an existing access code):");
-  appendLine(output, "  " + key);
   return 0;
 }
 
@@ -293,7 +272,7 @@ std::optional<std::string> validate(const SettingSpec& spec, std::string_view va
   // Protocol 2 has no lockout, so a typed key must at least mix letters and digits.
   if (spec.name == "BLE_SECRET" && !isBluetoothKey(normalizeValue(spec, value))) {
     return std::string("must be 8-64 characters with at least one letter and one digit, and no spaces, quotes or "
-                       "backslashes; or the key `new-ble-key` makes");
+                       "backslashes; or 64 hex characters (openssl rand -hex 32)");
   }
   // A Wi-Fi password is WPA's 8-63 characters, or nothing for an open network.
   if (spec.name == "WIFI_PASSWORD" && length > 0 && length < 8) {
@@ -359,10 +338,40 @@ Settings Settings::load(SettingsStorage& storage) {
 }
 
 RuntimeSettings::RuntimeSettings(Settings boot)
-    : boot_(std::move(boot)), statusReport_(boot_.statusReport), statusIntervalSeconds_(boot_.statusIntervalSeconds) {}
+    : boot_(std::move(boot)),
+      statusReport_(boot_.statusReport),
+      statusIntervalSeconds_(boot_.statusIntervalSeconds),
+      bluetoothKey_(boot_.bleSecret) {}
+
+void RuntimeSettings::setBluetoothStarter(BluetoothStarter starter, bool alreadyOn) {
+  const std::lock_guard<std::mutex> lock(bluetoothMutex_);
+  bluetoothStarter_ = std::move(starter);
+  bluetoothOn_.store(alreadyOn, std::memory_order_relaxed);
+}
+
+RuntimeSettings::BluetoothStart RuntimeSettings::startBluetooth(const std::string& key) {
+  BluetoothStarter starter;
+  {
+    const std::lock_guard<std::mutex> lock(bluetoothMutex_);
+    if (bluetoothOn_.load(std::memory_order_relaxed)) return BluetoothStart::kAlreadyOn;
+    if (!bluetoothStarter_) return BluetoothStart::kNoStarter;
+    // Taken, so it runs once per boot: a start that fails partway can't be undone, so the next
+    // try is the restart. Not held across the start, which takes a while.
+    starter = std::move(bluetoothStarter_);
+    bluetoothStarter_ = nullptr;
+  }
+  if (!starter(key)) return BluetoothStart::kFailed;
+  const std::lock_guard<std::mutex> lock(bluetoothMutex_);
+  bluetoothKey_ = key;
+  bluetoothOn_.store(true, std::memory_order_relaxed);
+  return BluetoothStart::kStarted;
+}
 
 std::string RuntimeSettings::valueOf(const SettingSpec& spec) const {
-  if (spec.name == "BLE_SECRET") return boot_.bleSecret;
+  if (spec.name == "BLE_SECRET") {
+    const std::lock_guard<std::mutex> lock(bluetoothMutex_);
+    return bluetoothKey_;
+  }
   if (spec.name == "BLE_NAME") return boot_.bleName;
   if (spec.name == "CUSTOM_BMS_CONFIG") return boot_.customBmsConfig ? "1" : "0";
   if (spec.name == "OBD_ENABLED") return boot_.obdEnabled ? "1" : "0";
@@ -392,13 +401,12 @@ void RuntimeSettings::apply(const SettingSpec& spec, std::string_view normalized
 namespace {
 
 int runCommand(SettingsStorage& storage, RuntimeSettings& running, int argumentCount, const char* const* arguments,
-               std::string& output, const RandomFill& fillRandom) {
+               std::string& output) {
   const std::string_view command = argumentCount > 0 ? arguments[0] : "";
   if (command == "show") return show(storage, running, output);
   if (command == "set") return set(storage, running, argumentCount, arguments, output);
   if (command == "unset") return unset(storage, running, argumentCount, arguments, output);
   if (command == "status") return status(storage, running, argumentCount, arguments, output);
-  if (command == "new-ble-key") return newBluetoothKey(storage, running, argumentCount, arguments, fillRandom, output);
   appendLine(output, "unknown command");
   return 1;
 }
@@ -406,9 +414,9 @@ int runCommand(SettingsStorage& storage, RuntimeSettings& running, int argumentC
 }  // namespace
 
 int runSettingsCommand(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
-                       const char* const* arguments, std::string& output, const RandomFill& fillRandom) {
+                       const char* const* arguments, std::string& output) {
   const std::lock_guard<std::mutex> lock(running.commandMutex());
-  return runCommand(storage, running, argumentCount, arguments, output, fillRandom);
+  return runCommand(storage, running, argumentCount, arguments, output);
 }
 
 int runSettingsCommandAt(SettingsStorage& storage, RuntimeSettings& running, std::uint32_t expectedRevision,
@@ -419,13 +427,12 @@ int runSettingsCommandAt(SettingsStorage& storage, RuntimeSettings& running, std
                        "them again, then retry");
     return 2;
   }
-  return runCommand(storage, running, argumentCount, arguments, output, nullptr);
+  return runCommand(storage, running, argumentCount, arguments, output);
 }
 
 bool commandChangesSettings(int argumentCount, const char* const* arguments) {
   const std::string_view command = argumentCount > 0 ? arguments[0] : "";
-  return command == "set" || command == "unset" || command == "new-ble-key" ||
-         (command == "status" && argumentCount > 1);
+  return command == "set" || command == "unset" || (command == "status" && argumentCount > 1);
 }
 
 StatusSchedule::Decision StatusSchedule::decide(const RuntimeSettings& running, bool reportRequested,

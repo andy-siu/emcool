@@ -2,10 +2,8 @@
 
 #include <cstdio>
 
-#include "bootloader_random.h"
 #include "emcool/log.hpp"
 #include "esp_console.h"
-#include "esp_random.h"
 #include "esp_system.h"
 #include "nvs.h"
 #include "wifi_link.hpp"
@@ -21,25 +19,10 @@ constexpr const char* kNamespace = "emcool";
 
 settings::SettingsStorage* consoleStorage = nullptr;
 settings::RuntimeSettings* runningSettings = nullptr;
-bool radioRunning = false;
-
-// esp_random is only truly random while the radio runs (ESP-IDF "Random Number Generation"); with
-// it off, the bootloader's SAR ADC source is switched on for the draw, and nothing else here
-// uses the ADC to collide with it.
-void fillRandom(std::span<std::uint8_t> bytes) {
-  if (radioRunning) {
-    esp_fill_random(bytes.data(), bytes.size());
-    return;
-  }
-  bootloader_random_enable();
-  esp_fill_random(bytes.data(), bytes.size());
-  bootloader_random_disable();
-}
 
 int runCommand(int argumentCount, char** arguments) {
   std::string output;
-  const int status =
-      settings::runSettingsCommand(*consoleStorage, *runningSettings, argumentCount, arguments, output, fillRandom);
+  const int status = settings::runSettingsCommand(*consoleStorage, *runningSettings, argumentCount, arguments, output);
   std::fputs(output.c_str(), stdout);
   return status;
 }
@@ -132,17 +115,18 @@ bool NvsSettingsStorage::erase(std::string_view key) {
   return true;
 }
 
-bool startSettingsConsole(settings::SettingsStorage& storage, settings::RuntimeSettings& running, bool radioOn) {
+bool startSettingsConsole(settings::SettingsStorage& storage, settings::RuntimeSettings& running) {
   consoleStorage = &storage;
   runningSettings = &running;
-  radioRunning = radioOn;
 
   static const std::string settingsHelp = helpText();
   const esp_console_cmd_t commands[] = {
       {.command = "show", .help = settingsHelp.c_str(), .hint = nullptr, .func = runCommand, .argtable = nullptr,
        .func_w_context = nullptr, .context = nullptr},
-      {.command = "set", .help = "Save a setting: set NAME VALUE. Quote a value with spaces.", .hint = "NAME VALUE",
-       .func = runCommand, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
+      {.command = "set",
+       .help = "Save a setting: set NAME VALUE. Quote a value with spaces. `set BLE_SECRET <key>` turns Bluetooth on "
+               "at once.",
+       .hint = "NAME VALUE", .func = runCommand, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
       {.command = "unset", .help = "Put a setting back to its default.", .hint = "NAME", .func = runCommand,
        .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
       {.command = "status",
@@ -150,10 +134,6 @@ bool startSettingsConsole(settings::SettingsStorage& storage, settings::RuntimeS
                "SECONDS` (5-3600) change it at once and are saved.",
        .hint = "[on | off | every SECONDS]", .func = runCommand, .argtable = nullptr, .func_w_context = nullptr,
        .context = nullptr},
-      {.command = "new-ble-key",
-       .help = "Generate the dashboard's Bluetooth key, save it as BLE_SECRET and print it once. `new-ble-key "
-               "replace` makes a new one when a key is already saved; phones holding the old one stop connecting.",
-       .hint = "[replace]", .func = runCommand, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
       {.command = "network",
        .help = "The Wi-Fi network joined and its signal, and the address, netmask, gateway and DNS server it handed "
                "out.",

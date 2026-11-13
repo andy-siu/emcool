@@ -236,7 +236,7 @@ export function normalizeBleSecret(secret) {
   const normalized = canonicalBleSecret(secret);
   if (!validBleSecret(normalized)) {
     throw new Error(
-      "Paste the bike’s Bluetooth key: the 64 characters new-ble-key printed, or the 8-64 you set, with a letter and a digit and no spaces."
+      "Paste the bike’s Bluetooth key: the BLE_SECRET you set, 8-64 characters with a letter and a digit and no spaces, or 64 hex characters."
     );
   }
   return normalized;

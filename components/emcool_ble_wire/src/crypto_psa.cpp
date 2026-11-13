@@ -64,7 +64,7 @@ bool hmacSha256(std::span<const std::uint8_t> key, std::initializer_list<std::sp
 
 bool aesGcmSeal(const AesKey& key, const GcmIv& iv, std::span<const std::uint8_t> aad,
                 std::span<const std::uint8_t> plaintext, std::span<std::uint8_t> out) {
-  if (out.size() < plaintext.size() + kGcmTagBytes) return false;
+  if (plaintext.empty() || out.size() < plaintext.size() + kGcmTagBytes) return false;
   ImportedKey imported(PSA_KEY_TYPE_AES, PSA_KEY_USAGE_ENCRYPT, PSA_ALG_GCM, key);
   if (!imported.imported()) return false;
   std::size_t written = 0;
@@ -75,7 +75,7 @@ bool aesGcmSeal(const AesKey& key, const GcmIv& iv, std::span<const std::uint8_t
 
 bool aesGcmOpen(const AesKey& key, const GcmIv& iv, std::span<const std::uint8_t> aad,
                 std::span<const std::uint8_t> sealed, std::span<std::uint8_t> out) {
-  if (sealed.size() < kGcmTagBytes || out.size() < sealed.size() - kGcmTagBytes) return false;
+  if (sealed.size() <= kGcmTagBytes || out.size() < sealed.size() - kGcmTagBytes) return false;
   ImportedKey imported(PSA_KEY_TYPE_AES, PSA_KEY_USAGE_DECRYPT, PSA_ALG_GCM, key);
   if (!imported.imported()) return false;
   std::size_t written = 0;

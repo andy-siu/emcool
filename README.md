@@ -99,14 +99,14 @@ Per-bike settings live in the ESP32's NVS, emcool's counterpart of cool-eva's `/
 
 ```
 emcool> show
-emcool> new-ble-key
+emcool> set BLE_SECRET <your key>      Bluetooth turns on at once
 emcool> set CUSTOM_BMS_CONFIG 1
 emcool> restart
 ```
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `BLE_SECRET` | not set | The phone dashboard's Bluetooth key: 64 hex characters generated and printed once by `new-ble-key`, or one you type with `set BLE_SECRET`, 8-64 characters with at least one letter and one digit. Unset keeps Bluetooth off. |
+| `BLE_SECRET` | not set | The phone dashboard's Bluetooth key: 8-64 characters with at least one letter and one digit, or 64 hex characters (`openssl rand -hex 32` makes one). Setting it turns Bluetooth on at once; unset keeps it off. |
 | `BLE_NAME` | `emcool` | The name in the phone's device list. |
 | `CUSTOM_BMS_CONFIG` | `0` | `1` if the BMS runs the custom LiBAL config, as cool-eva's `CUSTOM_BMS_CONFIG`. |
 | `OBD_ENABLED` | `0` | `1` to poll OBD-II and read trouble codes, as cool-eva's `OBD_ENABLED`. This puts the CAN controller on the bus as an active node. See [Transmitting](#transmitting). |
@@ -196,7 +196,7 @@ The boot log and the status line give the address. ⚠️ It's all plain text on
 
 emcool ships its own phone dashboard in [`dashboard/`](dashboard/): cool-eva's, copied and rebranded by `tools/sync-dashboard.mts`, with the handshake salts and the request header renamed so it talks to this firmware, not cool-eva's. It is served at **https://emcool.athegen.com** (GitHub Pages, custom domain; see [`docs/hosting.md`](docs/hosting.md)). Open it in Bluefy on iOS or Chrome on Android. See also [`dashboard/README.md`](dashboard/README.md) and [`docs/ble.md`](docs/ble.md).
 
-1. Run `new-ble-key` on the serial console (see [Settings](#settings)), keep the key it prints, and `restart`.
+1. On the serial console, `set BLE_SECRET <your key>` (see [Settings](#settings)). Bluetooth turns on at once; keep a copy of the key.
 2. Paste the key in the dashboard's menu under *Bluetooth → Use an existing access code*.
    - The live tiles, the status sheet and the Faults tab work. The Faults tab shows stored codes only with `OBD_ENABLED` on.
    - The parameters page works, as do service mode's reads with `SERVICE_MODE_ENABLED` on and its writes with `SERVICE_WRITE_ENABLED` on.

@@ -127,7 +127,6 @@ void runCommand(int argumentCount, char** arguments, std::string& output) {
   const std::string_view command = arguments[0];
   if (command == "help") {
     output += "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | network | restart | exit\n"
-              "(new-ble-key only on the USB console)\n"
               "`show` lists every setting and what it does is in the USB console's `help`.\n";
     return;
   }
@@ -140,10 +139,6 @@ void runCommand(int argumentCount, char** arguments, std::string& output) {
     logWarning(kTag, "restart asked for over the Wi-Fi console");
     // After the reply has gone.
     restartAfter(500);
-    return;
-  }
-  if (command == "new-ble-key") {
-    output += "new-ble-key runs only on the USB console: here the key would cross the network in plain text\n";
     return;
   }
   if (command == "show" || command == "set" || command == "unset" || command == "status") {

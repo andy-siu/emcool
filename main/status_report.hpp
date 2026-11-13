@@ -63,7 +63,6 @@ struct StatusSources {
   const RideLogTaskCounters& rideLogTask;
   const clock::SystemClockSync& clock;
   const BleLinkCounters& bleLink;
-  bool bluetooth;
   const WifiCounters& wifi;
   bool wifiOn;
   settings::RuntimeSettings& settings;
