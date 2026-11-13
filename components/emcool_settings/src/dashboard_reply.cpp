@@ -34,7 +34,7 @@ namespace {
 
 const char* jsonBoolean(bool value) { return value ? "true" : "false"; }
 
-// cool-eva's PublicSettings. Saved and active are the same object: nothing is ever pending here.
+// The reference's PublicSettings. Saved and active are the same object: nothing is ever pending here.
 std::string publicSettings(const Settings& settings, std::string_view bluetoothCodeId) {
   std::string out = "{";
   // Not ported yet, so honestly off: the dashboard then shows them as not installed.

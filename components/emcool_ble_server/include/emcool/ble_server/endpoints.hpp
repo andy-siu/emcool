@@ -1,23 +1,23 @@
 #pragma once
 
-// The dashboard's requests. cool-eva replays each BLE request into its own HTTP server; emcool
-// has none, so requests are answered here directly, with cool-eva's bodies:
-//   GET /status          cool-eva's StatusPayload shape (src/http/status.ts)
-//   GET /dtc-table       Energica's code table, byte for byte cool-eva's
+// The dashboard's requests, answered here directly — there is no HTTP server behind the link —
+// with the bodies the dashboard expects:
+//   GET /status          the dashboard's StatusPayload shape
+//   GET /dtc-table       Energica's code table, byte for byte from flash
 //   GET /fault-infokeys  Energica's per-fault telemetry shortlists, likewise
 //   GET /stored-dtcs     the OBD trouble-code lists as last read (all "not-read" with OBD off)
 //   GET /dl              the ride log off the card: the newest parts, up to ?mb= (default 16, at
 //                        most 256), or only ?boot=N's — see ride_log/download.hpp
-//   GET /settings        cool-eva's SettingsReply shape, read-only: what this boot runs with, from
+//   GET /settings        the SettingsReply shape the dashboard reads, read-only: what this boot runs with, from
 //                        the serial console's settings (settings/dashboard_reply.hpp). Changing
 //                        one stays a console job; a PATCH gets a 405 saying so
-//   POST /settings/bluetooth-key  cool-eva's Show key read-back, refused: emcool never returns
+//   POST /settings/bluetooth-key  the Show key read-back, refused: emcool never returns
 //                        its Bluetooth key (docs/ble.md)
 //   /console, /console/status  the serial console's commands and status report, for Settings →
 //                        Bike console (console_endpoints.hpp). The one way here to change a setting
 // Everything else is a 404 saying the endpoint isn't on emcool yet. None of these touches the
-// bus: like cool-eva's, they serve what is already known, so refreshing a page can't make the
-// bike answer anything.
+// bus: they serve what is already known, so refreshing a page can't make the bike answer
+// anything.
 //
 // A body is read a piece at a time (the server sends 4 KB per message), so one far bigger
 // than any buffer here — /dtc-table is 25 KB — comes straight out of flash, and /stored-dtcs
@@ -55,8 +55,8 @@ struct HttpResponse {
 struct HttpRequest {
   std::string_view method;
   std::string_view path;  // with its query
-  // The X-Cool-Eva header: what a request that changes something is for ("service-mode", …).
-  std::string_view coolEva;
+  // The X-Emcool header: what a request that changes something is for ("service-mode", …).
+  std::string_view emcoolHeader;
   // What came with it, if anything; valid only during begin().
   std::string_view body = {};
 };
@@ -77,7 +77,7 @@ class RequestHandler {
   virtual std::span<const char> body(std::size_t offset, std::size_t maxBytes) = 0;
 };
 
-// Service mode's requests, answered by the task that owns the bus (cool-eva's read runner).
+// Service mode's requests, answered by the task that owns the bus.
 using ServiceRequest = vcu::ServiceRequest;
 using ServiceAnswer = vcu::ServiceAnswer;
 class ServiceDesk {
@@ -118,7 +118,7 @@ class TroubleCodeSource {
 
 class DashboardEndpoints final : public RequestHandler {
  public:
-  // cool-eva's FRESH_MS: a signal counts as live in /status if it arrived this recently.
+  // A signal counts as live in /status if it arrived this recently.
   static constexpr std::int64_t kFreshMs = 10000;
   // The largest body built whole (/status, the 404s), and the largest piece handed out: one
   // response piece (BleServer::kResponseChunkBytes) at a time.

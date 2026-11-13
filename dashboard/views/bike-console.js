@@ -3,7 +3,7 @@
 // its saved value and the value in force, a form per setting, the status report the serial port
 // prints, and a command line for anything else. It runs the console's own commands (show, set,
 // unset, status, network, restart) through /console, so a change here is a change at `emcool>`.
-// emcool's own file, kept across a dashboard sync (tools/sync-dashboard.mts); see docs/setup.md.
+// See docs/setup.md.
 import van from "../vendor/van-1.6.1.js";
 import { request } from "../lib/transport.js";
 import { connection } from "../lib/store.js";

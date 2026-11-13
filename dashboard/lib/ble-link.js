@@ -103,7 +103,7 @@ async function chooseDevice(state) {
   requireBleOrigin(state);
   const bluetooth = state.environment.bluetooth();
   if (!bluetooth) {
-    throw new Error("This browser has no Web Bluetooth. On iPhone use the emcool app or Bluefy; on Android, Chrome.");
+    throw new Error("This browser has no Web Bluetooth. On iPhone use Bluefy; on Android or a Mac, Chrome.");
   }
   adoptDevice(state, await bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] }));
   await ensureBleSession(state);

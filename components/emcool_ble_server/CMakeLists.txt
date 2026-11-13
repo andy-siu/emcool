@@ -1,5 +1,5 @@
-# The bike's end of the phone link: session, live stream and requests, ported from cool-eva
-# src/ble-server/. Transport-free, so host/ drives it with cool-eva's own phone-side code.
+# The bike's end of the phone link: session, live stream and requests. Transport-free, so host/
+# drives it with the dashboard's own phone-side code.
 set(emcool_ble_server_sources
   src/console_endpoints.cpp
   src/endpoints.cpp

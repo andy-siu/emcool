@@ -1,8 +1,8 @@
-// Runs cool-eva's own automatic-charge decision code on random/scripted input and writes what it
+// Runs the reference's own automatic-charge decision code on random/scripted input and writes what it
 // returned, for host/tests/check_charge_auto.cpp to hold the C++ port to: the control law
 // (decideChargeCurrent) and its support (estimateHeatingRate, sessionAheadMinutes, estimateSocRate).
 //
-//   node tools/generate-golden-charge-auto.mts <cool-eva checkout> <output file>
+//   node tools/generate-golden-charge-auto.mts <reference checkout> <output file>
 //
 // Each line is `<kind> <fields…>`; JSON fields are JSON.stringify's.
 
@@ -10,12 +10,12 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const [coolEvaDirectory, outputPath] = process.argv.slice(2);
-if (!coolEvaDirectory || !outputPath) {
-  console.error("usage: node tools/generate-golden-charge-auto.mts <cool-eva checkout> <output file>");
+const [referenceDirectory, outputPath] = process.argv.slice(2);
+if (!referenceDirectory || !outputPath) {
+  console.error("usage: node tools/generate-golden-charge-auto.mts <reference checkout> <output file>");
   process.exit(2);
 }
-const load = (path: string) => import(pathToFileURL(join(coolEvaDirectory, path)).href);
+const load = (path: string) => import(pathToFileURL(join(referenceDirectory, path)).href);
 console.log = console.warn = console.error = () => {};
 
 const curve = await load("src/charge/auto-curve.ts");

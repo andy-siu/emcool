@@ -1,5 +1,5 @@
 // The event loop and coroutines keep JavaScript's ordering, which the VCU ports depend on.
-// Each case is a small cool-eva-shaped program, with the order Node runs it in written out.
+// Each case is a small reference-shaped program, with the order Node runs it in written out.
 
 #include <cstdio>
 #include <string>

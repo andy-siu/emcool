@@ -10,7 +10,7 @@ The dashboard keeps the Bluetooth key in the browser's `localStorage`, and `loca
 
 - **The shared Pages origin is out.** `https://andy-siu.github.io/emcool/` shares its origin with every GitHub Pages site on the account. So the dashboard refuses to open Bluetooth there and says *"Bluetooth needs its own address"*.
 - **The custom domain is in.** On the custom domain the origin is this dashboard's alone.
-- **The allowed list:** [`../dashboard/lib/hosted-origin.js`](../dashboard/lib/hosted-origin.js), exact origins only, with no paths and no wildcards. It is cool-eva's `HOSTED_BLE_ORIGINS` rule (cool-eva `docs/ble-server.md` §"Hosted pages and origin isolation").
+- **The allowed list:** [`../dashboard/lib/hosted-origin.js`](../dashboard/lib/hosted-origin.js), exact origins only, with no paths and no wildcards.
 - **Moving to another address:** the key doesn't move with it, since storage can't cross origins. Paste it in again from your saved copy.
 
 ## One-time setup
@@ -38,9 +38,9 @@ There is no build step, since the dashboard is plain HTML/JS/CSS (VanJS). The wo
 Then connect to the bike:
 
 1. On the bike's serial console, `set BLE_SECRET <your key>`; Bluetooth turns on at once (see [`ble.md`](ble.md#turning-it-on)).
-2. In the dashboard's menu, paste the key under **Bluetooth → Use an existing access code** and tap **Connect this phone**.
+2. In the dashboard, open **Settings → Connections**, paste the key under **Enter the bike's Bluetooth key** and tap **Connect this phone**.
 
-Load the page while you have reception and keep it open: there is no service worker yet, so in the garage it can't load from scratch. See [`ble.md`](ble.md) for the protocol and [`../dashboard/README.md`](../dashboard/README.md) for what the copy changes from cool-eva.
+Load the page while you have reception and keep it open: there is no service worker yet, so in the garage it can't load from scratch. See [`ble.md`](ble.md) for the protocol and [`../dashboard/README.md`](../dashboard/README.md) for the dashboard itself.
 
 ## Locally
 

@@ -1,11 +1,11 @@
 #pragma once
 
-// The OBD-II trouble-code services, ported from cool-eva src/diagnostics/obd-dtc.ts: mode 03
-// (stored), 07 (pending) and 0A (permanent). Pure: a reassembled reply in, codes out.
+// The OBD-II trouble-code services: mode 03 (stored), 07 (pending) and 0A (permanent). Pure:
+// a reassembled reply in, codes out.
 //
 // This is a DIFFERENT list from the hub's active faults (the dtc_CCCC_S signals), and a
 // different encoding: mode 03 sends the 16-bit binary DTC a scan tool prints, so Energica's
-// table is reached through its OBD column. Modes 07 and 0A have never answered on cool-eva's
+// table is reached through its OBD column. Modes 07 and 0A have never answered on this
 // bike, and silence is not "nothing pending" — the transport keeps the two apart.
 
 #include <cstdint>
@@ -22,7 +22,7 @@ inline constexpr std::uint8_t kModePermanentDtcs = 0x0a;
 
 enum class DtcList : std::uint8_t { kStored, kPending, kPermanent };
 inline constexpr DtcList kDtcLists[] = {DtcList::kStored, DtcList::kPending, DtcList::kPermanent};
-// "stored", "pending" or "permanent", as cool-eva's DtcListKind.
+// "stored", "pending" or "permanent".
 const char* listName(DtcList list);
 std::optional<DtcList> listForMode(int mode);
 

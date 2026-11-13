@@ -17,7 +17,7 @@ struct PidDef {
 
 constexpr int kDiagnostic = ObdPoller::kDiagnosticRoundDivisor;
 
-// cool-eva's PIDS, in its order.
+// The PIDs, in the order they are polled.
 constexpr std::array<PidDef, 15> kPids = {{
     {0x0d, 0},           // speed_kmh
     {0x0c, 0},           // motor_rpm
@@ -62,7 +62,7 @@ void ObdPoller::continuePids(Now now) {
     }
     const Payload request = {0x02, 0x01, def.pid, 0x55, 0x55, 0x55, 0x55, 0x55};
     if (const std::optional<std::string> problem = bus_.transmit(kRequestId, request)) {
-      // cool-eva's requestPid rejects and ends pollOnce, so a refused PID skips the rest of the
+      // The reference's requestPid rejects and ends pollOnce, so a refused PID skips the rest of the
       // round, trouble-code reads included, and the round keeps its pacing (docs/obd.md).
       transmitLog_.log(now.monotonicMs, "poll round failed — skipping the remaining requests", *problem);
       endRound(now);
@@ -111,7 +111,7 @@ void ObdPoller::codeReadDone(DtcReadOutcome result, Now now) {
   switch (codeStep_) {
     case CodeStep::kStored:
       storedDtcReads_ += 1;
-      // Pending and permanent have never answered on cool-eva's bike, so they're asked rarely.
+      // Pending and permanent have never answered on this bike, so they're asked rarely.
       if (storedDtcReads_ % kSilentModeReadEvery != 1 || hold_.parkedForHold(now.monotonicMs)) {
         endRound(now);
         return;
@@ -133,8 +133,8 @@ void ObdPoller::codeReadDone(DtcReadOutcome result, Now now) {
 
 void ObdPoller::endRound(Now now) { sleepFor(std::max<std::int64_t>(0, intervalMs_ - (now.monotonicMs - roundStartedMs_)), now); }
 
-// cool-eva sleeps with setTimeout, which Node never runs sooner than 1 ms; so a round that
-// overran its interval still leaves a 1 ms gap here, as there.
+// A round that overran its interval still leaves a 1 ms gap, as Node's setTimeout never runs
+// sooner than 1 ms.
 void ObdPoller::sleepFor(std::int64_t delayMs, Now now) {
   wakeAt_ = order_.at(now.monotonicMs + std::max<std::int64_t>(1, delayMs));
   phase_ = Phase::kSleeping;

@@ -6,8 +6,8 @@
 
 #include "emcool/log.hpp"
 
-// Ported from cool-eva src/can/pack-temperature.ts, warnings included: they are how a
-// misconfigured BMS or setting gets noticed on a bike with no debugger attached.
+// The warnings are how a misconfigured BMS or setting gets noticed on a bike with no debugger
+// attached.
 
 namespace emcool::can {
 
@@ -55,7 +55,7 @@ void PackTemperatureRouter::resolve(std::uint32_t id, FrameBytes data, DecodedVa
     firstVcuTemperatureAtMs_ = monotonicMs;
   }
   if (!resolveVcuFrameOwnership(monotonicMs)) return;
-  // In the order the decoder emitted the *_vcu keys, as cool-eva appends them.
+  // In the order the decoder emitted the *_vcu keys.
   for (std::size_t index = 0, count = decoded.size(); index < count; index++) {
     const std::string_view key = decoded[index].key;
     if (key == "batt_temp_lo_vcu") {

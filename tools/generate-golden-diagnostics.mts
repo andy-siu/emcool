@@ -1,4 +1,4 @@
-// Runs cool-eva's own diagnostic decoders on random input and writes what they returned, for
+// Runs the reference's own diagnostic decoders on random input and writes what they returned, for
 // host/tests/check_diagnostics.cpp to hold the C++ port to:
 //   - freeze frames (src/diagnostics/freeze-frame.ts), shaped from Energica's shortlists and not
 //   - the lifetime statistics (src/diagnostics/lifetime-stats.ts) from components 51 and 52
@@ -6,19 +6,19 @@
 //     freeze-frame-list.ts)
 //   - the hub's active fault list off 0x410 (src/can/hub-mirror.ts), every signal and log line
 //
-//   node tools/generate-golden-diagnostics.mts <cool-eva checkout> <output file>
+//   node tools/generate-golden-diagnostics.mts <reference checkout> <output file>
 
 import { registerHooks } from "node:module";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const [coolEvaDirectory, outputPath] = process.argv.slice(2);
-if (!coolEvaDirectory || !outputPath) {
-  console.error("usage: node tools/generate-golden-diagnostics.mts <cool-eva checkout> <output file>");
+const [referenceDirectory, outputPath] = process.argv.slice(2);
+if (!referenceDirectory || !outputPath) {
+  console.error("usage: node tools/generate-golden-diagnostics.mts <reference checkout> <output file>");
   process.exit(2);
 }
-const srcRoot = pathToFileURL(resolve(coolEvaDirectory, "src")).href + "/";
+const srcRoot = pathToFileURL(resolve(referenceDirectory, "src")).href + "/";
 let generation = 0;
 registerHooks({
   resolve(specifier, context, nextResolve) {

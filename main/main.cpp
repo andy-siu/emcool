@@ -1,8 +1,8 @@
-// emcool: listen to the bike's CAN bus, decode every frame with the port of cool-eva's
-// decoders into live state, log what changes to the microSD card, keep the clock on GPS
-// time, serve cool-eva's phone dashboard over Bluetooth, and report over the serial console
-// every 10 s. With OBD_ENABLED, also poll OBD-II as cool-eva does; otherwise it never sends. With
-// WIFI_SSID and ADMIN_PASSWORD, join that Wi-Fi and serve the console and the ride log over it.
+// emcool: listen to the bike's CAN bus, decode every frame into live state, log what changes
+// to the microSD card, keep the clock on GPS time, serve the phone dashboard over Bluetooth,
+// and report over the serial console every 10 s. With OBD_ENABLED, also poll OBD-II; otherwise
+// it never sends. With WIFI_SSID and ADMIN_PASSWORD, join that Wi-Fi and serve the console and
+// the ride log over it.
 //
 // Tasks: decode (core 1) owns the CAN queue, the clock and the ride log's segment buffers, and
 // writes live state; diagnostics (core 1) owns everything that transmits — the OBD poller and
@@ -133,7 +133,7 @@ extern "C" void app_main() {
   const bool safeMode = emcool::beginBoot();
   emcool::noteHeap("boot");
   const bool nvsReady = initNvs();
-  // cool-eva's /etc/default/cool-eva, from NVS; defaults wherever nothing has been saved.
+  // The settings, from NVS; defaults wherever nothing has been saved.
   static emcool::NvsSettingsStorage settingsStorage;
   static emcool::settings::RuntimeSettings runtimeSettings(emcool::settings::Settings::load(settingsStorage));
   const emcool::settings::Settings& settings = runtimeSettings.boot();
@@ -245,14 +245,14 @@ namespace {
 void decodeTask(void* argument) {
   DecodeContext& context = *static_cast<DecodeContext*>(argument);
   emcool::can::DecodedValues decoded;
-  // cool-eva's handleHubMirrorFrame(): the active fault list off 0x410, beside its decoding.
+  // The active fault list off 0x410, beside its decoding.
   static emcool::obd::HubDiagnostics hubDiagnostics;
   static ArrivalRecorder hubRecorder(context.store, context.storeMutex);
 
   while (true) {
     emcool::ReceivedFrame frame;
     if (context.bus.receive(frame, pdMS_TO_TICKS(1000))) {
-      // The diagnostic replies are the diagnostics task's, and never decoded, as on the Pi.
+      // The diagnostic replies are the diagnostics task's, and never decoded.
       if (emcool::obd::isDiagnosticReply(frame.id)) {
         context.diagnostics.forward(frame);
         continue;
@@ -265,7 +265,7 @@ void decodeTask(void* argument) {
       }
       context.decoder.decode(frame.id, data, decoded);
       const std::int64_t arrivedMonotonicMs = emcool::monotonicMs();
-      // cool-eva resolvePackTemperatures(), between decoding and recording, as on the Pi.
+      // Resolve the pack temperatures between decoding and recording.
       context.packTemperature.resolve(frame.id, data, decoded, arrivedMonotonicMs);
       context.status.noteFrame(decoded.size(), decoded.overflowed());
       const std::int64_t arrivedWallClockMs = emcool::wallClockMs();
@@ -282,8 +282,8 @@ void decodeTask(void* argument) {
       if (gpsEpochSeconds) {
         offerGpsTime(context.clock, *gpsEpochSeconds);
       }
-      // The charge-current ack-watch and the automatic controller see these as cool-eva's onChange
-      // does. Outside storeMutex: observeChargeSignal takes the diagnostics task's own lock.
+      // The charge-current ack-watch and the automatic controller see these as they arrive.
+      // Outside storeMutex: observeChargeSignal takes the diagnostics task's own lock.
       for (const emcool::can::DecodedValue& value : decoded) {
         const std::string_view key(value.key);
         if (key == "fast_dc_target_a" || key == "charge_limit_a" || key == "charge_manager_state" ||
@@ -300,7 +300,7 @@ void decodeTask(void* argument) {
 }
 
 
-// cool-eva syncSystemClockFromGps(), with settimeofday where it ran `date -u -s`.
+// Steps the system clock with settimeofday when SystemClockSync says to.
 void offerGpsTime(emcool::clock::SystemClockSync& clock, double gpsEpochSeconds) {
   const double monotonicMs = static_cast<double>(esp_timer_get_time()) / 1000.0;
   const double systemEpochSeconds = static_cast<double>(emcool::wallClockMs()) / 1000.0;
@@ -357,7 +357,7 @@ bool startBluetooth(const BluetoothParts& parts, const std::string& key) {
   return started;
 }
 
-// What this boot runs with — the secret only by its length — and cool-eva's BMS line.
+// What this boot runs with — the secret only by its length — and the BMS line.
 void logSettings(const emcool::settings::Settings& settings) {
   emcool::logInfo(kTag,
                   "settings: BLE_SECRET %s, BLE_NAME %s, CUSTOM_BMS_CONFIG %d, OBD_ENABLED %d, ELOCK_ENABLED %d, "
@@ -382,7 +382,7 @@ void logSettings(const emcool::settings::Settings& settings) {
 }
 
 // The dashboard keys its per-bike state on this, so it must not change across boots: the factory
-// MAC, in cool-eva's instance-id shape (a UUID's 8-4-4-4-12), zero-padded in front.
+// MAC, in the dashboard's instance-id shape (a UUID's 8-4-4-4-12), zero-padded in front.
 std::string dashboardInstanceId() {
   std::uint8_t mac[6] = {};
   if (esp_efuse_mac_get_default(mac) != ESP_OK) {
@@ -394,7 +394,7 @@ std::string dashboardInstanceId() {
   return id;
 }
 
-// The dashboard files its saved copies of the key under this, and cool-eva's is a UUID. A labelled
+// The dashboard files its saved copies of the key under this, and expects a UUID. A labelled
 // HMAC of the key: it changes with the key and reveals nothing of it. Empty if the HMAC fails.
 std::string bluetoothCodeId(const std::string& key) {
   constexpr std::string_view kLabel = "emcool/code-id";

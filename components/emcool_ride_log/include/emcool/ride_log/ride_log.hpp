@@ -3,10 +3,8 @@
 // The decode side of the ride log: the SignalStore's sink. Readings that passed their
 // deadband become `[ts, key, value, seq]` rows in the current segment, and a segment is
 // sealed (handed to the writer) when the next row won't fit, when the clock's trust changes,
-// when it is 5 s old, or when the bike parks — cool-eva's seal-on-park, because parking is
-// the only warning this bus gives before the power goes. A port of cool-eva
-// src/storage/encrypted-log.ts appendReading() and src/storage/seal-on-park.ts, minus the
-// encryption and with segments sized for an ESP32's RAM.
+// when it is 5 s old, or when the bike parks, because parking is the only warning this bus
+// gives before the power goes. Unencrypted, with segments sized for an ESP32's RAM.
 
 #include <cstdint>
 #include <optional>
@@ -30,11 +28,11 @@ struct RideLogCounters {
 
 class RideLog final : public signals::RideLogSink {
  public:
-  // cool-eva sealed every 30 s; RAM allows ~1 s of riding per segment here, and this bounds
-  // how long a quiet, parked bike's readings wait before reaching the card.
+  // RAM allows ~1 s of riding per segment, and this bounds how long a quiet, parked bike's
+  // readings wait before reaching the card.
   static constexpr std::int64_t kMaxSegmentAgeMs = 5000;
   static constexpr std::int64_t kMinMsBetweenParkSeals = 5000;
-  // V_VEHICLE_STATE = parked, 0x101 b1 (`vehicle_state_can`); cool-eva docs/can-0x101.md.
+  // V_VEHICLE_STATE = parked, 0x101 b1 (`vehicle_state_can`).
   static constexpr double kParkedVehicleState = 60;
 
   RideLog(const SessionId& session, std::span<SegmentBuffer> buffers, SegmentQueue& queue,

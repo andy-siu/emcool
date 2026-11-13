@@ -1,7 +1,6 @@
 #pragma once
 
-// One phone's authenticated session over the link, ported from cool-eva
-// src/ble-server/session.ts, protocol 2 (cool-eva docs/ble-server.md §"Key and protocol"):
+// One phone's authenticated session over the link. The handshake:
 //
 //   1. The phone reads `info`: { version, serverNonce }.
 //   2. It sends a clear HELLO { version, clientNonce, proof }, where

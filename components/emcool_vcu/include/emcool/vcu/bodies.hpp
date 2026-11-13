@@ -1,9 +1,8 @@
 #pragma once
 
-// The bodies of cool-eva's service-mode endpoints, ported from src/http/vcu-read.ts, vcu-probe.ts,
-// vcu-params.ts and vcu-backup.ts, as JSON.stringify writes them. The two that carry a snapshot are
-// handed out a part at a time — the opening, then a row each, then the close — so a body of 100 KB
-// never sits in memory.
+// The bodies of the service-mode endpoints (/vcu-read, /vcu-probe, /vcu-params, /vcu-backup), as
+// JSON.stringify writes them. The two that carry a snapshot are handed out a part at a time — the
+// opening, then a row each, then the close — so a body of 100 KB never sits in memory.
 
 #include <memory>
 #include <optional>
@@ -24,7 +23,7 @@ void writeReadResponseJson(text::TextBuffer& out, const VcuReadRunner& runner, V
 // /vcu-probe's: {reading, message, gate, targets}.
 void writeProbeResponseJson(text::TextBuffer& out, const VcuProbeReading* reading,
                             const std::optional<std::string>& message, const ServiceGateVerdict& gate);
-// runner.start()'s answer, as cool-eva's handler would see it: {"started":…,"reason":…}.
+// runner.start()'s answer, as the handler sees it: {"started":…,"reason":…}.
 void writeStartedJson(text::TextBuffer& out, const VcuReadRunner::Started& started);
 void writeProbeOutcomeJson(text::TextBuffer& out, const ProbeOutcome& outcome);
 

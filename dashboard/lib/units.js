@@ -13,7 +13,7 @@ import van from "../vendor/van-1.6.1.js";
 
 /** @typedef {"metric" | "imperial"} UnitSystem */
 
-const STORAGE_KEY = "coolEva.units";
+const STORAGE_KEY = "emcool.units";
 
 // Miles per km. Multiply for lengths and speeds (km → mi, km/h → mph); DIVIDE for
 // Wh/km → Wh/mi, since a mile is the longer distance and so costs proportionally more.

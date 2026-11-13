@@ -1,9 +1,8 @@
 #pragma once
 
-// The protocol between the phone dashboard and the bike, ported from cool-eva
-// public/lib/ble-wire.js — the module both of cool-eva's ends import — byte for byte, so the
-// phone side (the iOS app, or the GitHub Pages dashboard) needs no change. Layers, outermost
-// first (cool-eva docs/ble-server.md §"Wire format"):
+// The protocol between the phone dashboard and the bike, byte for byte as dashboard/lib/ble-wire.js
+// speaks it, so the phone side (the iOS app, or the GitHub Pages dashboard) needs no change.
+// Layers, outermost first:
 //
 //   frame     [flags: FIRST=1 | LAST=2][messageId u8][payload…], one per GATT value
 //   envelope  [0][message] clear, or [1][counter u64 BE][AES-256-GCM(deflate-raw(message))]
@@ -29,7 +28,7 @@ inline constexpr int kProtocolVersion = 2;
 inline constexpr std::string_view kServiceUuid = "7c0e0001-5f3a-4c8e-9d2b-c00e7a000001";
 // Phone → bike, written with response.
 inline constexpr std::string_view kRxCharacteristicUuid = "7c0e0002-5f3a-4c8e-9d2b-c00e7a000001";
-// Bike → phone, by notification; values are at most min(MTU − 5, 512) bytes, as cool-eva sends them.
+// Bike → phone, by notification; values are at most min(MTU − 5, 512) bytes, as the reference sends them.
 inline constexpr std::string_view kTxCharacteristicUuid = "7c0e0003-5f3a-4c8e-9d2b-c00e7a000001";
 // Read-only `{ version, serverNonce }`.
 inline constexpr std::string_view kInfoCharacteristicUuid = "7c0e0004-5f3a-4c8e-9d2b-c00e7a000001";
@@ -59,7 +58,7 @@ enum class MessageKind : std::uint8_t {
   kStream = 21,
 };
 
-// In the IV, so the two directions never share one. cool-eva's TO_PI is this end.
+// In the IV, so the two directions never share one. The dashboard's TO_PI is this end.
 enum class Direction : std::uint8_t { kToBike = 1, kToPhone = 2 };
 
 // ------------------------------------------------------------------------------ frames

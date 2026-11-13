@@ -1,14 +1,14 @@
 # The ride log on the microSD card
 
-emcool keeps cool-eva's ride log, with three differences:
+emcool keeps its ride log on the microSD card:
 
-- The card holds plain files on FAT32. cool-eva encrypted its log; emcool doesn't.
+- The card holds plain files on FAT32. The log isn't encrypted.
 - Position, heading and altitude are never written (`ride_log_policy.hpp`).
 - The framing is built for a card that loses power without warning.
 
-The laptop import (`tools/import-ride-log.mts`) writes the same `rides.db` through cool-eva's own `src/db.ts`, so Grafana and cool-eva's dashboards are unchanged.
+The laptop import (`tools/import-ride-log.mts`) reads the card and writes `rides.db` with Node's built-in SQLite, so it needs Node 22.13 or later and nothing else. Grafana reads `rides.db` as it is.
 
-Code: `components/emcool_ride_log/` (firmware and host), `tools/lib/ride-log-reader.mts` (laptop), and `main/ride_log_task.cpp` (the card).
+Code: `components/emcool_ride_log/` (firmware and host), `tools/lib/ride-log-reader.mts` and `tools/lib/rides-db.mts` (laptop), and `main/ride_log_task.cpp` (the card).
 
 ## On the card
 
@@ -52,23 +52,23 @@ Every write is one record, starting on a sector boundary:
 
 All integers are little-endian.
 
-The **payload** is cool-eva's v3 segment body, in plain text: a header line `{"v":3,"session":…,"trust":…}`, then `[ts, key, value, seq]` rows. Each part opens with records whose header carries a `signals` map, giving every logged signal's unit, group and source. That way each part file can be read on its own even if cool-eva's registry is later renamed, which is the reason cool-eva gave for carrying the metadata at all. Segment records don't repeat it.
+The **payload** is a v3 segment body, in plain text: a header line `{"v":3,"session":…,"trust":…}`, then `[ts, key, value, seq]` rows. Each part opens with records whose header carries a `signals` map, giving every logged signal's unit, group and source. That way each part file can be read on its own even if the signal registry is later renamed. Segment records don't repeat it.
 
 Why each piece of the framing is there:
 
 - **Sector alignment.** Writing a record never rewrites a sector that already holds a committed one. If records shared sectors, appending would read-modify-write the previous record's last sector, and a power cut there could take that record with it.
 - **CRC.** A torn or damaged record is detected, not misread. The reader then resyncs at the next sector boundary, so one bad sector costs at most the record it belongs to.
 - **Session id and record index.** These identify each record. The reader drops duplicates, such as a stale copy left in the zero-filled tail of a part, and a gap in the index shows exactly what was lost.
-- **`seq` on every row.** As in cool-eva, this orders readings whatever the clock said. Every reading takes a number even when it is dropped, so drops leave gaps too.
+- **`seq` on every row.** This orders readings whatever the clock said. Every reading takes a number even when it is dropped, so drops leave gaps too.
 
 ## When a segment is written
 
 The decode task fills one of two 8 KB buffers, and the writer task writes it with `pwrite` and `fsync`. A segment is sealed when any of these happens:
 
-- **The next row doesn't fit.** That is about a second of riding, at cool-eva's measured 120–170 readings a second.
+- **The next row doesn't fit.** That is about a second of riding, at a measured 120–170 readings a second.
 - **The clock's trust changes.** A segment carries exactly one trust: never-synced, satellite-backed or contested.
-- **It is 5 s old.** cool-eva sealed every 30 s.
-- **The bike parks.** `vehicle_state_can` enters 60, at most once per 5 s. This is cool-eva's seal-on-park: parking is the only warning before the power goes.
+- **It is 5 s old.**
+- **The bike parks.** `vehicle_state_can` enters 60, at most once per 5 s. Parking is the only warning before the power goes.
 
 If the writer still holds both buffers, new readings are dropped and counted. The 10 s status line shows the count.
 
@@ -93,7 +93,7 @@ ESP-IDF's helper for reserving contiguous space (`esp_vfs_fat_create_contiguous_
   - The records themselves are self-framing and sector-aligned, so in principle they can still be found by scanning a raw image of the card for the magic.
   - The reader can't do that for a whole card yet: it loads each file into memory whole, so a full-size image would need a streaming mode, which isn't built.
   - A record that straddles two fragments of a fragmented file couldn't be recovered that way.
-- **The card's own controller.** An SD card can corrupt data during a power loss whatever the filesystem does. cool-eva's Pi had the same exposure. The fix would be hardware: a hold-up capacitor, plus sensing the supply dropping. Nothing like that is fitted.
+- **The card's own controller.** An SD card can corrupt data during a power loss whatever the filesystem does. The fix would be hardware: a hold-up capacitor, plus sensing the supply dropping. Nothing like that is fitted.
 
 ## When the card is full
 
@@ -123,7 +123,7 @@ The 10 s status line counts how many old parts have been deleted for room.
 
 - **Exact round trip.** The decoder corpus (471,056 readings) goes through the C++ pipeline onto disk, and is read back exactly: ts, key, value, seq, session and trust.
 - **Damage tests.** 300 random truncations, 300 damaged sectors (garbage, zeros or stale copies) and torn final records each lose exactly the records they touch, and never produce a wrong reading.
-- **Import.** The corpus imports into `rides.db` through cool-eva's `db.ts`, and sampled rows match.
+- **Import.** The corpus imports into `rides.db`, and sampled rows match, with the reference implementation's units and groups.
 - **The tests can fail.** With the reader's CRC check disabled, the damage tests fail.
 - **Rotation rules.** Old boots go first, then this boot's oldest parts, in order. Non-part files, non-numbered directories, and a boot directory holding a foreign file are left alone. A card full of foreign files stops logging and deletes nothing.
 - **A full card, end to end.** The same corpus runs on a simulated 6 MB card and on a real 8 MB FAT image mounted by macOS, where writes genuinely run out of room. Both keep exactly the newest readings, contiguous, with nothing missing in between, and both import.

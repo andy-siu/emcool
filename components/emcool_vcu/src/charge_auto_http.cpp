@@ -2,7 +2,7 @@
 
 namespace emcool::vcu {
 
-// cool-eva CHARGE_AUTO_REASON_TEXT, with TARGET_C (54) and MIN_COMMAND_A (35) substituted in.
+// The reason text, with TARGET_C (54) and MIN_COMMAND_A (35) substituted in.
 const char* chargeAutoReasonText(ChargeAutoReason reason) {
   switch (reason) {
     case ChargeAutoReason::kDisabled:

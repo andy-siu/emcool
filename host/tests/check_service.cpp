@@ -1,9 +1,9 @@
 // Replays tools/generate-golden-service.mts through the C++ port: the OBD stack and service mode's
 // read runner on one event loop, as on the bike, fed the same frames, gate signals and dashboard
 // actions at the same milliseconds. In every millisecond it must send the same frames, record the
-// same signals, log the same lines and answer the same JSON as cool-eva did.
+// same signals, log the same lines and answer the same JSON as the reference implementation did.
 //
-// The snapshots go to a real directory; cool-eva's went to an in-memory one called /vcu-params, as
+// The snapshots go to a real directory; the reference's went to an in-memory one called /vcu-params, as
 // JSON rather than JSON lines, with latest.json where emcool keeps latest.txt. Those three are
 // translated in what the C++ says before comparing. Log lines are compared without their tags.
 //
@@ -37,9 +37,9 @@ using namespace emcool::vcu;
 
 namespace {
 
-// The reason cool-eva's transmitCanFrame gives for a send() that returned -1, which reaches
+// The reason the reference's transmitCanFrame gives for a send() that returned -1, which reaches
 // /stored-dtcs and the logs; emcool's own reason is whatever its bus says.
-std::string coolEvaRefusal(std::uint32_t id) {
+std::string referenceRefusal(std::uint32_t id) {
   char text[128];
   std::snprintf(text, sizeof text, "CAN 0x%x not sent: send() returned -1, expected 16 (socketcan does not expose errno)",
                 static_cast<unsigned>(id));
@@ -113,19 +113,19 @@ struct Millisecond {
   std::vector<Expected> outputs;
 };
 
-// cool-eva's two pointers at its extract script, as emcool words them — plain in logs, escaped in JSON.
+// The reference's two pointers at its extract script, as emcool words them — plain in logs, escaped in JSON.
 std::string emcoolWording(std::string text) {
   for (const char* quote : {"\"", "\\\""}) {
     text = replaceAll(text,
                       std::string("Add the table with scripts/extract-vcu-tables.ts (docs/vcu-parameters.md: ") + quote +
                           "Adding your bike's VCU parameter table" + quote + ").",
-                      std::string("Add the table to cool-eva (its docs/vcu-parameters.md: ") + quote +
-                          "Adding your bike's VCU parameter table" + quote + ") and run tools/generate-vcu-tables.mts.");
+                      std::string("Add the table as docs/service-mode.md (") + quote + "Parameter tables" + quote +
+                          ") describes and run tools/generate-vcu-tables.mts.");
   }
-  // cool-eva's switch became "service data is writable" in its #336; emcool's is still SERVICE_MODE_ENABLED.
+  // The reference's switch is now "service data is writable"; emcool's is still SERVICE_MODE_ENABLED.
   text = replaceAll(text, "Service data is unavailable. Resolve the Settings fault before reading.",
                     emcool::vcu::kServiceModeDisabled);
-  // cool-eva now points at its dashboard Settings page; on emcool the switch is still OBD_ENABLED.
+  // The reference now points at its dashboard Settings page; on emcool the switch is still OBD_ENABLED.
   text = replaceAll(text, "the CAN channel cannot transmit — check the adapter and bus configuration",
                     "the bus is listen-only (OBD_ENABLED=0) — nothing can be transmitted, so every read would time out");
   text = replaceAll(text, "node --experimental-strip-types scripts/read-freeze-frame.ts --lifetime --save",
@@ -133,7 +133,8 @@ std::string emcoolWording(std::string text) {
   return replaceAll(text,
                     "run scripts/extract-vcu-tables.ts against your parameter definitions (see docs/vcu-parameters.md) and send the "
                     "diff.",
-                    "add it to cool-eva (see its docs/vcu-parameters.md) and run tools/generate-vcu-tables.mts.");
+                    "add it as docs/service-mode.md's Parameter tables section describes and run "
+                    "tools/generate-vcu-tables.mts.");
 }
 
 // A log line as compared: the message without its "tag: ".
@@ -194,7 +195,7 @@ class Scenario final : public obd::CanTransmitter, public obd::SignalRecorder {
     for (Expected& expected : bucket().outputs) {
       if (!expected.consumed && expected.text == text) {
         expected.consumed = true;
-        if (expected.fail) return coolEvaRefusal(id);
+        if (expected.fail) return referenceRefusal(id);
         return std::nullopt;
       }
     }

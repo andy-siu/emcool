@@ -1,6 +1,6 @@
 #pragma once
 
-// cool-eva src/can/transmit-log.ts: a refused frame is logged at once, then at most once per
+// As the reference's transmit log: a refused frame is logged at once, then at most once per
 // 5 s per sender, with the count it held back on the next line it does log. A bus that refuses
 // everything would otherwise log twice a second from the poller alone.
 
@@ -24,7 +24,7 @@ class TransmitFailureLog {
   std::uint32_t suppressed_ = 0;
 };
 
-// cool-eva's loggers are module-level, so clear-dtcs's PID and trouble-code reads count against
+// The reference's loggers are module-level, so clear-dtcs's PID and trouble-code reads count against
 // the poller's. One of these per ObdStack, shared the same way.
 struct TransmitLogs {
   TransmitFailureLog obd{"obd"};

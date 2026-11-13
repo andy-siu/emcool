@@ -1,4 +1,4 @@
-// Holds the C++ diagnostic decoders to cool-eva's, line by line of
+// Holds the C++ diagnostic decoders to the reference's, line by line of
 // tools/generate-golden-diagnostics.mts' output: freeze frames, the lifetime statistics, the 0x18
 // stored-code list, and the hub's active fault list with every signal it records and line it logs.
 //
@@ -57,7 +57,7 @@ std::string build(Write write) {
 }
 
 void compare(const char* what, const std::string& input, const std::string& mine, const std::string& theirs) {
-  EMCOOL_CHECK(mine == theirs, "%s %s:\n  emcool   %s\n  cool-eva %s", what, input.substr(0, 80).c_str(),
+  EMCOOL_CHECK(mine == theirs, "%s %s:\n  emcool    %s\n  reference %s", what, input.substr(0, 80).c_str(),
                mine.substr(0, 1200).c_str(), theirs.substr(0, 1200).c_str());
 }
 

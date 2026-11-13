@@ -1,11 +1,10 @@
 #pragma once
 
 // The task that talks to the bike: the OBD poller (with OBD_ENABLED) and service mode's read runner
-// (cool-eva's vcuReadRunner), on one event loop. The decode task hands it the diagnostic replies
-// (0x7E0-0x7EF and 0x790); the Bluetooth task hands it the dashboard's service requests and takes
-// the answers back when they're ready, so a probe that takes seconds never holds up the live
-// stream; and it writes service mode's snapshots to the card itself, so a slow card never holds up
-// the decoding.
+// on one event loop. The decode task hands it the diagnostic replies (0x7E0-0x7EF and 0x790); the
+// Bluetooth task hands it the dashboard's service requests and takes the answers back when they're
+// ready, so a probe that takes seconds never holds up the live stream; and it writes service mode's
+// snapshots to the card itself, so a slow card never holds up the decoding.
 
 #include <cstdint>
 #include <memory>
@@ -50,7 +49,7 @@ class DiagnosticsTask final : public ble_server::ServiceDesk, public ble_server:
   // From the decode task: a diagnostic reply, never blocking it.
   void forward(const ReceivedFrame& frame);
   // From the decode task: the charge ack signals (fast_dc_target_a, charge_limit_a) and
-  // charge_manager_state, so the charge-current ack-watch sees them as cool-eva's onChange does.
+  // charge_manager_state, so the charge-current ack-watch sees them as they arrive.
   void observeChargeSignal(std::string_view key, double value, std::int64_t monotonicMs);
 
   // ble_server::ServiceDesk, from the Bluetooth task.

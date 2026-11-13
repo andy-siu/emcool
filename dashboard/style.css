@@ -1185,7 +1185,7 @@ body {
 }
 
 /* The second of two instructions, where the first is the one to follow: the lifetime
-   block's shell fallback for a Pi with the service stopped.
+   block's shell fallback for when the service is stopped.
    ⚠️ It INHERITS .raw-sub's --sub and sets no colour of its own. An earlier version put
    --label here, reasoning that a command someone has to type should not be dimmed — but
    --label is the BRIGHTER token (9.85:1 against --sub's 8.12:1 on a dark tile, 14.63:1

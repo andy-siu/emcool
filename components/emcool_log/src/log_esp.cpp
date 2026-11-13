@@ -49,7 +49,7 @@ LogCounts logCountsFor(const char* tag) {
 
 namespace {
 
-// Long enough for the BMS config warnings ported from cool-eva, the longest lines logged.
+// Long enough for the BMS config warnings, the longest lines logged.
 constexpr int kMessageCapacity = 768;
 
 }  // namespace

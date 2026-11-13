@@ -147,7 +147,7 @@ int gapEvent(ble_gap_event* event, void*) {
   }
 }
 
-// Advertising carries the flags and cool-eva's service UUID — what the phone filters on; the
+// Advertising carries the flags and the dashboard's service UUID — what the phone filters on; the
 // name goes in the scan response, since 128-bit UUID and name together overrun 31 bytes.
 void advertise() {
   ble_hs_adv_fields fields = {};

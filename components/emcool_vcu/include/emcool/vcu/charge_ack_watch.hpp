@@ -1,10 +1,9 @@
 #pragma once
 
-// Watches whether a charge-current command took, ported from cool-eva src/charge/ack-watch.ts: it
-// is fed the bike's charge-request readings and the session state, told when a command goes out,
-// and answers the current verdict. cool-eva's module globals become one object the diagnostics
-// task owns; cool-eva's onChange subscription becomes observe() calls from the decode path; its
-// setTimeout settle becomes a check inside observe()/state() against the clock.
+// Watches whether a charge-current command took: it is fed the bike's charge-request readings and
+// the session state, told when a command goes out, and answers the current verdict. One object the
+// diagnostics task owns, fed by observe() calls from the decode path; a command settles in a check
+// inside observe()/state() against the clock, not on a timer.
 //
 // It records charge_cmd_a (on send) and, when a command settles, charge_cmd_ack, charge_cmd_ack_seq
 // and (for "took") charge_cmd_ack_ms — through the same SignalRecorder the OBD side uses.

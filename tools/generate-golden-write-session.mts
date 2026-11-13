@@ -1,4 +1,4 @@
-// Drives cool-eva's OWN write-session code — src/vcu/write-session.ts's writeParameter,
+// Drives the reference's OWN write-session code — src/vcu/write-session.ts's writeParameter,
 // writeParameters, readServiceStamp, setServicePoint, clearStoredDtcs and resetVcu — against a
 // scripted KWP/OBD bus on a fake clock, and records the frames it sent and the outcome it reached,
 // for host/tests/check_write_session.cpp to hold the C++ WriteSession to. This is the stateful half
@@ -8,12 +8,12 @@
 // The scripted bus answers a request by its service byte, in the sequence the scenario lists; a
 // reply of "-" is silence (the session's timeout fires). The C++ side replays the identical script.
 //
-//   node tools/generate-golden-write-session.mts <cool-eva checkout> <output file>
+//   node tools/generate-golden-write-session.mts <reference checkout> <output file>
 //
 // Lines:
 //   case <n> <op> <micro|-> <arg…>     op = param|batch|stamp|servicepoint|clear|reset
 //   reply <requestHex> <replyHex|->     one scripted reply, in order of the requests expected
-//   t <ms> <id-hex> <dataHex>           a frame cool-eva transmitted (the assertion)
+//   t <ms> <id-hex> <dataHex>           a frame the reference transmitted (the assertion)
 //   outcome <json>                      the resolved outcome (the assertion)
 //   end
 
@@ -23,13 +23,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const [coolEvaDirectory, outputPath] = process.argv.slice(2);
-if (!coolEvaDirectory || !outputPath) {
-  process.stderr.write("usage: node tools/generate-golden-write-session.mts <cool-eva checkout> <output file>\n");
+const [referenceDirectory, outputPath] = process.argv.slice(2);
+if (!referenceDirectory || !outputPath) {
+  process.stderr.write("usage: node tools/generate-golden-write-session.mts <reference checkout> <output file>\n");
   process.exit(2);
 }
-const coolEvaRoot = pathToFileURL(resolve(coolEvaDirectory)).href + "/";
-const srcRoot = coolEvaRoot + "src/";
+const referenceRoot = pathToFileURL(resolve(referenceDirectory)).href + "/";
+const srcRoot = referenceRoot + "src/";
 
 const fakeDirectory = await mkdtemp(join(tmpdir(), "emcool-ws-"));
 const fakeMonotonicPath = join(fakeDirectory, "fake-monotonic.mjs");
@@ -140,9 +140,9 @@ const drain = async () => {
 };
 
 let generation = 0;
-// socketcan's send() returns sizeof(struct can_frame) on success, and cool-eva refuses anything else (#359).
+// socketcan's send() returns sizeof(struct can_frame) on success, and the reference refuses anything else (#359).
 const SOCKETCAN_SENT = 16;
-const importFresh = (path: string) => import(`${coolEvaRoot}${path}?gen=${generation}`);
+const importFresh = (path: string) => import(`${referenceRoot}${path}?gen=${generation}`);
 
 // The scripted bus: a list of (requestHex → replyHex|null) in order. Each send looks up the next
 // scripted reply whose request matches by its KWP service byte / OBD mode; a null reply is silence.
@@ -251,7 +251,7 @@ async function main(): Promise<void> {
     emit("end");
   };
 
-  // Scenario set — the shapes cool-eva's own checks exercise.
+  // Scenario set — the shapes the reference's own checks exercise.
   // 1. accepted
   scenarios.push(() =>
     plan("MAX_DC_CHG_CURRENT", 80, 75, script([
@@ -366,7 +366,7 @@ async function main(): Promise<void> {
     emit("end");
   });
 
-  // The charge-current and charge-stop runner actions: driven through cool-eva's createVcuWriteRunner
+  // The charge-current and charge-stop runner actions: driven through the reference's createVcuWriteRunner
   // with seeded live signals and a fake channel, recording the frames and the ServiceWriteAnswer.
   const chargeCase = async (
     label: string,

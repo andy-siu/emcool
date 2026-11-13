@@ -34,7 +34,7 @@ void sealedPrefix(std::uint64_t counter, std::uint8_t* prefix) {
   putBigEndian32(prefix + 5, static_cast<std::uint32_t>(counter));
 }
 
-// [direction][0 0 0][counter u64 BE], as cool-eva ivFor().
+// [direction][0 0 0][counter u64 BE], as the dashboard's ivFor() builds it.
 GcmIv ivFor(Direction direction, std::uint64_t counter) {
   GcmIv iv = {};
   iv[0] = static_cast<std::uint8_t>(direction);
@@ -73,7 +73,7 @@ FrameSplitter::FrameSplitter(std::span<const std::uint8_t> envelope, std::uint8_
       payloadBytes_(maxFrameBytes > kFrameHeaderBytes ? maxFrameBytes - kFrameHeaderBytes : 0) {}
 
 bool FrameSplitter::next(std::span<std::uint8_t> out, std::size_t& length) {
-  // As cool-eva splitIntoFrames(): an empty envelope still makes one FIRST|LAST frame.
+  // As the dashboard's splitIntoFrames(): an empty envelope still makes one FIRST|LAST frame.
   if (payloadBytes_ == 0 || (started_ && offset_ >= envelope_.size())) {
     return false;
   }
@@ -149,7 +149,7 @@ void FrameAssembler::reset() {
 
 std::size_t encodeMessage(MessageKind kind, std::string_view headerJson, std::span<const std::uint8_t> body,
                           std::span<std::uint8_t> out) {
-  // cool-eva writes `{}` for a missing header.
+  // The dashboard writes `{}` for a missing header.
   const std::string_view header = headerJson.empty() ? std::string_view("{}") : headerJson;
   const std::size_t length = kMessageHeaderBytes + header.size() + body.size();
   if (out.size() < length) {

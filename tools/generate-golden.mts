@@ -1,4 +1,4 @@
-// Runs a deterministic corpus of CAN frames through cool-eva's own decodeFrame() and writes
+// Runs a deterministic corpus of CAN frames through the reference's own decodeFrame() and writes
 // each frame with the values it produced, for host/tests/check_decoders.cpp to replay through
 // the C++ port and compare value-for-value. The 16 GB capture archive the TypeScript was
 // verified on is not on this machine, so the corpus is synthetic: every 11-bit id at every
@@ -7,7 +7,7 @@
 // decoders can emit never appears, because a key the corpus never reaches is a key the diff
 // never checks.
 //
-//   node tools/generate-golden.mts <cool-eva checkout> <output file>
+//   node tools/generate-golden.mts <reference checkout> <output file>
 //
 // Line format: `<id hex> <payload hex, or - when empty>[ <key>=<value>]...`, with values
 // written by String(), the shortest form that parses back to the identical double.
@@ -23,24 +23,24 @@ interface DecodedValue {
 
 type ByteChoice = readonly number[] | null;
 
-const [coolEvaDirectory, outputPath] = process.argv.slice(2);
-if (!coolEvaDirectory || !outputPath) {
-  console.error("usage: node tools/generate-golden.mts <cool-eva checkout> <output file>");
+const [referenceDirectory, outputPath] = process.argv.slice(2);
+if (!referenceDirectory || !outputPath) {
+  console.error("usage: node tools/generate-golden.mts <reference checkout> <output file>");
   process.exit(2);
 }
 
 // The corpus deliberately feeds the decoders out-of-range attitude and half-complete GPS fixes,
-// so cool-eva warns. Count instead of printing: the count is written beside the corpus, and
+// so the reference warns. Count instead of printing: the count is written beside the corpus, and
 // tools/check.sh requires the C++ port to warn exactly as often.
 let decoderWarnings = 0;
 console.warn = () => {
   decoderWarnings++;
 };
 
-const decodeModule = await import(pathToFileURL(join(coolEvaDirectory, "src/can/decode.ts")).href);
+const decodeModule = await import(pathToFileURL(join(referenceDirectory, "src/can/decode.ts")).href);
 const decodeFrame = decodeModule.decodeFrame as (id: number, data: Buffer) => DecodedValue[];
 const streamIds = decodeModule.STREAM_IDS as number[];
-const registryModule = await import(pathToFileURL(join(coolEvaDirectory, "src/can/registry.ts")).href);
+const registryModule = await import(pathToFileURL(join(referenceDirectory, "src/can/registry.ts")).href);
 const registeredKeys = new Set((registryModule.SIGNALS as { key: string }[]).map(signal => signal.key));
 
 const random = mulberry32(0x0e3c001);
@@ -124,7 +124,7 @@ console.log(
   `golden: ${lines.length} frames, ${emittedKeys.size} distinct keys, ${decoderWarnings} decoder warnings → ${outputPath}`
 );
 if (unregistered.length > 0) {
-  console.error(`golden: decoders emit keys cool-eva's registry lacks: ${unregistered.join(", ")}`);
+  console.error(`golden: decoders emit keys the reference's registry lacks: ${unregistered.join(", ")}`);
   process.exit(1);
 }
 if (missing.length > 0) {
@@ -182,8 +182,8 @@ async function keysNamedInDecoderSources(): Promise<Set<string>> {
     "abs", "attitude", "charge-manager", "charge-setpoint", "charge-soc-limit", "cluster-range",
     "consumption", "decode", "decode-bms", "drive", "hub-output", "psu", "vcu-digitals",
     "vcu-flags", "vehicle-status",
-  ].map(name => join(coolEvaDirectory, `src/can/${name}.ts`));
-  modules.push(join(coolEvaDirectory, "src/gps/decode.ts"));
+  ].map(name => join(referenceDirectory, `src/can/${name}.ts`));
+  modules.push(join(referenceDirectory, "src/gps/decode.ts"));
   const keys = new Set<string>();
   for (const path of modules) {
     const source = await readFile(path, "utf-8");

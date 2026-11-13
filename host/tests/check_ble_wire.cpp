@@ -1,7 +1,7 @@
 // The phone link's wire protocol, piece by piece: crypto against published vectors, the
 // deflate encoder against zlib, the JSON reader against good and hostile input, framing,
 // envelopes, and the session handshake played from the phone's side. tools/check-ble.mts then
-// does it all again against cool-eva's own ble-wire.js — the code the phone runs.
+// does it all again against the dashboard's own ble-wire.js — the code the phone runs.
 
 #include <zlib.h>
 
@@ -205,7 +205,7 @@ void checkFrames() {
                "an abandoned message was not reported, or the new one was lost");
   EMCOOL_CHECK(assembler.push(stray).problem != nullptr && !assembler.push(stray).envelope,
                "a stray continuation was accepted");
-  // A continuation carrying nothing resets the message, as cool-eva's does, so empty frames can't
+  // A continuation carrying nothing resets the message, as the reference's does, so empty frames can't
   // hold the buffer open.
   const std::uint8_t opening[] = {1, 7, 'd'};
   const std::uint8_t empty[] = {0, 7};

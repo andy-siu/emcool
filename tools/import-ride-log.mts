@@ -1,34 +1,17 @@
-// Laptop-side import of emcool's ride log: reads the RIDES/ folder off the microSD card and
-// writes cool-eva's SQLite file through cool-eva's own src/db.ts, so Grafana and cool-eva's
-// dashboards read it unchanged. The emcool counterpart of cool-eva scripts/decrypt-log.ts,
-// without the decryption — the card is plain text.
+// Imports emcool's ride log into rides.db, the SQLite file Grafana reads: the RIDES/ folder off the
+// microSD card, or a .log file downloaded over Bluetooth or Wi-Fi. The card is plain text, so this only
+// reads the records (tools/lib/ride-log-reader.mts) and writes their readings (tools/lib/rides-db.mts).
 //
 //   node tools/import-ride-log.mts <RIDES dir or files…> [--out rides.db] [--force]
 //
-// Needs a cool-eva checkout with its dependencies installed (COOL_EVA_DIR, default ../cool-eva).
+// Needs only Node 22.13+ (its built-in SQLite).
 
 import { access } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { basename, dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { readRideLog, type FileReadout, type SignalMeta } from "./lib/ride-log-reader.mts";
-
-interface CoolEvaDb {
-  initDb(path: string, flushMs?: number): void;
-  recordReading(
-    ts: number,
-    key: string,
-    value: number,
-    unit: string,
-    group: string,
-    source: string,
-    session?: string,
-    seq?: number,
-    clockTrust?: string
-  ): void;
-  flushNow(): void;
-  closeDb(): void;
-}
+import { RidesDb } from "./lib/rides-db.mts";
 
 export interface ImportSummary {
   readings: number;
@@ -38,23 +21,14 @@ export interface ImportSummary {
   untrustedReadings: number;
 }
 
-const emcoolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-
 // Imports into `outputPath` and returns what was read; the CLI below wraps it.
 export async function importRideLog(
   inputs: string[],
   outputPath: string,
-  coolEvaDirectory: string,
   log: (line: string) => void = console.log
 ): Promise<ImportSummary> {
-  const db = (await import(pathToFileURL(join(coolEvaDirectory, "src/db.ts")).href)) as CoolEvaDb;
-  const registry = await import(pathToFileURL(join(coolEvaDirectory, "src/can/registry.ts")).href);
-  const registryByKey = new Map<string, SignalMeta & { key: string }>(
-    (registry.SIGNALS as (SignalMeta & { key: string })[]).map(signal => [signal.key, signal])
-  );
-
   const readouts = await readRideLog(inputs);
-  db.initDb(resolve(outputPath));
+  const db = new RidesDb(resolve(outputPath));
   const summary: ImportSummary = { readings: 0, records: 0, damagedRecords: 0, duplicateRecords: 0, untrustedReadings: 0 };
   // Metadata from a session's earlier parts covers a later part whose opening records were lost.
   const sessionMeta = new Map<string, SignalMeta>();
@@ -63,7 +37,9 @@ export async function importRideLog(
       sessionMeta.set(key, meta);
     }
     for (const reading of readout.readings) {
-      const meta = readout.meta.get(reading.key) ?? sessionMeta.get(reading.key) ?? registryByKey.get(reading.key);
+      // Every part opens with its signals' metadata, so this falls back only for a part whose opening
+      // records were lost and whose session's other parts aren't in this import.
+      const meta = readout.meta.get(reading.key) ?? sessionMeta.get(reading.key);
       db.recordReading(
         reading.ts,
         reading.key,
@@ -79,7 +55,7 @@ export async function importRideLog(
         summary.untrustedReadings++;
       }
     }
-    db.flushNow();
+    db.flush();
     summary.readings += readout.readings.length;
     summary.records += readout.records.length;
     summary.damagedRecords += readout.damagedRecords;
@@ -88,7 +64,7 @@ export async function importRideLog(
       log(describeFile(readout));
     }
   }
-  db.closeDb();
+  db.close();
   for (const line of describeMissingRecords(readouts)) {
     log(line);
   }
@@ -164,8 +140,7 @@ async function main(): Promise<void> {
   if (outputExists && !force) {
     fail(`${resolve(outputPath)} already exists. Delete it, choose another --out, or pass --force to append.`);
   }
-  const coolEvaDirectory = resolve(process.env.COOL_EVA_DIR ?? join(emcoolRoot, "../cool-eva"));
-  const summary = await importRideLog(inputs, outputPath, coolEvaDirectory);
+  const summary = await importRideLog(inputs, outputPath);
   console.log(`\n${summary.readings} readings from ${summary.records} records → ${resolve(outputPath)}`);
   if (summary.untrustedReadings > 0) {
     console.warn(

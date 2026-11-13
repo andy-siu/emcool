@@ -17,7 +17,7 @@ export function serviceRefusal(state) {
     return null;
   }
   if (!state.enabled) {
-    return "Service data is unavailable. Resolve the Settings fault before reading.";
+    return "🔒  Service mode is off on this bike (SERVICE_MODE_ENABLED=0)";
   }
   if (!state.gate.safe) {
     // Deliberately not repeating the reasons: they are in full above the buttons, and a

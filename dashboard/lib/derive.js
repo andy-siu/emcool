@@ -16,7 +16,7 @@ import { CELL_COUNT } from "./cells.js";
 //
 // Sign convention, read off 7.6 M logged samples: `pack_a` and `pack_kw` are
 // NEGATIVE under discharge (observed minima −407 A and −116.6 kW, against the
-// Ribelle's 126 kW peak) and positive on regen and charge. Getting this backwards
+// bike's 126 kW peak) and positive on regen and charge. Getting this backwards
 // silently inverts sag compensation, so it is asserted by name below rather than
 // left implicit in a minus sign.
 

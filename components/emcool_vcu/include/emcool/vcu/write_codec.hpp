@@ -1,11 +1,11 @@
 #pragma once
 
-// Pure codec for the three services that CHANGE something in a VCU micro, ported from cool-eva
-// src/vcu/write-codec.ts: SecurityAccess (0x27), WriteDataByCommonIdentifier (0x2E) and
-// StartRoutineByLocalIdentifier (0x31). Requests in, bytes out; bytes in, outcomes out. No bus.
+// Pure codec for the three services that CHANGE something in a VCU micro: SecurityAccess
+// (0x27), WriteDataByCommonIdentifier (0x2E) and StartRoutineByLocalIdentifier (0x31). Requests
+// in, bytes out; bytes in, outcomes out. No bus.
 // codec.hpp's read-only guarantee is untouched — its request union still has nowhere to put a value.
 //
-// Four things a caller cannot do, each re-checked on the way out (cool-eva docs/vcu-parameters.md §6):
+// Four things a caller cannot do, each re-checked on the way out:
 //   - name an IDENTIFIER (write-parameter takes a PLAN; the allowlist in write_targets makes one,
 //     and isAllowedPlan re-derives it here)
 //   - name a ROUTINE ID (start-routine takes a NAME; 0xFB, the routine that WIPES BATTERY
@@ -13,8 +13,8 @@
 //   - write before the bike has named its parameter table (assertTableTypeConfirmed)
 //   - emit a service outside WRITE_SERVICES
 //
-// cool-eva throws on the guards (they only fire on misuse, never in normal operation); emcool runs
-// with -fno-exceptions, so buildWriteFrame returns a failed result with the same reason instead.
+// The guards only fire on misuse, never in normal operation; emcool runs with -fno-exceptions, so
+// buildWriteFrame returns a failed result with the reason instead of throwing.
 
 #include <array>
 #include <cstdint>
@@ -52,7 +52,7 @@ std::uint32_t securityKeyForSeed(std::uint32_t seed);
 struct WriteFrameResult {
   bool ok = false;
   std::array<std::uint8_t, 8> frame{};
-  std::string reason;  // when !ok (the refusal cool-eva would have thrown)
+  std::string reason;  // when !ok (the refusal)
 };
 WriteFrameResult buildWriteFrame(const ParameterNames& names, Micro target, const VcuWriteRequest& request);
 

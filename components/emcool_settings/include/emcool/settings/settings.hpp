@@ -1,13 +1,12 @@
 #pragma once
 
-// The per-bike settings: what cool-eva keeps in /etc/default/cool-eva, under the same names
-// where cool-eva has one. Kept in the ESP32's NVS, so they survive reflashing and firmware
-// updates (only `idf.py erase-flash` clears them), and set from the serial console — or from the
+// The per-bike settings. Kept in the ESP32's NVS, so they survive reflashing and firmware
+// updates (only `idf.py erase-flash` clears them), and set from the serial console or the
 // dashboard's Settings → Bike console, which runs the same commands (ble_server/settings_endpoints.hpp).
-// Most are read once at boot, so a change takes effect at the next restart and `show` says
-// when one is waiting; the few marked live (the status report's) apply the moment they're set.
-// Only settings for what emcool actually does are here; cool-eva's others return with the
-// features they configure.
+// Most are read once at boot, so a change takes effect at the next restart and `show` says when one is
+// waiting; the few marked live (the status report's) apply the moment they're set. Only
+// settings for what emcool actually does are here; others arrive with the features they
+// configure.
 
 #include <atomic>
 #include <cstddef>
@@ -63,7 +62,7 @@ struct Settings {
   std::string bleSecret;
   std::string bleName;
   bool customBmsConfig = false;
-  // Transmitting: off unless set. The E-LOCK read happens only with OBD on, as in cool-eva.
+  // Transmitting: off unless set. The E-LOCK read happens only with OBD on.
   bool obdEnabled = false;
   bool elockEnabled = false;
   // Service mode's VCU reads, which also need OBD_ENABLED for an active bus.

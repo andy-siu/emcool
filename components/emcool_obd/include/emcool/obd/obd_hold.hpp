@@ -1,10 +1,10 @@
 #pragma once
 
-// Parking the OBD poller so something else can have the bus to itself, ported from cool-eva
-// src/can/obd-hold.ts. A service-mode read or write asks for the hold; the poller parks at its
-// next check (between PID requests, or before a trouble-code read), and the asker sees
-// kParked. Nothing waits for ever: the asker gives up if the poller hasn't parked within 6 s,
-// and the poller takes the bus back after 15 s however the hold's owner is doing.
+// Parking the OBD poller so something else can have the bus to itself. A service-mode read or
+// write asks for the hold; the poller parks at its next check (between PID requests, or before
+// a trouble-code read), and the asker sees kParked. Nothing waits for ever: the asker gives up
+// if the poller hasn't parked within 6 s, and the poller takes the bus back after 15 s however
+// the hold's owner is doing.
 //
 // One hold at a time; a second asker is refused at once.
 
@@ -44,14 +44,14 @@ class ObdHold {
   // release whoever asked next. Before the poller has parked, it withdraws the request.
   void release(HoldTicket ticket);
 
-  // The poller's check, cool-eva parkedForHold(): true while it must stay off the bus. The
-  // first check after a request is what parks it.
+  // The poller's check: true while it must stay off the bus. The first check after a request
+  // is what parks it.
   bool parkedForHold(std::int64_t nowMs);
   // The asker's wait running out.
   void tick(std::int64_t nowMs);
   std::optional<Deadline> nextDeadline() const;
 
-  // cool-eva obdPollerHeldBy(): the reason, or empty when nobody holds it.
+  // The reason, or empty when nobody holds it.
   std::string_view heldBy() const { return active_ ? std::string_view(reason_) : std::string_view(); }
 
  private:
@@ -69,7 +69,7 @@ class ObdHold {
   Settled settled_;
 };
 
-// cool-eva pollerRefusalFor(): what to tell the user when the hold was refused.
+// What to tell the user when the hold was refused.
 std::string pollerRefusalFor(std::string_view what);
 
 }  // namespace emcool::obd

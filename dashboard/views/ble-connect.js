@@ -77,7 +77,7 @@ export function BleSection() {
       h2({ class: "sheet-heading" }, "Bluetooth"),
       div(
         { class: "action-note caution" },
-        "This browser has no Web Bluetooth. On iPhone use the emcool app or Bluefy; on Android, Chrome."
+        "This browser has no Web Bluetooth. On iPhone use Bluefy; on Android or a Mac, Chrome."
       )
     );
   }

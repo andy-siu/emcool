@@ -1,11 +1,11 @@
 #pragma once
 
-// Coroutines for porting cool-eva's async functions, on emcool::async::Loop:
+// Coroutines for porting JavaScript async functions, on emcool::async::Loop:
 //
 //   Task<T>      an async function. It starts at once and runs until its first co_await of
 //                something not yet done, as a JS async function does. co_await on it resumes
 //                the caller as a microtask once it returns. Keep the Task until it's done, or
-//                detach() it to let it run on by itself (`void promise` in cool-eva).
+//                detach() it to let it run on by itself (`void promise` in TypeScript).
 //   Deferred<T>  a promise resolved by hand (`new Promise(resolve => …)`); any number of
 //                coroutines may co_await it, and resolve() wakes them as microtasks.
 //   sleep(ms)    `await new Promise(r => setTimeout(r, ms))`.

@@ -1,16 +1,16 @@
 #pragma once
 
-// THE ALLOWLIST, ported from cool-eva src/vcu/write-targets.ts: the only VCU calibration
-// parameters this repo will write, the only values it will write into them, and the pure
-// function that turns a request into bytes or into a refusal. Data and arithmetic only.
+// THE ALLOWLIST: the only VCU calibration parameters this repo will write, the only values it will
+// write into them, and the pure function that turns a request into bytes or into a refusal. Data and
+// arithmetic only.
 //
 // An identifier not on the list is UNEXPRESSIBLE: the HTTP layer takes a NAME, never a number,
 // and write_codec.cpp re-checks the plan against this module immediately before the bytes are
 // built. Every bound is POLICY; every name is a claim about which of Energica's parameter tables
-// the bike runs. Why each entry is on the list is in cool-eva docs/vcu-parameters.md §5.
+// the bike runs.
 //
-// cool-eva reads the active parameter table from a module global; emcool threads it through as a
-// `ParameterNames&`, as the read path does, so there is no global write-path state.
+// The active parameter table is threaded through as a `ParameterNames&`, as the read path does,
+// so there is no global write-path state.
 
 #include <cstdint>
 #include <optional>
@@ -39,7 +39,7 @@ struct WriteControl {
   std::vector<WritableBit> bits;
 };
 
-// How a target's raw count reads to a human — cool-eva's per-target `unit` closures.
+// How a target's raw count reads to a human.
 enum class UnitKind : std::uint8_t { kAmps, kRawUnknown, kDeciNm, kHexWord, kPlain };
 
 struct WriteTarget {

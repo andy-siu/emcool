@@ -14,7 +14,7 @@ import { ageOf, chartTick, valueOf } from "./store.js";
 
 /** @typedef {"auto" | "light" | "dark"} ThemePreference */
 
-const STORAGE_KEY = "coolEva.theme";
+const STORAGE_KEY = "emcool.theme";
 
 /**
  * How long the bike's own day/night flag counts for after it last arrived.

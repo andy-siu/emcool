@@ -2,8 +2,6 @@
 
 #include "emcool/log.hpp"
 
-// Ported from cool-eva src/gps/decode.ts and src/gps/fix-watch.ts.
-
 namespace emcool::can {
 
 namespace {
@@ -109,8 +107,8 @@ bool GpsMessageDecoder::decodeUtc(FrameBytes frame, unsigned satellites, double&
   if (!inRange) {
     return false;
   }
-  // cool-eva rejects a date Date.UTC rolls over (31 April → 1 May) by round-tripping it;
-  // with every other field in range that is exactly a day past the end of its month.
+  // Reject a date Date.UTC would roll over (31 April → 1 May); with every other field in range
+  // that is exactly a day past the end of its month.
   if (static_cast<int>(day) > daysInMonth(year, month)) {
     return false;
   }

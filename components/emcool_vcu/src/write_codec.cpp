@@ -30,7 +30,7 @@ bool isWriteService(std::uint8_t service) {
   return service == kSecurityAccess || service == kWriteByCommonIdentifier || service == kStartRoutine;
 }
 
-// The payload for a write-class request, or a reason it was refused (the cool-eva throw).
+// The payload for a write-class request, or a reason it was refused.
 struct PayloadResult {
   bool ok = false;
   std::vector<std::uint8_t> payload;

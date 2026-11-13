@@ -4,8 +4,8 @@
 #include <cmath>
 #include <limits>
 
-// Ported from cool-eva src/gps/clock-gate.ts; the operation order follows it so the
-// differential check in host/tests/check_clock.cpp can require identical verdicts.
+// The operation order follows the TypeScript reference, so the differential check in
+// host/tests/check_clock.cpp can require identical verdicts.
 
 namespace emcool::clock {
 
@@ -43,7 +43,7 @@ ClockVerdict GpsClockGate::offer(double epochSeconds, double systemEpochSeconds,
     return {false, ClockVerdictReason::kBeforeFloor, 0, 0, epochSeconds};
   }
 
-  // Push, drop readings older than the window, keep at most the newest five — cool-eva's order.
+  // Push, drop readings older than the window, keep at most the newest five — the reference's order.
   TimeReading candidates[kRequiredConsistentReadings + 1];
   std::size_t candidateCount = 0;
   for (std::size_t index = 0; index < windowCount_; index++) {

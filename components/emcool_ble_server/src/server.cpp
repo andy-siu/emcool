@@ -21,7 +21,7 @@ constexpr std::string_view kBadPath = "path must start with /";
 constexpr std::string_view kBodyTooLarge = "the request body is larger than the bike accepts";
 
 constexpr const char* kTag = "ble-server";
-// MTU − 5, as cool-eva sends: it also fits BlueZ's multiple-notification format, so the phone sees
+// MTU − 5, as the reference sends: it also fits BlueZ's multiple-notification format, so the phone sees
 // the same frame sizes from either bike. Never above ATT's 512-byte value ceiling.
 constexpr std::uint16_t kNotificationOverheadBytes = 5;
 constexpr std::size_t kMaxNotificationBytes = 512;
@@ -75,7 +75,7 @@ void BleServer::receiveFrame(std::span<const std::uint8_t> frame, std::int64_t n
     return;
   }
   // Before authentication only a whole HELLO in one frame counts, so a stranger can never hold
-  // the assembler (cool-eva docs/ble-server.md §"Framing and resource bounds").
+  // the assembler.
   if (frame[0] == kCompleteFrameFlags && frame.size() > ble::kFrameHeaderBytes &&
       frame[ble::kFrameHeaderBytes] == kClearEnvelopeTag) {
     receiveHello(frame.subspan(ble::kFrameHeaderBytes), nowMonotonicMs);
@@ -125,7 +125,7 @@ void BleServer::receiveHello(std::span<const std::uint8_t> envelope, std::int64_
     logInfo(kTag, "phone authenticated, session started");
   }
   if (result.replyLength == 0 || slot == nullptr) return;
-  // With no lockout, refusals are what a flood of wrong HELLOs would multiply; cool-eva allows a
+  // With no lockout, refusals are what a flood of wrong HELLOs would multiply; the reference allows a
   // burst of four per 2 s.
   if (!result.startedSession && !allowRefusal(nowMonotonicMs)) return;
   slot->length = result.replyLength;
@@ -285,7 +285,7 @@ void BleServer::queueRequest(std::string_view header, std::span<const std::uint8
                 request.method.data(), request.method.size());
   copyTruncated(path != nullptr && path->type == ble::JsonType::kString ? path->text : "", request.path.data(),
                 request.path.size());
-  request.coolEva[0] = '\0';
+  request.emcoolHeader[0] = '\0';
   request.bodyTooLarge = body.size() > kMaxRequestBodyBytes;
   request.body.assign(request.bodyTooLarge ? std::string_view() : std::string_view(reinterpret_cast<const char*>(body.data()), body.size()));
   if (const ble::JsonMember* headers = reader.find("headers"); headers != nullptr && headers->type == ble::JsonType::kObject) {
@@ -294,7 +294,7 @@ void BleServer::queueRequest(std::string_view header, std::span<const std::uint8
     if (headerReader.read(headers->text, headerScratch)) {
       for (const ble::JsonMember& member : headerReader.members()) {
         if (member.type == ble::JsonType::kString && equalsIgnoringCase(member.key, "x-emcool")) {
-          copyTruncated(member.text, request.coolEva.data(), request.coolEva.size());
+          copyTruncated(member.text, request.emcoolHeader.data(), request.emcoolHeader.size());
         }
       }
     }
@@ -360,7 +360,7 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
         responseStage_ = ResponseStage::kHead;
       } else {
         const std::optional<HttpResponse> response = requests_.begin(
-            {request.method.data(), request.path.data(), request.coolEva.data(),
+            {request.method.data(), request.path.data(), request.emcoolHeader.data(),
              request.body},
             nowMonotonicMs);
         if (response) {
@@ -374,7 +374,7 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
     }
     if (responseStage_ == ResponseStage::kWaiting) {
       std::optional<HttpResponse> response = requests_.poll(nowMonotonicMs);
-      // cool-eva's tunnel gives a handler three minutes.
+      // A handler gets three minutes.
       if (!response && nowMonotonicMs - waitingSinceMs_ > kRequestTimeoutMs) {
         logWarning(kTag, "request %lld had no answer after %lld s", static_cast<long long>(responseId_),
                    static_cast<long long>(kRequestTimeoutMs / 1000));

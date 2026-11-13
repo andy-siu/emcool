@@ -1,7 +1,7 @@
 #pragma once
 
 // JavaScript's ways of turning numbers into text, for messages and bodies that must read exactly
-// as cool-eva's do.
+// as JavaScript writes them.
 
 #include <cmath>
 #include <string>

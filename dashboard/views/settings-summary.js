@@ -6,7 +6,7 @@ import { destination, openDestination } from "../lib/destination.js";
 import { BLE_MODE } from "../lib/ble-link.js";
 import { SettingsCard } from "./settings-fields.js";
 
-const { a, button, div } = van.tags;
+const { button, div } = van.tags;
 
 /** @param {boolean} dismissible @param {boolean} [riding] */
 export function MigrationSummary(dismissible, riding = false) {
@@ -42,7 +42,6 @@ export function MigrationSummary(dismissible, riding = false) {
           current.notices.includes("private-key-on-pi")
             ? "A private key is on emcool, which defeats the sealed log; put the public key there instead. Recording continues."
             : "",
-          "Older Siri shortcuts no longer save waypoints. Use Update Siri shortcut below.",
         ]
           .filter(Boolean)
           .join(" ")
@@ -58,8 +57,7 @@ export function MigrationSummary(dismissible, riding = false) {
         current.notices.includes("coolant-default-off") ? summaryLink("Bike setup", "bike") : null,
         current.notices.includes("hub-address-invalid") ? summaryLink("Choose motorcycle", "connections") : null,
         summaryLink("Charging", "charging"),
-        summaryLink("Who can control my bike?", "access"),
-        legacy ? SiriShortcutLink() : null
+        summaryLink("Who can control my bike?", "access")
       ),
       dismissible
         ? div(
@@ -79,18 +77,6 @@ export function MigrationSummary(dismissible, riding = false) {
     );
     return riding ? div({ class: "settings-page migration-notice" }, card) : card;
   };
-}
-
-export function SiriShortcutLink() {
-  return a(
-    {
-      class: "settings-link",
-      href: "https://github.com/danieltroger/cool-eva/blob/main/docs/waypoints.md#saving-a-waypoint-from-siri",
-      target: "_blank",
-      rel: "noopener",
-    },
-    "Update Siri shortcut →"
-  );
 }
 
 /** @param {string} title @param {string} section */
