@@ -293,11 +293,39 @@ std::string refusalReason(const std::optional<Message>& message) { return refusa
 void checkSession() {
   const std::string secret = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0";
   EMCOOL_CHECK(BleSession::secretIsUsable(secret), "a generated key was refused");
-  for (const std::string_view phrase : {std::string_view("correct horse battery staple"),
-                                        std::string_view(secret).substr(0, 63),
-                                        std::string_view("0F1E2D3C4B5A69788796A5B4C3D2E1F00F1E2D3C4B5A69788796A5B4C3D2E1F0")}) {
+  // A typed key: 8-64 printable ASCII with a letter and a digit, no spaces, quotes or backslashes,
+  // as the BLE_SECRET setting and the dashboard's validBleSecret() allow.
+  for (const std::string_view typed : {std::string_view("bike2024"), std::string_view("Bike2024"),
+                                       std::string_view(secret).substr(0, 63), std::string_view("r1de-0n!{~}")}) {
+    EMCOOL_CHECK(BleSession::secretIsUsable(typed), "the typed key %.*s was refused", static_cast<int>(typed.size()),
+                 typed.data());
+  }
+  const std::string tooLong = secret + "0";
+  for (const std::string_view phrase :
+       {std::string_view("correct horse battery staple"), std::string_view("bike202"), std::string_view("abcdefgh"),
+        std::string_view("12345678"), std::string_view("bike\"2024"), std::string_view("bike\\2024"),
+        std::string_view("p\xc3\xa4ss2024"), std::string_view(""), std::string_view(tooLong)}) {
     EMCOOL_CHECK(!BleSession::secretIsUsable(phrase), "%.*s was accepted as a key", static_cast<int>(phrase.size()),
                  phrase.data());
+  }
+  // A typed key handshakes like a generated one, and its case matters.
+  {
+    BleSession typedSession("Bike2024");
+    std::vector<std::uint8_t> typedReply(kMaxEnvelopeBytes);
+    std::vector<std::uint8_t> typedPlaintext;
+    Phone lowered("bike2024");
+    auto typedResult = typedSession.receiveHello(lowered.hello(typedSession, "0123456789abcdef0123456789abcdef"),
+                                                 typedReply);
+    EMCOOL_CHECK(!typedResult.startedSession &&
+                     refusalReason(lowered.open(std::span(typedReply.data(), typedResult.replyLength),
+                                                typedPlaintext)) == "wrong secret",
+                 "a typed key in the wrong case was let in");
+    Phone typed("Bike2024");
+    typedResult = typedSession.receiveHello(typed.hello(typedSession, "fedcba9876543210fedcba9876543210"), typedReply);
+    const auto typedWelcome = typed.open(std::span(typedReply.data(), typedResult.replyLength), typedPlaintext);
+    EMCOOL_CHECK(typedResult.startedSession && typedWelcome &&
+                     typedWelcome->kind == static_cast<std::uint8_t>(MessageKind::kWelcome),
+                 "a typed key did not start a session");
   }
   BleSession session(secret);
   std::vector<std::uint8_t> reply(kMaxEnvelopeBytes);

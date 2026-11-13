@@ -106,7 +106,7 @@ emcool> restart
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `BLE_SECRET` | not set | The phone dashboard's Bluetooth key: 64 hex characters, generated and printed once by `new-ble-key`, as cool-eva's generated key. Unset keeps Bluetooth off. |
+| `BLE_SECRET` | not set | The phone dashboard's Bluetooth key: 64 hex characters generated and printed once by `new-ble-key`, or one you type with `set BLE_SECRET`, 8-64 characters with at least one letter and one digit. Unset keeps Bluetooth off. |
 | `BLE_NAME` | `emcool` | The name in the phone's device list. |
 | `CUSTOM_BMS_CONFIG` | `0` | `1` if the BMS runs the custom LiBAL config, as cool-eva's `CUSTOM_BMS_CONFIG`. |
 | `OBD_ENABLED` | `0` | `1` to poll OBD-II and read trouble codes, as cool-eva's `OBD_ENABLED`. This puts the CAN controller on the bus as an active node. See [Transmitting](#transmitting). |

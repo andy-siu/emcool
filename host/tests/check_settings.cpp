@@ -73,14 +73,27 @@ int main() {
                    contains(result.output, "CUSTOM_BMS_CONFIG  0 (default)") && !contains(result.output, "restart"),
                "show on a fresh store:\n%s", result.output.c_str());
 
-  // The Bluetooth key: a generated 64-hex key, never a phrase, never echoed by `show`.
-  for (const char* rejected : {"correct horse battery staple", "too short",
-                               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
-                               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg"}) {
+  // The Bluetooth key: generated, or typed as 8-64 characters with a letter and a digit and no
+  // spaces, quotes or backslashes; never echoed by `show`, not even its length.
+  for (const char* rejected : {"correct horse battery staple", "bike 2024", "bike202", "abcdefgh", "12345678",
+                               "bike\"2024", "bike\\2024", "bike\t2024", "p\xc3\xa4ss2024", "",
+                               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"}) {
     result = run(storage, booted, {"set", "BLE_SECRET", rejected});
-    EMCOOL_CHECK(result.status == 1 && contains(result.output, "new-ble-key") && storage.values.count("ble_secret") == 0,
+    EMCOOL_CHECK(result.status == 1 && contains(result.output, "letter and one digit") &&
+                     contains(result.output, "new-ble-key") && storage.values.count("ble_secret") == 0,
                  "BLE_SECRET %s was accepted: %s", rejected, result.output.c_str());
   }
+  for (const char* typed : {"bike2024", "Bike2024", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
+                            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg", "r1de-0n!{~}"}) {
+    result = run(storage, booted, {"set", "BLE_SECRET", typed});
+    EMCOOL_CHECK(result.status == 0 && storage.values["ble_secret"] == typed, "the typed key %s: %s", typed,
+                 result.output.c_str());
+    EMCOOL_CHECK(Settings::load(storage).bleSecret == typed, "the typed key %s did not load as typed", typed);
+    result = run(storage, booted, {"show"});
+    EMCOOL_CHECK(contains(result.output, "BLE_SECRET         set   <-") && !contains(result.output, typed),
+                 "show with a typed key:\n%s", result.output.c_str());
+  }
+  storage.erase("ble_secret");
   result = run(storage, booted, {"new-ble-key"});
   EMCOOL_CHECK(result.status == 1 && contains(result.output, "no random source") &&
                    storage.values.count("ble_secret") == 0,
@@ -102,7 +115,8 @@ int main() {
   EMCOOL_CHECK(!contains(result.output, secret.substr(0, 16)) && contains(result.output, "BLE_SECRET         set") &&
                    contains(result.output, "takes effect after `restart`"),
                "show after making a key:\n%s", result.output.c_str());
-  // A key pasted in upper case is the same key, as the dashboard treats it.
+  // A generated key pasted in upper case is the same key, as the dashboard treats it; a typed key
+  // keeps its case (above).
   std::string upper = generated;
   for (char& character : upper) character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
   result = run(storage, booted, {"set", "BLE_SECRET", upper.c_str()});

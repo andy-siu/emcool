@@ -11,9 +11,10 @@
 //      is the bike proving it knows the secret too. The server nonce then rotates, so a
 //      recorded HELLO is useless.
 //
-// The secret is a generated key, 64 lower-case hex characters, so there is no lockout to slow
-// guessing; a refusal carries the HELLO's client nonce so the phone can pin it on its own
-// attempt. The nonce rotates only on success: rotating on failure would let anyone knock the
+// The secret is a generated key, 64 lower-case hex characters, or a typed one of 8-64 characters
+// with a letter and a digit. There is no lockout to slow guessing, and one overheard HELLO lets a
+// typed key be guessed offline, so only a long one is safe; a refusal carries the HELLO's client
+// nonce so the phone can pin it on its own attempt. The nonce rotates only on success: rotating on failure would let anyone knock the
 // real phone's HELLO off its nonce with garbage first.
 
 #include <array>
@@ -28,7 +29,9 @@ namespace emcool::ble {
 
 class BleSession {
  public:
+  // The longest secret, which is a generated key's length, and the shortest typed one.
   static constexpr std::size_t kSecretLength = 64;
+  static constexpr std::size_t kMinimumSecretLength = 8;
 
   // Validate the secret with secretIsUsable() first; an unusable one makes every proof fail.
   explicit BleSession(std::string_view secret);

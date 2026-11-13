@@ -92,9 +92,9 @@ class Bike {
   #packets: Packet[] = [];
   #waiting: (() => void) | null = null;
 
-  constructor() {
+  constructor(secret = SECRET) {
     this.#process = spawn(hostBinary, [
-      SECRET,
+      secret,
       goldenPath,
       Buffer.from(storedReply).toString("hex"),
       ...(ridesSource ? [ridesDirectory] : []),
@@ -798,6 +798,41 @@ const liveSmall = await bike.json("L");
 await smallPhone.send(MessageKind.SUBSCRIBE, {});
 sameLiveState("snapshot at MTU 23", mergeStream(await smallPhone.collect(0), "snapshot"), liveSmall);
 check(Math.max(...smallPhone.frameSizes) <= 18, `a ${Math.max(...smallPhone.frameSizes)}-byte notification at MTU 23`);
+
+// 7. A typed key (`set BLE_SECRET`, 8-64 characters with a letter and a digit): the dashboard's
+// validBleSecret() takes what the firmware takes, and the key handshakes as typed, case and all.
+{
+  const { validBleSecret, normalizeBleSecret } = await import(
+    pathToFileURL(join(emcoolRoot, "dashboard/lib/ble-secret.js")).href
+  );
+  for (const typed of ["bike2024", "Bike2024", SECRET.slice(0, 63), "r1de-0n!{~}", SECRET]) {
+    check(validBleSecret(typed), `the dashboard refused the key ${typed}`);
+  }
+  for (const refused of ["correct horse battery staple", "bike 2024", "bike202", "abcdefgh", "12345678", 'bike"2024',
+    "bike\\2024", "p\u00e4ss2024", "", `${SECRET}0`]) {
+    check(!validBleSecret(refused), `the dashboard took the key ${refused}`);
+  }
+  check(normalizeBleSecret(" Bike2024 ") === "Bike2024", "a typed key lost its case on the phone");
+  check(normalizeBleSecret(SECRET.toUpperCase()) === SECRET, "a generated key pasted in upper case was not lowered");
+  const typedBike = new Bike("Bike2024");
+  await typedBike.connect(185);
+  await typedBike.notifications(true);
+  const lowered = new Phone(typedBike, "bike2024");
+  await lowered.hello();
+  const loweredReplies = await lowered.collect(0);
+  check(
+    loweredReplies.length === 1 && loweredReplies[0].header.reason === "wrong secret",
+    `a typed key in the wrong case got ${JSON.stringify(loweredReplies.map(reply => reply.header))}`
+  );
+  const typedPhone = new Phone(typedBike, "Bike2024");
+  await typedPhone.hello();
+  const typedReplies = await typedPhone.collect(0);
+  check(
+    typedReplies.length === 1 && typedReplies[0].sealed && typedReplies[0].kind === MessageKind.WELCOME,
+    `a typed key got ${JSON.stringify(typedReplies.map(reply => reply.header))}`
+  );
+  await typedBike.quit();
+}
 
 const final = await bike.json("Z");
 await bike.quit();
