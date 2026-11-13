@@ -3,7 +3,7 @@
 // Phone-side history. The bike keeps none: its only persistence is the write-only
 // encrypted log, which it cannot read back by design. So every trend line on this
 // dashboard is built from what has arrived over the WebSocket since the page was
-// opened, and nothing about it costs the Pi anything.
+// opened, and nothing about it costs emcool anything.
 //
 // Consequence worth knowing: reloading the page restarts the traces. That is the
 // accepted trade for not keeping a plaintext buffer on a bike that gets stolen.
@@ -12,9 +12,9 @@
 // whole ride in a backgrounded Safari tab, and the allocation churn of the obvious
 // implementation is exactly what gets a tab killed under memory pressure.
 //
-// Timestamps here are the PHONE's monotonic clock (lib/clock.js), never the Pi's
+// Timestamps here are the PHONE's monotonic clock (lib/clock.js), never emcool's
 // `LiveValue.ts`. Two reasons, and both have teeth: these are only ever used to ask
-// "how long ago", which must survive the phone's wall clock moving; and the Pi has
+// "how long ago", which must survive the phone's wall clock moving; and emcool has
 // no RTC, so mixing its stamps with a client `Date.now()` — which is what this did
 // first — silently empties every trace on a cold-booted bike. Nothing in a chart
 // needs to correlate with the ride log, so the simplest correct base is the local

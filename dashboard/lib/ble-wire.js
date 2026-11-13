@@ -1,7 +1,7 @@
 // @ts-check
 
-// The wire protocol between the dashboard and the Pi's BLE GATT server, in one file that
-// BOTH ends import: the browser directly, the Pi from src/ble-server/. One copy means the
+// The wire protocol between the dashboard and emcool's BLE GATT server, in one file that
+// BOTH ends import: the browser directly, emcool from src/ble-server/. One copy means the
 // two cannot drift, which a hand-ported TypeScript twin would. Pure: no I/O and no clock,
 // only bytes in and bytes out (plus crypto.subtle, which is deterministic given its
 // inputs), so scripts/check-ble-wire.ts round-trips all of it with no radio.
@@ -16,23 +16,23 @@
 export const PROTOCOL_VERSION = 2;
 
 export const SERVICE_UUID = "7c0e0001-5f3a-4c8e-9d2b-c00e7a000001";
-/** Phone → Pi. Written with response, so a value may be up to 512 bytes whatever the MTU. */
+/** Phone → emcool. Written with response, so a value may be up to 512 bytes whatever the MTU. */
 export const RX_CHARACTERISTIC_UUID = "7c0e0002-5f3a-4c8e-9d2b-c00e7a000001";
-/** Pi → phone. MTU − 5 also fits BlueZ's multiple-notification path. */
+/** emcool → phone. MTU − 5 also fits BlueZ's multiple-notification path. */
 export const TX_CHARACTERISTIC_UUID = "7c0e0003-5f3a-4c8e-9d2b-c00e7a000001";
 /** Read-only JSON: `{ version, serverNonce }`. See HelloInfo. */
 export const INFO_CHARACTERISTIC_UUID = "7c0e0004-5f3a-4c8e-9d2b-c00e7a000001";
 
-/** The ATT ceiling on a characteristic value, and so on a phone → Pi frame. */
+/** The ATT ceiling on a characteristic value, and so on a phone → emcool frame. */
 export const MAX_WRITE_FRAME_BYTES = 512;
 
 export const MessageKind = Object.freeze({
-  // phone → Pi
+  // phone → emcool
   HELLO: 1,
   REQUEST: 2,
   SUBSCRIBE: 3,
   UNSUBSCRIBE: 4,
-  // Pi → phone
+  // emcool → phone
   REFUSED: 16,
   WELCOME: 17,
   RESPONSE_HEAD: 18,
@@ -310,7 +310,7 @@ function ivFor(direction, counter) {
 // ------------------------------------------------------------------------------ keys
 
 /**
- * The proof a phone sends in HELLO, and that the Pi recomputes. Bound to the Pi's nonce,
+ * The proof a phone sends in HELLO, and that emcool recomputes. Bound to emcool's nonce,
  * so a recorded HELLO is useless once that nonce has rotated.
  * @param {string} secret
  * @param {string} serverNonce hex

@@ -6,7 +6,7 @@
 // it without standing up a page.
 //
 // ⚠️ Nothing here decides policy. The floor and the cap arrive in `/fan`'s `limits`, so
-// a cap lowered on the Pi to hold the fan's average voltage moves the slider's stops
+// a cap lowered on emcool to hold the fan's average voltage moves the slider's stops
 // with it and this file never has to be edited to agree.
 
 /**
@@ -27,11 +27,11 @@ export const DUTY_STEP_PERCENT = 1;
  *
  * ⚠️ This is the whole fix for the dead zone. The slider used to run 0…100 in 5 % steps
  * against a 30 % minimum running duty, so 5, 10, 15, 20 and 25 — a quarter of the travel
- * — all silently meant "stop". Every position here is a duty the Pi will actually take,
+ * — all silently meant "stop". Every position here is a duty emcool will actually take,
  * and the slider indexes this array rather than carrying percentages of its own.
  *
- * @param {number} minRunningPercent the Pi's floor; 0 before it has answered
- * @param {number} maxPercent the Pi's cap; 0 before it has answered
+ * @param {number} minRunningPercent emcool's floor; 0 before it has answered
+ * @param {number} maxPercent emcool's cap; 0 before it has answered
  * @returns {number[]}
  */
 export function dutyStops(minRunningPercent, maxPercent) {
@@ -139,7 +139,7 @@ export const FAN_OFF_STATE_CODE = { NOT_ARMED: 0, ARMED: 1, MOVED: 2 };
  *
  * ⚠️ A second copy of FAN_OFF_CEILING_KMH in src/fan/gesture.ts, and the ONLY one that is
  * a promise rather than a threshold: "off until 15 km/h" is what the phone tells a rider
- * who has just silenced the fan at a toll booth, so it moving out of step with the Pi
+ * who has just silenced the fan at a toll booth, so it moving out of step with emcool
  * would be a lie rather than a mismatch. scripts/check-fan-off-ceiling.ts asserts the two
  * agree, which is what makes it safe for this file to hold a number at all.
  */
@@ -266,7 +266,7 @@ export function fanAnnouncementText(key, targetPercent, offState = null) {
   if (key === "manual-stopped") {
     // Only the GESTURE's off carries the promise. A 0 the slider set has always survived
     // until the bike is switched off, and telling that rider it ends at 15 km/h would be
-    // inventing a rule the Pi is not applying to them.
+    // inventing a rule emcool is not applying to them.
     return offState === FAN_OFF_STATE_CODE.ARMED ? `Fan: off until ${FAN_OFF_CEILING_KMH} km/h` : "Fan: off";
   }
   if (key === "manual-running") {

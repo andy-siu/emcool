@@ -162,7 +162,7 @@ function observe(key, current) {
       // to would make the derive depend on itself, and VanJS would then re-run it until
       // its 100-iteration ceiling stopped it. See store.js's peek() for the same point.
       tracker.count.val = tracker.count.rawVal + 1;
-      // Monotonic: "released 4 s ago" and "held for 4 s" are both durations, and the Pi
+      // Monotonic: "released 4 s ago" and "held for 4 s" are both durations, and emcool
       // steps its own wall clock on the first GPS fix. clock.js has the full argument.
       tracker.downSince.val = monotonicNow();
     }

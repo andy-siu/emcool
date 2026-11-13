@@ -193,7 +193,7 @@ export function isStaleSampled(key, maxAgeMs) {
  * and the status is also what PACES the bindings — docs/dashboard-decisions.md
  * §"The link, staleness and charge mode".
  * @param {{ ts: number } | null} reading
- * @param {number} now server clock, so both sides of the comparison are the Pi's
+ * @param {number} now server clock, so both sides of the comparison are emcool's
  * @param {number} maxAgeMs
  * @param {boolean} linkIsLive whether messages are arriving at all
  */
@@ -253,7 +253,7 @@ export function connect() {
   });
 
   // The hook the whole fix hangs on. iOS runs this before it suspends the page, and it
-  // is the last chance to close the socket the Pi would otherwise spend the next few
+  // is the last chance to close the socket emcool would otherwise spend the next few
   // minutes queueing patches into.
   document.addEventListener("visibilitychange", () => link.visibilityChanged());
   // And its second, for the case where that one does not arrive. `pagehide` fires on
@@ -268,7 +268,7 @@ export function connect() {
     // Without this a relaunched Bluefy tab sits on "tap Connect" with a key already stored.
     // Starting after the lookup means the first open finds the device instead of waiting a retry.
     void restoreDevice()
-      .catch(error => console.warn("ble: could not restore the previously chosen Pi", error))
+      .catch(error => console.warn("ble: could not restore the previously chosen bike", error))
       .finally(() => link.start());
   } else {
     link.start();

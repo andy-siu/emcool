@@ -8,9 +8,9 @@ import { DoubleClickDetector, NEXT_TAB_BUTTON } from "./gestures.js";
 //
 //   • double-click `btn_cruise_set` → next tab
 //
-// ⚠️ ONE GESTURE, where there were two. The waypoint long press moved to the Pi
+// ⚠️ ONE GESTURE, where there were two. The waypoint long press moved to emcool
 // (src/gps/waypoint.ts) because this page closes its socket while it is hidden and a
-// phone in a pocket therefore recognised nothing. A tab switch cannot follow it: the Pi
+// phone in a pocket therefore recognised nothing. A tab switch cannot follow it: emcool
 // has no idea which tab is showing and no channel to say so — `DashboardMessage` carries
 // signals and nothing else. ./announce.js is how this page hears about the ones that left.
 //
@@ -61,7 +61,7 @@ export function installHandlebarGestures(actions) {
   // missed more often than not.
   van.derive(() => {
     const reading = signalState(NEXT_TAB_BUTTON).val;
-    // reading.ts, not serverTime: the press is timed by when the Pi recorded the bit
+    // reading.ts, not serverTime: the press is timed by when emcool recorded the bit
     // changing, which is what makes the gap between two taps immune to however long
     // the link took to deliver them.
     if (reading && doubleClick.observe(reading.value, reading.ts)) {

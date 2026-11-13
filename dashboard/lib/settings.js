@@ -36,7 +36,7 @@ export async function refreshSettings() {
     if (!reply.ok) {
       settingsError.val =
         reply.status === 404
-          ? "This Pi has no settings API yet. Update the Pi software to use dashboard settings."
+          ? "This bike has no settings API yet. Update emcool software to use dashboard settings."
           : "Settings could not be confirmed. Reconnect before saving.";
       return;
     }
@@ -48,7 +48,7 @@ export async function refreshSettings() {
   } catch (error) {
     console.warn("settings: could not refresh", error);
     if (epoch !== connectionEpoch) return;
-    settingsError.val = "Settings are unconfirmed while this Pi is unreachable. Reconnect before saving.";
+    settingsError.val = "Settings are unconfirmed while this bike is unreachable. Reconnect before saving.";
   } finally {
     refreshing = false;
     if (epoch !== connectionEpoch && connection.rawVal === "live") {
@@ -135,7 +135,7 @@ export async function saveSetting(key, changes) {
 /** @param {string} key @param {string} path @param {string} method @param {Record<string, unknown>} body */
 export async function settingsAction(key, path, method, body) {
   if (!settingsConfirmed.rawVal || settingsError.rawVal) {
-    settingsMessages.val = { ...settingsMessages.rawVal, [key]: "Reconnect and confirm this Pi before saving." };
+    settingsMessages.val = { ...settingsMessages.rawVal, [key]: "Reconnect and confirm this bike before saving." };
     return false;
   }
   const epoch = connectionEpoch;
@@ -182,10 +182,10 @@ export async function settingsAction(key, path, method, body) {
   }
 }
 
-/** Asks the Pi for its saved and active Bluetooth keys; `null` when it could not answer. */
+/** Asks emcool for its saved and active Bluetooth keys; `null` when it could not answer. */
 export async function fetchBluetoothKey() {
   if (!settingsConfirmed.rawVal || settingsError.rawVal) {
-    settingsMessages.val = { ...settingsMessages.rawVal, bluetoothKey: "Reconnect and confirm this Pi first." };
+    settingsMessages.val = { ...settingsMessages.rawVal, bluetoothKey: "Reconnect and confirm this bike first." };
     return null;
   }
   try {
@@ -199,7 +199,7 @@ export async function fetchBluetoothKey() {
     return reply.ok || reply.active ? reply : null;
   } catch (error) {
     console.warn("settings: Bluetooth key could not be read", error);
-    settingsMessages.val = { ...settingsMessages.rawVal, bluetoothKey: "The Pi did not answer. Try again." };
+    settingsMessages.val = { ...settingsMessages.rawVal, bluetoothKey: "emcool did not answer. Try again." };
     return null;
   }
 }
@@ -251,7 +251,7 @@ export function watchSettings() {
 function invalidateConnection() {
   connectionEpoch += 1;
   settingsConfirmed.val = false;
-  settingsError.val = "Settings are unconfirmed. Reconnect and read this Pi before saving.";
+  settingsError.val = "Settings are unconfirmed. Reconnect and read this bike before saving.";
   armed.val = "";
 }
 

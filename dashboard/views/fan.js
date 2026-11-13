@@ -20,27 +20,27 @@ const { button, div, h2, input } = van.tags;
 
 // Duty and mode for the watercooling loop's fan, in the menu sheet.
 //
-// It renders NOTHING unless this Pi answers /fan, which it only does with FAN_ENABLED=1
+// It renders NOTHING unless this bike answers /fan, which it only does with FAN_ENABLED=1
 // (src/index.ts routes the endpoint behind that flag), so a bike with no fan sees an
 // unchanged sheet.
 //
 // ⚠️ There is deliberately NO two-tap arm here, unlike every control on this sheet that
-// touches the motorcycle. This one moves a GPIO on the Pi, the next command takes it
+// touches the motorcycle. This one moves a GPIO on emcool, the next command takes it
 // straight back, and the fan is a thing you watch while you drag — so the slider is live
 // on `oninput`. What that costs and why it is worth it: docs/fan-control.md §"The slider".
 //
 // ⚠️ Nothing here decides policy. The 30 % floor, the cap, the kick-start length and the
-// curve's own temperatures are the Pi's (src/fan/control.ts, src/fan/curve.ts) and are
+// curve's own temperatures are emcool's (src/fan/control.ts, src/fan/curve.ts) and are
 // read off `limits` in its reply, so this page cannot come to disagree with the thing
-// holding the PWM. Fun mode goes further: this page cannot ENTER it, only ask, and the
-// Pi re-reads the gate off the bus before it agrees. The button below appearing is a
+// holding the PWM. Fun mode goes further: this page cannot ENTER it, only ask, and
+// emcool re-reads the gate off the bus before it agrees. The button below appearing is a
 // display of `fan_fun_available`, never the permission itself.
 
 /** @typedef {import("../../src/http/fan.ts").FanReply} FanReply */
 /** @typedef {import("../../src/fan/auto.ts").FanMode} FanMode */
 /** @typedef {import("../lib/fan-command-queue.js").FanCommand} FanCommand */
 
-/** Whether this Pi serves /fan at all. Null until the first fetch has answered. */
+/** Whether this bike serves /fan at all. Null until the first fetch has answered. */
 const available = van.state(/** @type {boolean | null} */ (null));
 
 /** The last reply: the driver's phase, its fault if any, and the limits it enforces. */
@@ -53,14 +53,14 @@ const status = van.state(/** @type {FanReply | null} */ (null));
  */
 const pendingDuty = van.state(0);
 
-/** Automatic, manual or fun, optimistically ahead of the Pi so a tap looks instant. */
+/** Automatic, manual or fun, optimistically ahead of emcool so a tap looks instant. */
 const mode = van.state(/** @type {FanMode} */ ("automatic"));
 
 /**
  * True while a command is queued or in flight, raised by ../lib/fan-command-queue.js.
  *
  * ⚠️ Load-bearing, not cosmetic: it is what stops the two derives below dragging the
- * slider and the toggle back to the Pi's *previous* answer during the round trip.
+ * slider and the toggle back to emcool's *previous* answer during the round trip.
  */
 const settling = van.state(false);
 
@@ -69,7 +69,7 @@ const message = van.state("");
 const lastCommandOk = van.state(/** @type {boolean | null} */ (null));
 
 /**
- * The section, or an empty node on a Pi with no fan.
+ * The section, or an empty node on a bike with no fan.
  *
  * Its own heading rather than one in ./sheet.js, so the heading disappears with the
  * controls instead of standing over nothing — the same shape VcuWrite() uses.
@@ -81,7 +81,7 @@ export function FanControl() {
     }
     return div(
       h2({ class: "sheet-heading" }, "Cooling fan"),
-      div({ class: "sheet-heading-note" }, "Drives the loop's fan off the Pi's own GPIO. Never touches the bike."),
+      div({ class: "sheet-heading-note" }, "Drives the loop's fan off emcool's own GPIO. Never touches the bike."),
       FaultNote(),
       Situation(),
       Reason(),
@@ -96,7 +96,7 @@ export function FanControl() {
 /**
  * GETs the driver's state. Read-only; it spins nothing.
  *
- * A 404 is the answer on a Pi where FAN_ENABLED is unset — index.ts does not route /fan
+ * A 404 is the answer on a bike where FAN_ENABLED is unset — index.ts does not route /fan
  * at all there, so the static handler replies — and it is not an error: almost no Eva has
  * this fan. Either way the section stays hidden.
  */
@@ -118,7 +118,7 @@ export async function refreshFanStatus() {
   }
 }
 
-// The mode the Pi reports, mirrored into the toggle — but never while this page has a
+// The mode emcool reports, mirrored into the toggle — but never while this page has a
 // command of its own outstanding, or a reply describing the state BEFORE that command
 // would flip the toggle back under the rider's thumb.
 van.derive(() => {
@@ -127,7 +127,7 @@ van.derive(() => {
     return;
   }
   // ⚠️ Through FAN_MODE_CODE rather than a bare 1 and 2. This is also the line that
-  // shows the rider fun mode ENDING on its own: the Pi hands the fan back the instant
+  // shows the rider fun mode ENDING on its own: emcool hands the fan back the instant
   // the bike can move, and this is where the sheet finds out.
   mode.val = live === FAN_MODE_CODE.AUTOMATIC ? "automatic" : live === FAN_MODE_CODE.FUN ? "fun" : "manual";
 });
@@ -275,7 +275,7 @@ function Slider() {
   // ATTRIBUTES are reactive (thunks), which VanJS updates in place.
   //
   // ⚠️ And the slider's value is an INDEX into the stop list, not a percentage. That is
-  // what removes the dead zone: every position is a duty the Pi will take. See
+  // what removes the dead zone: every position is a duty emcool will take. See
   // ../lib/fan-display.js.
   return input({
     class: "fan-slider",
@@ -307,7 +307,7 @@ function KickNote() {
   );
 }
 
-/** The last command's outcome, in the Pi's own words and coloured by its own verdict. */
+/** The last command's outcome, in emcool's own words and coloured by its own verdict. */
 function Outcome() {
   return div({ class: "action-note" }, () =>
     message.val ? div({ style: `color:${lastCommandOk.val === false ? WARN : GOOD}` }, message.val) : div()
@@ -334,23 +334,23 @@ function describeCommand(duty) {
     : `Running at ${formatDuty(duty)} %.`;
 }
 
-/** Whether a command could be sent at all. The Pi enforces every part of this again. */
+/** Whether a command could be sent at all. emcool enforces every part of this again. */
 function commandable() {
   const current = status.val;
   return current !== null && current.fault === null;
 }
 
-/** The duties this slider may select, from the Pi's own floor and cap. */
+/** The duties this slider may select, from emcool's own floor and cap. */
 function stops() {
   return dutyStops(minRunningPercent(), maxPercent());
 }
 
-/** The Pi's floor, so this page cannot disagree with the thing holding the PWM. */
+/** emcool's floor, so this page cannot disagree with the thing holding the PWM. */
 function minRunningPercent() {
   return status.val?.limits.minRunningPercent ?? 0;
 }
 
-/** The Pi's cap. 0 without a reply, which leaves the slider inert rather than guessing 100. */
+/** emcool's cap. 0 without a reply, which leaves the slider inert rather than guessing 100. */
 function maxPercent() {
   return status.val?.limits.maxPercent ?? 0;
 }
@@ -415,11 +415,11 @@ async function postFanCommand(command, isSuperseded) {
       adoptReply(payload);
     }
   } catch (error) {
-    // ⚠️ A request that did not come back may still have reached the Pi — the sysfs write
+    // ⚠️ A request that did not come back may still have reached emcool — the GPIO write
     // happens before the response — so this is NOT "nothing happened". Say so, and let
     // the live signals above be the thing that settles it.
     message.val =
-      `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "This does NOT guarantee the fan was left alone — watch the line above.";
     lastCommandOk.val = false;
     console.warn("fan: command failed", error);

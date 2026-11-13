@@ -5,7 +5,7 @@ import { request } from "./transport.js";
 /** @typedef {import("../../src/http/waypoint.ts").WaypointReply} WaypointReply */
 
 // Saving a waypoint from the phone: the menu button in ../views/sheet.js, and nothing
-// else since the handlebar long press moved to the Pi (src/gps/waypoint.ts).
+// else since the handlebar long press moved to emcool (src/gps/waypoint.ts).
 //
 // The server decides whether a waypoint may be saved — it owns the GPS fix, its age and
 // the clock it would be stamped with — and this asks it in the one way that gets a

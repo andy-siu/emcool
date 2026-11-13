@@ -6,7 +6,7 @@ import { request } from "./transport.js";
 
 // The bike's lifetime battery statistics, fetched once when the All tab is first
 // shown. Not a signal: nothing broadcasts these, so there is no socket to bind to and
-// no staleness to compute — just a file the Pi read off the bike at some point, with
+// no staleness to compute — just a file emcool read off the bike at some point, with
 // the age of that reading shown next to it.
 //
 // See docs/lifetime-battery-statistics.md for what the numbers mean, and why the one
@@ -39,19 +39,19 @@ export async function loadLifetimeStats(force = false) {
   try {
     const response = await request("/lifetime-stats");
     if (!response.ok) {
-      lifetimeError.val = `the Pi answered ${response.status}`;
+      lifetimeError.val = `emcool answered ${response.status}`;
       return;
     }
     lifetimeStats.val = /** @type {LifetimeStatsResponse} */ (await response.json());
     lifetimeError.val = "";
     // ⚠️ Only now. Set before the await, a phone that wandered out of wifi once would
-    // show "could not reach the Pi" until the page was reloaded — and switching tabs
+    // show "could not reach emcool" until the page was reloaded — and switching tabs
     // re-enters AllView() but would short-circuit on the guard above.
     fetched = true;
   } catch (err) {
     // Ordinary when the phone has wandered out of wifi range, and worth saying rather
     // than leaving an empty block that looks like a bike with no statistics.
-    lifetimeError.val = "could not reach the Pi";
+    lifetimeError.val = "could not reach emcool";
     console.warn("lifetime: fetch failed", err);
   }
 }

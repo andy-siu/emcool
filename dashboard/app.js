@@ -264,7 +264,7 @@ installHandlebarGestures({
   },
 });
 // The other half of the same story, and the reason the list above is shorter than it was:
-// the fan cycle and the waypoint hold are recognised on the Pi now, so this page finds out
+// the fan cycle and the waypoint hold are recognised on emcool now, so this page finds out
 // about them the way it finds out about anything else on the bus, and says so.
 installAnnouncements();
 // And the same story once more: a waypoint saved on the bars is news to this page too, so

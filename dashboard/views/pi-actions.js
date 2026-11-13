@@ -12,8 +12,8 @@ const { button, div } = van.tags;
 // checkout and systemd unit. Split out of ./sheet.js when they gained the arming gate —
 // the sheet is a composition file, and these two are a responsibility of their own.
 //
-// ⚠️ Not "the controls that act on the Pi": the waypoint and the ride-log download act on
-// the Pi too (they write and read its log) and deliberately stayed behind. The line is
+// ⚠️ Not "the controls that act on emcool": the waypoint and the ride-log download act on
+// emcool too (they write and read its log) and deliberately stayed behind. The line is
 // maintenance of the machine, not use of it.
 //
 // Both are grey-tier `.action`, not amber `.action.writes`: amber on this sheet means
@@ -38,7 +38,7 @@ const canRestarting = van.state(false);
 
 /**
  * Re-ups can0 when the CAN dot has gone red. POSTs to /can-restart, which runs the two
- * `ip link` commands on the Pi; the result note reports what happened, since the bus
+ * `ip link` commands on emcool; the result note reports what happened, since the bus
  * coming back is not something this button can see from here — the CAN dot in the header
  * is what confirms it a poll later.
  *
@@ -149,7 +149,7 @@ async function performCanRestart() {
     canRestartFailed.val = !reply.ok;
   } catch (error) {
     console.warn("can-restart: request failed", error);
-    canRestartMessage.val = "Restart request failed — is the Pi reachable?";
+    canRestartMessage.val = "Restart request failed — is emcool reachable?";
     canRestartFailed.val = true;
   } finally {
     canRestarting.val = false;
@@ -189,7 +189,7 @@ async function performUpdate() {
     }
   } catch (error) {
     console.warn("update: request failed", error);
-    updateMessage.val = "Update request failed — is the Pi reachable?";
+    updateMessage.val = "Update request failed — is emcool reachable?";
     updateFailed.val = true;
   } finally {
     updating.val = false;

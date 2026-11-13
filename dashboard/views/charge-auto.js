@@ -56,7 +56,7 @@ export function ChargeAutoControl({ compact = false } = {}) {
         : [
             div(
               { class: "settings-row" },
-              div({ class: "settings-note" }, "Permission on this Pi"),
+              div({ class: "settings-note" }, "Permission on this bike"),
               button({ class: "settings-button", onclick: () => openDestination("settings", "charging") }, "Settings →")
             ),
           ]),
@@ -114,7 +114,7 @@ van.derive(() => {
 // The cable coming out, alongside the two sibling controls — charge-current.js clears its form here
 // and charge-stop.js its outcome.
 //
-// ⚠️ `loaded` is the whole of it, and it is STILL load-bearing after #204 gave the Pi a true
+// ⚠️ `loaded` is the whole of it, and it is STILL load-bearing after #204 gave emcool a true
 // sentence at the edge: that made the ENDPOINT's answer true, this makes the TILE stop claiming to
 // know while it re-reads. The four steps by which the previous session's sentence would otherwise
 // paint for one round trip are in docs/charge-auto.md; deleting this line has been proposed twice
@@ -122,7 +122,7 @@ van.derive(() => {
 //
 // ⚠️ It does NOT belong in forgetTheAnswerOnScreen(). That also runs on a failed read, where
 // clearing `loaded` would make the tile's own `!loaded` render re-fetch immediately, unpaced,
-// against a Pi that is already not answering.
+// against a bike that is already not answering.
 onChargeSessionEnd(() => {
   loaded.val = false;
 });
@@ -175,7 +175,7 @@ export function toggleAction(currentMode, reason, floor_a) {
     return {
       label: "↩️  Take the current back",
       mode: "automatic",
-      note: `You set the current yourself, so the Pi stopped managing it. ${floor}.`,
+      note: `You set the current yourself, so emcool stopped managing it. ${floor}.`,
     };
   }
   if (currentMode === "automatic") {
@@ -186,7 +186,7 @@ export function toggleAction(currentMode, reason, floor_a) {
     };
   }
   return {
-    label: "Let the Pi manage the current",
+    label: "Let emcool manage the current",
     mode: "automatic",
     note: `${floor}, and it stops the pack reaching the temperature where the bike halves the current.`,
   };
@@ -255,7 +255,7 @@ async function refresh() {
 }
 
 /**
- * Drops the page's memory of what the tile is showing, so the next opportunity re-reads the Pi.
+ * Drops the page's memory of what the tile is showing, so the next opportunity re-reads emcool.
  *
  * The one place the invariant is expressed, called from the two paths that must not consume a
  * change: the gate being shut, and a read that failed. `null` is not "no reason" — it is "we are no
@@ -293,14 +293,14 @@ async function toggle(wanted) {
       headers: { "X-Emcool": "charge-auto" },
     });
     const payload = /** @type {ChargeAutoResponse} */ (await response.json());
-    // ⚠️ Takes a read number rather than checking one, so a POST reply is never dropped: it is the
-    // Pi's answer to something we just asked for, and it is the only reply carrying `message` — the
+    // ⚠️ Takes a read number rather than checking one, so a POST reply is never dropped: it is
+    // emcool's answer to something we just asked for, and it is the only reply carrying `message` — the
     // refusal text when CHARGE_AUTO_ENABLED pins the mode off. Any read already in flight is older
     // than it by construction, and setMode() records the reason immediately, so one usually is.
     latestRead += 1;
     apply(payload);
   } catch (error) {
-    failure.val = `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}.`;
+    failure.val = `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}.`;
     console.warn("charge-auto: toggle failed", error);
   } finally {
     busy.val = false;

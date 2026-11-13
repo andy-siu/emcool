@@ -98,9 +98,9 @@ export function LifetimeBlock(showAll = false) {
       return failure && needle === "" ? div({ class: "section" }, `lifetime · ${failure}`) : div();
     }
     if (!response.reading) {
-      // Not an error: most Pis have never taken one. Says how — and since #177 that is a
+      // Not an error: most bikes have never taken one. Says how — and since #177 that is a
       // button on this same phone, so the in-app path leads and the shell command is a
-      // footnote for a Pi whose service is stopped. It read the other way round from
+      // footnote for a bike whose service is stopped. It read the other way round from
       // #177 until #187.
       return needle === ""
         ? div(

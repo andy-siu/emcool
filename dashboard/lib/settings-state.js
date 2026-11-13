@@ -7,7 +7,7 @@ export function settingsStateLines(current, confirmed, key, dirty) {
   const lines = dirty ? ["Draft — not saved."] : [];
   if (current && !current.ok) {
     if (!confirmed) {
-      lines.push("Pi unconfirmed. Reconnect before retrying settings.");
+      lines.push("emcool unconfirmed. Reconnect before retrying settings.");
     }
     lines.push("Saved choice unreadable. The original document is retained.");
     lines.push(
@@ -16,7 +16,7 @@ export function settingsStateLines(current, confirmed, key, dirty) {
     return lines;
   }
   if (!current || !confirmed) {
-    lines.push("Pi unconfirmed. Reconnect before saving or restarting.");
+    lines.push("emcool unconfirmed. Reconnect before saving or restarting.");
     if (!current) return lines;
     lines.push(`Last confirmed saved: ${settingChoice(current.saved, key)}.`);
     lines.push(`Active at last contact: ${settingChoice(current.active, key)}.`);

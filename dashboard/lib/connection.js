@@ -9,10 +9,10 @@
 // dot binds to lives in ./store.js; this file is what moves it.
 //
 // ⚠️ THE RULE: do not hold a socket while the page is hidden. iOS suspends this page's
-// JavaScript with the socket still OPEN, so the Pi goes on queueing patches into it and
+// JavaScript with the socket still OPEN, so emcool goes on queueing patches into it and
 // the rider unlocks the phone to roughly thirty seconds of the last few minutes replayed
 // at speed, on tiles that look exactly like live telemetry. Closed on the way out,
-// opened again on the way back in, and the Pi answers a new connection with one full
+// opened again on the way back in, and emcool answers a new connection with one full
 // snapshot (ws.ts): the rider gets now, in one round trip.
 //
 // Nothing here waits for a `close` event to decide anything — a socket can stop carrying
@@ -121,7 +121,7 @@ export function createConnection(effects) {
 function visibilityChanged(state) {
   if (state.effects.hidden()) {
     // The last thing this page gets to run before iOS suspends it. Closing here is
-    // what stops the Pi from having anywhere to queue the next few minutes of patches,
+    // what stops emcool from having anywhere to queue the next few minutes of patches,
     // and therefore what stops the fast-forward on the way back.
     abandon(state);
     return;
@@ -277,7 +277,7 @@ function socketOpened(state, socket) {
     socket.close();
     return;
   }
-  // Still "connecting". The handshake only proves the Pi accepted the socket; ws.ts
+  // Still "connecting". The handshake only proves emcool accepted the socket; ws.ts
   // sends the snapshot the instant it does, and "live" is claimed when that ARRIVES —
   // see socketReceived(). The gap is a round trip on wifi and rather more over a
   // hotspot in a garage, and for all of it every value on screen is from before the

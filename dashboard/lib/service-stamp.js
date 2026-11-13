@@ -4,7 +4,7 @@ import { hexWord } from "./format.js";
 
 // The last-service stamp, as evidence rather than as a sentence.
 //
-// The Pi already phrases the outcome (`describeStamp` in src/vcu/write-runner.ts). What it
+// emcool already phrases the outcome (`describeStamp` in src/vcu/write-runner.ts). What it
 // does not send anywhere a person can see is the four raw WORDs A8 answered with, and those
 // are the only primary evidence there is — the audit journal keeps the DECODED stamp, so on
 // 2026-09-08, the first time anything read these identifiers, the bytes behind the reading

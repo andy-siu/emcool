@@ -7,7 +7,7 @@ import { armed } from "./arming.js";
 // through instead of leaving the dashboard from whichever screen you were on.
 //
 // `/#charge`, not `/charge`: the hash never leaves the browser, so a deep link, a
-// bookmark and a reload all work against the Pi exactly as deployed. A path would need
+// bookmark and a reload all work against emcool exactly as deployed. A path would need
 // a server fallback with eleven exceptions, one per real endpoint at the root.
 //
 // Every tab change is a pushState — including the ones the bike makes for you, which

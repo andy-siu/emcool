@@ -45,6 +45,7 @@ export function createBleLink(environment = {}) {
     },
     chooseAndConnect: () => chooseDevice(state),
     restoreDevice: () => restorePermittedDevice(state),
+    forgetDevice: () => forgetChosenDevice(state),
     deviceChosen: () => state.device !== null,
     reconnect: async () => {
       await ensureBleSession(state);
@@ -80,12 +81,13 @@ export const nativeShell = client.nativeShell;
 export const onBleStatus = client.onBleStatus;
 export const chooseAndConnect = client.chooseAndConnect;
 export const restoreDevice = client.restoreDevice;
+export const forgetDevice = client.forgetDevice;
 export const deviceChosen = client.deviceChosen;
 export const reconnect = client.reconnect;
 export const tunnelRequest = client.tunnelRequest;
 export const openStream = client.openStream;
 export const abandonSilentSession = client.abandonSilentSession;
-// HTTPS/native pages have no Pi at their origin; transport is fixed by the page's source.
+// HTTPS/native pages have no emcool at their origin; transport is fixed by the page's source.
 // The exact-origin gate still applies; see docs/ble-server.md §"Where the page comes from".
 export const BLE_MODE =
   typeof location !== "undefined" &&
@@ -108,7 +110,25 @@ async function chooseDevice(state) {
 }
 
 /**
- * Picks the Pi back up after a reload without the chooser, which needs a tap. Only when the
+ * Drops the remembered device so the next connect opens the chooser instead of silently retrying
+ * it. The escape hatch for a dashboard stuck reconnecting to a device permitted in an earlier test
+ * that is no longer around: with one previously permitted device, restorePermittedDevice re-adopts
+ * it on every load, and the Connect button only ever reconnects to it. Best-effort revokes the
+ * browser's standing permission (`forget` is not in every build) so a reload does not re-adopt it.
+ * @param {BleState} state
+ */
+function forgetChosenDevice(state) {
+  const device = state.device;
+  state.device = null;
+  linkLost(state, "device forgotten");
+  setBleStatus(state, "off", "");
+  if (device && typeof device.forget === "function") {
+    void device.forget().catch(error => console.warn("ble: could not forget the device", error));
+  }
+}
+
+/**
+ * Picks emcool back up after a reload without the chooser, which needs a tap. Only when the
  * browser offers `getDevices`, exactly one device was already permitted, and a key is stored;
  * otherwise it returns false and the Connect button stays the way in. A permitted device can
  * be out of range, so the caller treats this as a hint and lets the normal retry policy connect.
@@ -127,7 +147,7 @@ async function restorePermittedDevice(state) {
     console.warn("ble: the browser would not list previously permitted devices", error);
     return false;
   }
-  // Several permitted devices means several Pis (or other peripherals); choosing for the
+  // Several permitted devices means several bikes (or other peripherals); choosing for the
   // rider could connect the wrong bike, so that case keeps the explicit chooser.
   if (permitted.length !== 1 || state.device !== null) {
     if (permitted.length > 1) {
@@ -136,14 +156,14 @@ async function restorePermittedDevice(state) {
     return state.device !== null;
   }
   adoptDevice(state, permitted[0]);
-  console.log("ble: reusing the previously chosen Pi");
+  console.log("ble: reusing the previously chosen bike");
   return true;
 }
 
 /** @param {BleState} state @param {import("./ble-state.js").BleDevice} device */
 function adoptDevice(state, device) {
   if (state.device === device) return;
-  linkLost(state, "another Pi selected");
+  linkLost(state, "another bike selected");
   state.device = device;
   device.addEventListener("gattserverdisconnected", () => {
     if (state.device === device) {
@@ -220,7 +240,7 @@ function receiveNotification(state, event) {
   // Opening is asynchronous, so counters must be checked in arrival order.
   state.readChain = state.readChain
     .then(() => receiveEnvelope(state, envelope, epoch))
-    .catch(error => console.warn("ble: could not handle a message from the Pi", error));
+    .catch(error => console.warn("ble: could not handle a message from emcool", error));
 }
 /** @param {BleState} state @param {Bytes} envelope @param {number} epoch */
 async function receiveEnvelope(state, envelope, epoch) {
@@ -236,7 +256,7 @@ async function receiveEnvelope(state, envelope, epoch) {
       typeof header.reason === "string"
     ) {
       setBleStatus(state, "refused", header.reason);
-      state.handshake.reject(new Error(`the Pi refused this attempt: ${header.reason}`));
+      state.handshake.reject(new Error(`emcool refused this attempt: ${header.reason}`));
     }
     return;
   }

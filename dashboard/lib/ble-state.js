@@ -86,10 +86,13 @@ const MAX_INBOUND_MESSAGE_BYTES = 256 * 1024;
  */
 
 /**
+ * `forget` is optional: `BluetoothDevice.forget()` revokes this origin's standing permission so
+ * a reload will not silently re-adopt the device, but it is not in every Web Bluetooth build.
  * @typedef {object} BleDevice
  * @property {string | undefined} name
  * @property {BleGattServer | undefined} gatt
  * @property {(type: "gattserverdisconnected", listener: () => void) => void} addEventListener
+ * @property {(() => Promise<void>) | undefined} [forget]
  */
 
 /**

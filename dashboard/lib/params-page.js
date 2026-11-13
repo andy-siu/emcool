@@ -54,7 +54,7 @@ async function load() {
 /** @param {VcuParamsResponse} payload */
 function show(payload) {
   if (payload.state === "never-read") {
-    statusLine.textContent = `No parameters have been read on this Pi yet (looked in ${payload.directory}).`;
+    statusLine.textContent = `No parameters have been read on this bike yet (looked in ${payload.directory}).`;
     summary.textContent = payload.hint;
     return;
   }
@@ -79,7 +79,7 @@ function show(payload) {
  * wrong about one name in 277, and on somebody else's bike the same silence would be
  * worth 25. See docs/dashboard-decisions.md §"Which parameter table the names came from".
  *
- * The verdict is computed on the Pi (src/vcu/snapshot.ts, `reportTableType`) so there
+ * The verdict is computed on emcool (src/vcu/snapshot.ts, `reportTableType`) so there
  * is exactly one copy of "which table are we".
  *
  * @param {TableTypeReport} report

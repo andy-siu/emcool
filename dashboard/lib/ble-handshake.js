@@ -35,7 +35,7 @@ export function ensureBleSession(state) {
 async function handshake(state, epoch) {
   const device = state.device;
   if (!device?.gatt) {
-    throw new Error("no Pi chosen — tap Connect first");
+    throw new Error("no bike chosen — tap Connect first");
   }
   const secret = storedBleSecret(state);
   if (!secret) {
@@ -66,7 +66,7 @@ async function handshake(state, epoch) {
     );
     if (info.version !== PROTOCOL_VERSION || !/^[0-9a-f]{32}$/.test(info.serverNonce)) {
       throw new Error(
-        `Bluetooth protocol mismatch — update the Pi and this page/app together (expected ${PROTOCOL_VERSION})`
+        `Bluetooth protocol mismatch — update emcool and this page/app together (expected ${PROTOCOL_VERSION})`
       );
     }
     const clientNonce = randomNonce();
@@ -82,7 +82,7 @@ async function handshake(state, epoch) {
       );
       state.handshake = { nonce: clientNonce, resolve: () => resolve(undefined), reject, timer };
     });
-    // WELCOME needs this key before it arrives, but requests must wait for the Pi to prove possession.
+    // WELCOME needs this key before it arrives, but requests must wait for emcool to prove possession.
     state.pendingSession = session;
     // Attach the rejection handler before beginning a write, which may fail immediately.
     void state
@@ -100,7 +100,7 @@ async function handshake(state, epoch) {
     await welcomed;
     current(state, epoch);
     state.session = session;
-    setBleStatus(state, "connected", device.name || "Unnamed Pi");
+    setBleStatus(state, "connected", device.name || "Unnamed bike");
     return session;
   } catch (error) {
     if (state.epoch === epoch) {

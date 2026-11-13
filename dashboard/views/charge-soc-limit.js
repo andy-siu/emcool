@@ -53,10 +53,10 @@ const { button, div, input, span } = van.tags;
 
 // The bike's own "stop charging at N %" setting, from the charge tab — dash command 0x2C on the
 // 0x120 command channel (docs/dash-command-0x2c-charge-limit.md). Same gated /vcu-write path and
-// two-tap dwell as the controls beside it, and it renders nothing unless the Pi says writes are on.
+// two-tap dwell as the controls beside it, and it renders nothing unless emcool says writes are on.
 //
 // ⚠️ Unlike set-current and stop, this does NOT need a live charge. The limit is a stored setting
-// and the Pi gates it on the ordinary bike-state gate, which passes a parked, unplugged bike —
+// and emcool gates it on the ordinary bike-state gate, which passes a parked, unplugged bike —
 // which is when you are most likely to be setting it. That is why this control mounts its own
 // one-shot status fetch instead of riding the charge-session edge (../lib/charge-write.js).
 //
@@ -113,8 +113,8 @@ export const READ_ARMED_KEY = "charge-soc-limit-read";
 /**
  * The highest percentage the command byte carries.
  *
- * ⚠️ It must equal `MAX_SOC_LIMIT_PCT` in src/can/charge-soc-command.ts, which is the number the
- * Pi's own builder throws outside — a browser file cannot import a .ts module, so the equality is
+ * ⚠️ It must equal `MAX_SOC_LIMIT_PCT` in src/can/charge-soc-command.ts, which is the number
+ * emcool's own builder throws outside — a browser file cannot import a .ts module, so the equality is
  * asserted by scripts/check-charge-soc-limit.ts rather than claimed here.
  */
 export const MAX_PCT = 100;
@@ -309,7 +309,7 @@ async function post(query, kind) {
     // ⚠️ A request that did not come back may still have reached the bike — the frame goes out
     // before the response — so this is NOT "nothing happened". Read it back before retrying.
     message.val =
-      `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "This does NOT guarantee nothing was sent — read the limit before trying again.";
     console.warn("charge-soc-limit: request failed", error);
   } finally {
