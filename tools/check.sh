@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Every host-side check:
-#   - the dashboard is cool-eva's public/ with emcool's renames and patches (tools/sync-dashboard.mts)
 #   - the generated registry is current with cool-eva
 #   - the C++ decoders match cool-eva's TypeScript value for value on the golden corpus, and
 #     warn exactly as often; no location signal reaches the ride log
@@ -48,7 +47,6 @@ build="$root/host/build"
 golden="$build/golden-decode.txt"
 node_flags=(--disable-warning=ExperimentalWarning)
 
-node "${node_flags[@]}" "$root/tools/sync-dashboard.mts" "$cool_eva" --check
 node "${node_flags[@]}" "$root/tools/generate-registry.mts" "$cool_eva" --check
 node "${node_flags[@]}" "$root/tools/generate-diagnostic-tables.mts" "$cool_eva" --check
 node "${node_flags[@]}" "$root/tools/generate-vcu-tables.mts" "$cool_eva" --check

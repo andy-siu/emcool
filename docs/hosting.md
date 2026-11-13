@@ -38,7 +38,7 @@ There is no build step, since the dashboard is plain HTML/JS/CSS (VanJS). The wo
 Then connect to the bike:
 
 1. On the bike's serial console, `set BLE_SECRET <your key>`; Bluetooth turns on at once (see [`ble.md`](ble.md#turning-it-on)).
-2. In the dashboard's menu, paste the key under **Bluetooth → Use an existing access code** and tap **Connect this phone**.
+2. In the dashboard, open **Settings → Connections**, paste the key under **Enter the bike's Bluetooth key** and tap **Connect this phone**.
 
 Load the page while you have reception and keep it open: there is no service worker yet, so in the garage it can't load from scratch. See [`ble.md`](ble.md) for the protocol and [`../dashboard/README.md`](../dashboard/README.md) for what the copy changes from cool-eva.
 
