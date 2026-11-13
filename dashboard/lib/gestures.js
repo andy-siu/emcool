@@ -8,7 +8,7 @@
 // scripts/check-handlebar-gestures.ts replay press sequences through the very object the
 // phone runs. The impure half is ./handlebar-gestures.js.
 //
-// ⚠️ `nowMs` is the SERVER's clock — the `ts` the Pi stamped on the reading — and NOT the
+// ⚠️ `nowMs` is the SERVER's clock — the `ts` emcool stamped on the reading — and NOT the
 // phone's. That is the opposite of the rule the rest of this codebase follows for
 // durations, and it is deliberate: this measures the gap between two presses ON THE BIKE,
 // and the phone's clock can only measure when two messages ARRIVED. On a stalling link

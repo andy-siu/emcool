@@ -7,7 +7,7 @@ import { showToast } from "./toast.js";
 
 // Banners for things the BIKE did, which nothing on this screen asked for.
 //
-// Since the handlebar gestures moved to the Pi (src/gestures/runner.ts) the phone is no
+// Since the handlebar gestures moved to emcool (src/gestures/runner.ts) the phone is no
 // longer the thing that recognises a hold — it is a listener that finds out afterwards,
 // exactly as it finds out about anything else on the bus. So the banner is raised off the
 // live signals rather than off a reply to a request this page made.
@@ -23,7 +23,7 @@ import { showToast } from "./toast.js";
  * One sentence per WAYPOINT_REFUSAL in src/gps/waypoint.ts, keyed by its code.
  *
  * These used to reach the rider as the reply to the phone's own request. A hold on the
- * bars asks nobody, so the Pi records the code and this is where it becomes English.
+ * bars asks nobody, so emcool records the code and this is where it becomes English.
  * scripts/check-hold-gestures.ts asserts every code has a sentence.
  * @type {Record<number, string>}
  */
@@ -58,7 +58,7 @@ export function installAnnouncements() {
  * Pure, and exported so scripts/check-hold-gestures.ts can drive it without a DOM.
  *
  * ⚠️ `baselined` is a SEPARATE flag, not "is the remembered value still null".
- * `waypoint_seq` is `onDemand` and absent from the store until the Pi saves something, so
+ * `waypoint_seq` is `onDemand` and absent from the store until emcool saves something, so
  * a remembered null means "never arrived" — and treating the first arrival as the
  * baseline swallowed the banner for the FIRST waypoint of every boot.
  *
@@ -136,7 +136,7 @@ export function foldFanAnnouncement(state, modeCode, targetPercent, offState = n
 }
 
 /**
- * The fan's mode, as the Pi reports it.
+ * The fan's mode, as emcool reports it.
  *
  * ⚠️ The memory is thrown away whenever the link is not live, so the snapshot that comes
  * back is adopted silently. ./connection.js closes the socket whenever the page is
@@ -182,7 +182,7 @@ function announceFanState() {
 export const WIFI_REJOIN_TEXT = /** @type {Record<number, [text: string, tone: "good" | "bad"]>} */ ({
   1: ["Wi-Fi is up — state dumped, link untouched. Hold again to force a rejoin.", "good"],
   2: ["Wi-Fi rejoined.", "good"],
-  3: ["Wi-Fi rejoin failed — the dump is on the Pi.", "bad"],
+  3: ["Wi-Fi rejoin failed — the dump is on emcool.", "bad"],
   4: ["No Wi-Fi profile for that network — state dumped.", "bad"],
 });
 

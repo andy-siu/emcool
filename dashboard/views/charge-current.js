@@ -64,7 +64,7 @@ const busy = van.state(false);
 /** True only while the command's own POST is in flight, so "Sending…" cannot be shown for a status refresh. */
 const sending = van.state(false);
 const message = van.state("");
-/** Whether the last command was accepted by the Pi. The bike's own verdict is `chargeAck`. */
+/** Whether the last command was accepted by emcool. The bike's own verdict is `chargeAck`. */
 const lastResult = van.state(/** @type {boolean | null} */ (null));
 
 // The form clears when the charge ends — a new session starts blank. Session tracking, the lazy
@@ -74,9 +74,9 @@ onChargeSessionEnd(forgetCommand);
 
 export const ARMED_KEY = "charge-current";
 
-// The Pi records its verdict as `charge_cmd_ack`, which reaches the page over the WebSocket the
+// emcool records its verdict as `charge_cmd_ack`, which reaches the page over the WebSocket the
 // instant it settles. So the verdict arrives for free and this fetches once per settle, for the
-// phrasing — `chargeAck`'s sentence is built on the Pi and is not in any signal.
+// phrasing — `chargeAck`'s sentence is built on emcool and is not in any signal.
 // ⚠️ It used to poll /vcu-write every 2 s for 14 s, and then — unguarded — every heartbeat for the
 // whole charge (#207). That payload re-read the parameter sweep and the entire append-only audit
 // journal per request, on the event loop serving the 10 Hz WebSocket and the CAN RX handler.
@@ -112,7 +112,7 @@ van.derive(() => {
 /**
  * What can be commanded right now: the source, the ceiling, or why neither is available.
  *
- * The two "not yet" states are the Pi's own refusals said BEFORE the button is pressed, so
+ * The two "not yet" states are emcool's own refusals said BEFORE the button is pressed, so
  * the remedy (plug in; nudge the dial) is read where it is actionable rather than after a
  * 409. AC's ceiling is an event the dash only broadcasts when the dial moves, so its absence
  * is normal and gets a remedy, not an error.
@@ -238,7 +238,7 @@ function Outcome() {
 }
 
 /**
- * Whether the bike actually took the last command — the Pi's own verdict, not a hint about where
+ * Whether the bike actually took the last command — emcool's own verdict, not a hint about where
  * to look.
  *
  * ⚠️ This is the whole point of the feature after 2026-09-07, when three commands changed the
@@ -269,12 +269,12 @@ function ackIcon(kind) {
 }
 
 /**
- * Whether a command could be sent at all — a live charge with a known ceiling. The Pi
+ * Whether a command could be sent at all — a live charge with a known ceiling. emcool
  * enforces every part of this again; this is the page declining to offer a button whose
  * request it knows would be refused.
  */
 function commandable() {
-  // Writes on for this Pi, plus a live session with a known ceiling. ⚠️ NOT gate.safe — the
+  // Writes on for this bike, plus a live session with a known ceiling. ⚠️ NOT gate.safe — the
   // stationary service gate does not apply to a charging operation (see the file header).
   if (!writesEnabled()) {
     return false;
@@ -283,7 +283,7 @@ function commandable() {
   return type !== null && liveCeiling(type) !== null;
 }
 
-/** The typed amps as a whole number in range, or null. The Pi validates again against the live ceiling. */
+/** The typed amps as a whole number in range, or null. emcool validates again against the live ceiling. */
 function parsedAmps() {
   const text = amps.val.trim();
   if (!/^\d+$/.test(text)) {
@@ -308,7 +308,7 @@ function forgetCommand() {
 
 /**
  * Refreshes the status, THEN arms — so whether writes are still enabled and the session still
- * live is the Pi's answer now, not its answer when the charge started. Does not arm if writes
+ * live is emcool's answer now, not its answer when the charge started. Does not arm if writes
  * went off, or the charge or its ceiling went away across the refresh.
  */
 async function armChargeCurrent() {
@@ -358,7 +358,7 @@ async function performChargeCurrent() {
     // out before the response — so this is NOT "nothing happened". Lowering the current is
     // benign and overridable on the bike, but the message says the honest thing anyway.
     message.val =
-      `${value} A request: could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `${value} A request: could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "This does NOT guarantee nothing was sent — check the dash.";
     console.warn("charge-current: request failed", error);
   } finally {

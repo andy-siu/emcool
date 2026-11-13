@@ -120,7 +120,7 @@ async function performLifetimeRead() {
     // than implying nothing happened.
     console.warn("lifetime-read: request failed", error);
     message.val =
-      `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "The read may have completed anyway; the All tab shows the age of what is stored.";
   } finally {
     busy.val = false;

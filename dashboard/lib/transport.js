@@ -3,8 +3,8 @@
 import { requireCurrentPage } from "./page-reload.js";
 import { BLE_MODE, nativeShell, tunnelRequest } from "./ble-link.js";
 
-// How the dashboard reaches the Pi's endpoints: `fetch` when the page was served by the
-// Pi, the BLE tunnel on the hosted HTTPS dashboard or iOS app (./ble-link.js BLE_MODE).
+// How the dashboard reaches emcool's endpoints: `fetch` when the page was served by
+// emcool, the BLE tunnel on the hosted HTTPS dashboard or iOS app (./ble-link.js BLE_MODE).
 // Every endpoint call in public/ goes through request() — a stray `fetch` would work
 // on wifi and 404 against the static host, only failing once the rider is away from wifi.
 
@@ -29,7 +29,7 @@ import { BLE_MODE, nativeShell, tunnelRequest } from "./ble-link.js";
  */
 
 /**
- * @param {string} path absolute path on the Pi, query string included
+ * @param {string} path absolute path on emcool, query string included
  * @param {EndpointRequestInit} [init]
  * @returns {Promise<EndpointResponse>}
  */
@@ -59,12 +59,12 @@ export async function request(path, init = {}) {
 }
 
 /**
- * Saves a file the Pi serves. Over HTTP a plain navigation, so the browser's own download
+ * Saves a file emcool serves. Over HTTP a plain navigation, so the browser's own download
  * manager handles a large ride log (pausing, backgrounding, progress) better than this
  * page could. Over BLE there is nothing to navigate to, so the file is pulled through the
  * tunnel into memory and handed to the browser as a blob.
  * @param {string} path
- * @param {string} fileName used only when the Pi's Content-Disposition names none
+ * @param {string} fileName used only when emcool's Content-Disposition names none
  * @param {(receivedBytes: number, totalBytes: number | null) => void} [onProgress]
  */
 export async function download(path, fileName, onProgress) {

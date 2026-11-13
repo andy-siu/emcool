@@ -25,8 +25,8 @@ import { request } from "./transport.js";
 /**
  * How stale charge_manager_state may be before this treats the session as gone.
  *
- * ⚠️ 12 s, and it MUST stay above ws.ts's HEARTBEAT_MS (5000). It used to be 5000 to "match the
- * Pi", which cannot work: the Pi's `ageMs()` is refreshed by every 0x610 frame (~10 Hz), while the
+ * ⚠️ 12 s, and it MUST stay above ws.ts's HEARTBEAT_MS (5000). It used to be 5000 to "match
+ * emcool", which cannot work: emcool's `ageMs()` is refreshed by every 0x610 frame (~10 Hz), while the
  * browser learns an age only from a WebSocket message and `record()` patches only on CHANGE —
  * charge_manager_state holds 0x23 all session (8399 frames, zero changes), so the browser's copy is
  * refreshed only by the heartbeat. Same number, different clocks, and the tile unmounted on every
@@ -42,7 +42,7 @@ export const CHARGE_SESSION_MAX_AGE_MS = 12_000;
  * assertion that can fail — the same reason CHARGE_SESSION_MAX_AGE_MS above is a literal 12 000.
  * ⚠️ And pacing is not decoration: that derive subscribes to serverTime on purpose, so it runs on
  * every WebSocket message — ~10 a second mid-charge, not one per heartbeat. Retrying on each of
- * them would ask an unreachable Pi ten times a second, which is worse than the bug below.
+ * them would ask an unreachable bike ten times a second, which is worse than the bug below.
  */
 export const STATUS_RETRY_MS = 5000;
 
@@ -52,7 +52,7 @@ const CHARGE_MANAGER_STATE_DC = 0x23;
 
 /**
  * AC ceiling used when the dash has not broadcast ac_charge_ceiling_a this session — the remote
- * case, where nobody is at the bike to nudge the charge-current dial. Must match the Pi's
+ * case, where nobody is at the bike to nudge the charge-current dial. Must match emcool's
  * AC_CEILING_FALLBACK_A in src/vcu/write-runner.ts, which puts this byte in the frame; here it only
  * lets the page offer and range-check the control. See docs/can-0x121-charge-command.md.
  */
@@ -90,7 +90,7 @@ export const chargeType = van.state(/** @type {"ac" | "dc" | null} */ (null));
 const writesOn = van.state(false);
 
 /**
- * The Pi's verdict on the last charge-current command, as a STATE.
+ * emcool's verdict on the last charge-current command, as a STATE.
  *
  * ⚠️ Same reason as `writesOn`: a binding reading `writeStatus.val?.status?.chargeAck` re-runs on
  * the payload's identity, so the Outcome subtree was rebuilt on every arm and every refresh — the
@@ -126,7 +126,7 @@ export function onChargeSessionEnd(listener) {
 // because this derive assigns it after an await, outside VanJS's dependency capture. Why it must
 // also be PACED: docs/dashboard-decisions.md §"The fourth trap".
 let lastLive = false;
-/** When the last session-start fetch was STARTED, so a failing Pi is asked once per heartbeat. */
+/** When the last session-start fetch was STARTED, so a failing bike is asked once per heartbeat. */
 let statusAskedAt = /** @type {number | null} */ (null);
 /** ⚠️ Paced from the START of a request, so without this a request that HANGS stacks another every
  * STATUS_RETRY_MS — twelve a minute at the far end of a garage. `fetch` has no timeout of its own. */
@@ -155,7 +155,7 @@ van.derive(() => {
     }
   }
   // A live session with no status held: the opening fetch, or a retry of one that failed. An
-  // answer of `enabled: false` still counts as held — the Pi replied, and that is not a failure.
+  // answer of `enabled: false` still counts as held — emcool replied, and that is not a failure.
   if (!live || writeStatus.rawVal !== null) {
     return;
   }
@@ -168,7 +168,7 @@ van.derive(() => {
   void fetchChargeWriteStatus().finally(() => {
     // ⚠️ Only if it is still OURS. A request abandoned by a session that ended, or superseded by a
     // newer attempt, settles later and would otherwise clear a flag a live request is relying on —
-    // one extra concurrent request to a Pi that is already not answering. Same shape as the
+    // one extra concurrent request to a bike that is already not answering. Same shape as the
     // settle guard's `lastSettle === settle`.
     if (statusAskedAt === mark) {
       statusInFlight = false;
@@ -196,10 +196,10 @@ export function liveChargeType() {
 }
 
 /**
- * The ceiling a charge-current command's b4 will carry, from the same live signal the Pi echoes:
+ * The ceiling a charge-current command's b4 will carry, from the same live signal emcool echoes:
  * the dash's own last AC ceiling, or the always-broadcast DC maximum. When AC has no live ceiling
  * (the dial has not been nudged this session) it falls back to AC_CEILING_FALLBACK_A so a remote
- * command still has a range — matching the Pi. DC never falls back (an absent DC ceiling means CAN
+ * command still has a range — matching emcool. DC never falls back (an absent DC ceiling means CAN
  * is not being received, not a value to guess).
  * @param {"ac" | "dc"} type
  * @returns {number | null}
@@ -221,7 +221,7 @@ export function ceilingIsFallback(type) {
   return type === "ac" && valueOf("ac_charge_ceiling_a") == null;
 }
 
-/** Whether writing is switched on for this Pi (SERVICE_WRITE_ENABLED). Reads the boolean state. */
+/** Whether writing is switched on for this bike (SERVICE_WRITE_ENABLED). Reads the boolean state. */
 export function writesEnabled() {
   return writesOn.val;
 }

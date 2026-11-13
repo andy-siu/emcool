@@ -28,7 +28,7 @@ const { div, span } = van.tags;
 
 /**
  * The last reading, from /freeze-frames. Null until the fetch lands; a failure leaves it
- * null and every code says "nothing has been read on this Pi", which is the honest reading
+ * null and every code says "nothing has been read on this bike", which is the honest reading
  * of what the PAGE knows.
  */
 const reading = van.state(/** @type {FreezeFramesResponse | null} */ (null));
@@ -64,8 +64,8 @@ export async function loadRecordedValues() {
     fetchFailed.val = "";
   } catch (error) {
     fetchFailed.val = error instanceof Error ? error.message : String(error);
-    // Never swallowed. The page renders "nothing has been read on this Pi", which is true
-    // of what it knows; this line is what separates that from the Pi genuinely never
+    // Never swallowed. The page renders "nothing has been read on this bike", which is true
+    // of what it knows; this line is what separates that from emcool genuinely never
     // having read the bike.
     console.warn("faults: could not load /freeze-frames — recorded values will not show:", error);
   } finally {
@@ -128,7 +128,7 @@ function recordedFrame(key) {
  * Four states, kept apart because they are four different claims and only one of them is
  * about the motorcycle being fine:
  *
- *   1. no reading on this Pi — nothing has been read, which says nothing about the bike
+ *   1. no reading on this bike — nothing has been read, which says nothing about the bike
  *   2. read, but the VCU's list did not name this component
  *   3. read, the VCU listed it and answered `57 00` — it has no record to give
  *   4. read, and here is what it recorded
@@ -146,12 +146,12 @@ function Values(key, component, symptom) {
   const howToRead = payload?.howToRead ?? HOW_TO_READ_FALLBACK;
   if (!stored) {
     // ⚠️ Two different sentences, because they are two different claims. "Nothing has been
-    // read on this Pi" is about the motorcycle; a failed fetch is about this page, and
+    // read on this bike" is about the motorcycle; a failed fetch is about this page, and
     // saying the first from the second is the screen inventing an answer the bike never
     // gave — the distinction src/diagnostics/stored-codes.ts exists to protect.
     return fetchFailed.val
-      ? Note(`Could not ask the Pi what it has recorded (${fetchFailed.val}). This says nothing about the bike.`)
-      : Note(`No values have been read on this Pi. ${howToRead}.`);
+      ? Note(`Could not ask emcool what it has recorded (${fetchFailed.val}). This says nothing about the bike.`)
+      : Note(`No values have been read on this bike. ${howToRead}.`);
   }
   const record = stored.records.find(candidate => candidate.component === component);
   if (!record) {

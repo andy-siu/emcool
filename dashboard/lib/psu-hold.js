@@ -40,7 +40,7 @@ export async function performPsuHold(action) {
   const state = psuHoldState.rawVal;
   if (!state || psuHoldBusy.rawVal) return;
   psuHoldBusy.val = true;
-  psuHoldMessage.val = "Waiting for the Pi…";
+  psuHoldMessage.val = "Waiting for emcool…";
   try {
     const query = new URLSearchParams({
       action,

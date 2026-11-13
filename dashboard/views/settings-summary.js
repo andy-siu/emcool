@@ -40,7 +40,7 @@ export function MigrationSummary(dismissible, riding = false) {
             ? "The empty service directory was treated as unset. Service data uses the default location."
             : "",
           current.notices.includes("private-key-on-pi")
-            ? "A private key is on the Pi, which defeats the sealed log; put the public key there instead. Recording continues."
+            ? "A private key is on emcool, which defeats the sealed log; put the public key there instead. Recording continues."
             : "",
           "Older Siri shortcuts no longer save waypoints. Use Update Siri shortcut below.",
         ]
@@ -48,7 +48,7 @@ export function MigrationSummary(dismissible, riding = false) {
           .join(" ")
       : `Connected over ${BLE_MODE ? "Bluetooth" : "Wi-Fi"}. Choose Bike setup for installed hardware. Bluetooth and ride recording are optional; you can add them later.`;
     const card = SettingsCard(
-      legacy ? "What changed on this Pi" : "Welcome to emcool",
+      legacy ? "What changed on this bike" : "Welcome to emcool",
       text,
       ...(current.retiredChoices ?? []).map(choice =>
         div({ class: "settings-note" }, `${choice.name}: ${choice.behavior}`)

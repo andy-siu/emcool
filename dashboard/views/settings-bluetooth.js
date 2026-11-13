@@ -58,7 +58,7 @@ export function DashboardBluetooth() {
               })
             : div(
                 !settingsConfirmed.val || settingsError.val
-                  ? "Pi unconfirmed. Read the saved key state before changing it."
+                  ? "emcool unconfirmed. Read the saved key state before changing it."
                   : settings.val?.saved.bluetoothCodeId
                     ? "A shared key is already saved."
                     : "No key saved."
@@ -153,16 +153,12 @@ export function DashboardBluetooth() {
           void saveSetting("dashboardBluetoothSecret", { dashboardBluetoothSecret: "" });
         })
       )
-    ),
-    SettingsCard(
-      "Use an existing access code",
-      "On another phone, open the Bluetooth dashboard and import your saved key or password-manager copy. Connect this phone chooses the Pi; it never replaces the shared key."
     )
   );
 }
 
 /**
- * A read is valid for one Pi, one saved revision and one running process. A save or restart
+ * A read is valid for one bike, one saved revision and one running process. A save or restart
  * changes which key is saved or in use, so the old readout hides rather than show a stale key.
  * @param {import("../../src/settings/view.ts").SettingsReply | null} current
  */
@@ -260,7 +256,7 @@ async function createOrSaveCode() {
     manualCopyNeeded.val = false;
     settingsMessages.val = {
       ...settingsMessages.rawVal,
-      dashboardBluetoothSecret: "Draft key — not saved. Keep a recoverable copy before saving it on this Pi.",
+      dashboardBluetoothSecret: "Draft key — not saved. Keep a recoverable copy before saving it on this bike.",
     };
     return;
   }
@@ -275,7 +271,7 @@ async function createOrSaveCode() {
       settingsMessages.val = {
         ...settingsMessages.rawVal,
         dashboardBluetoothSecret:
-          "Saved on the Pi. This browser could not keep the key: retain your external copy and use Wi-Fi to restart.",
+          "Saved on emcool. This browser could not keep the key: retain your external copy and use Wi-Fi to restart.",
       };
     }
     generatedCode.val = "";

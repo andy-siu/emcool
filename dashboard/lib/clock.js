@@ -9,10 +9,10 @@
 // asks "how long since…" uses monotonicNow().
 //
 // **There are two wall clocks, and they disagree.** Signal timestamps (`LiveValue.ts`)
-// come from the Pi, which has no RTC: until its first GPS fix it can be hours or
+// come from emcool, which has no RTC: until its first GPS fix it can be hours or
 // years out from the phone. So a client `Date.now()` must never be compared against
 // a server `ts` — the first version of the ring buffer did exactly that (pushing
-// `reading.ts` and querying with `Date.now()`), which on a cold-booted Pi silently
+// `reading.ts` and querying with `Date.now()`), which on a cold-booted emcool silently
 // emptied every sparkline for the whole ride, or filled it with samples dated in
 // the future.
 //

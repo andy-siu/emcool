@@ -31,5 +31,5 @@ export async function followUpdate(sequence, report) {
       }
     }
   }
-  throw new Error("The update has not reported a result. Reconnect to the Pi and try again.");
+  throw new Error("The update has not reported a result. Reconnect to emcool and try again.");
 }

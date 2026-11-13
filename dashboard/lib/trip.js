@@ -6,7 +6,7 @@ import { monotonicNow, since } from "./clock.js";
 // Trip accounting for the current session.
 //
 // "Session" means since this page was opened, not since the bike was switched on —
-// the Pi keeps no readable history, so there is nothing else it could mean. The
+// emcool keeps no readable history, so there is nothing else it could mean. The
 // odometer is used as the distance source rather than integrating GPS speed,
 // because it is the bike's own measurement and does not drift while stopped.
 

@@ -15,7 +15,7 @@ const { button, div, h2, h3, input, option, select, span } = van.tags;
 // the four service actions.
 //
 // ⚠️ Nothing on this page decides anything. The allowlist, the ranges, the
-// compare-and-swap and the read-back all live on the Pi (src/vcu/write-targets.ts,
+// compare-and-swap and the read-back all live on emcool (src/vcu/write-targets.ts,
 // src/vcu/write-session.ts). This page cannot widen any of them and does not try; where
 // it and the server disagree, the server wins and the page shows the server's reason.
 //
@@ -69,8 +69,8 @@ const listing = van.state([]);
  * ⚠️ `writeTargets()` is derived from the ACTIVE parameter table, and `writeSnapshot()` selects a
  * new one (src/vcu/snapshot-store.ts) — from this very sheet, which is where sweeps are started.
  * So a listing can go stale under an open sheet: a response whose tableType differs from the one
- * the names came from discards them and asks again, rather than offering a picker of names the
- * Pi would no longer accept. Wrapped in an object so "no listing" and "a listing taken under an
+ * the names came from discards them and asks again, rather than offering a picker of names
+ * emcool would no longer accept. Wrapped in an object so "no listing" and "a listing taken under an
  * unknown table" stay different things.
  */
 let listingHeldFor = /** @type {{ tableType: number | null } | null} */ (null);
@@ -114,7 +114,7 @@ const warningsOpen = van.state(false);
  */
 const dangerOpen = van.state(false);
 /**
- * The last clear made from this page — the Pi's sentence and the Pi's verdict — or null.
+ * The last clear made from this page — emcool's sentence and emcool's verdict — or null.
  *
  * Its own state rather than read off `state.val.result` for the reason StampOutcome has one: a
  * request that never comes back leaves the PREVIOUS answer in `state`, and a stale green proof
@@ -252,7 +252,7 @@ export function VcuWrite() {
     // here because the design preview's close-ups have to find this block, and counting
     // siblings to reach it is what broke them for twelve days when the section grew from
     // three blocks to six: docs/diagnostics-and-checks.md §11.6. On BOTH branches, so the
-    // block is findable before the Pi has answered as well as after.
+    // block is findable before emcool has answered as well as after.
     () =>
       hasControls()
         ? div(
@@ -290,7 +290,7 @@ function Availability() {
     if (!status) {
       // ⚠️ The ellipsis means "waiting for an answer", and it must stand down the
       // moment one kind of answer arrives. `status` stays null for ever after a failed
-      // GET — nothing re-polls /vcu-write while the sheet is open — so with the Pi
+      // GET — nothing re-polls /vcu-write while the sheet is open — so with emcool
       // unreachable this section read as loading and failed at the same time, with the
       // loading claim the more visible of the two. The failure line VcuWrite() renders
       // just below is the true one; this one goes quiet and lets it speak.
@@ -335,10 +335,10 @@ function Availability() {
 }
 
 /**
- * Which commit the Pi is running, on every branch of the status block.
+ * Which commit emcool is running, on every branch of the status block.
  *
  * ⚠️ Not decoration. On 2026-09-07 the charge-current feature changed the dash's number and
- * moved no current, and the cause was that the Pi had been running a five-day-old build since
+ * moved no current, and the cause was that emcool had been running a five-day-old build since
  * before the fix landed — indistinguishable, from the garage, from a feature that does not
  * work. This is the line that tells those two apart before anyone starts debugging the wrong
  * one. `+dirty` means tracked files differ from that commit, so the running code is not the
@@ -363,7 +363,7 @@ function RunningVersion(status) {
  *
  * ⚠️ The branch is on `noReadWillHelp`, not on `state` — testing `state === "mismatched"`
  * quietly rendered every later-added state as the amber one. The sentences come from
- * the Pi (src/vcu/table-gate.ts) rather than being written again here.
+ * emcool (src/vcu/table-gate.ts) rather than being written again here.
  * See docs/dashboard-decisions.md §"the table-type gate".
  */
 function TableTypeNote() {
@@ -582,14 +582,14 @@ function describeBits(target, value) {
  * Where the number to the left came from, and what may be typed to the right.
  *
  * ⚠️ The provenance is not decoration. A value the last sweep read an hour ago and a
- * value read off the bus ten seconds ago are both legitimate preconditions — the Pi
+ * value read off the bus ten seconds ago are both legitimate preconditions — emcool
  * re-reads either way — but they are not equally likely to still be true, and the one
  * thing the page must never do is present them as the same thing.
  *
  * ⚠️ The age is computed at RENDER, and nothing polls /vcu-write while the sheet is
  * open, so a sheet left untouched shows the age it had when something last re-rendered
  * it. That is why the write button's first tap refreshes before it arms (`armWrite`):
- * the caption is re-rendered from the Pi's answer at the moment somebody starts to
+ * the caption is re-rendered from emcool's answer at the moment somebody starts to
  * commit, which is the moment its accuracy is load-bearing. A timer ticking this every
  * minute for a phone sitting on a workbench would be the wrong trade.
  */
@@ -615,7 +615,7 @@ function ValueNote() {
       known.source === "bus"
         ? `${asShown}${bytes} — read off the bike by this page.`
         : `${known.label ?? known.value}${bytes} — from the parameter sweep ${ageInWords(known.readAt)}` +
-          `${known.complete ? "" : ", which did not finish"}. The Pi re-reads it before writing.`;
+          `${known.complete ? "" : ", which did not finish"}. emcool re-reads it before writing.`;
     return div(`${where} ${range}`);
   });
 }
@@ -790,8 +790,8 @@ function WriteButton() {
     ),
     div({ class: "action-note", style: `color:${MUTED}` }, () =>
       onBike() === null
-        ? "Every write is a compare-and-swap: the Pi re-reads the parameter and refuses if it has moved since it was read."
-        : "The Pi will re-read this parameter, write, and read it back — and say so loudly if the read-back disagrees, or if the bike does not hold what is shown on the left."
+        ? "Every write is a compare-and-swap: emcool re-reads the parameter and refuses if it has moved since it was read."
+        : "emcool will re-read this parameter, write, and read it back — and say so loudly if the read-back disagrees, or if the bike does not hold what is shown on the left."
     )
   );
 }
@@ -1254,7 +1254,7 @@ function summariseAllLights(off, done, skipped, failed, fellBack, unreachable) {
     );
   }
   if (unreachable) {
-    parts.push("Stopped early: the Pi stopped answering. Read the values back before trying again.");
+    parts.push("Stopped early: emcool stopped answering. Read the values back before trying again.");
   }
   if (parts.length === 0) {
     return `Nothing to do — every light was already ${off ? "off" : "restored"}.`;
@@ -1446,7 +1446,7 @@ function IrreversibleActions() {
 }
 
 /**
- * One entry behind the fold: what it is called, what it asks the Pi for, and how to
+ * One entry behind the fold: what it is called, what it asks emcool for, and how to
  * build it.
  *
  * @typedef {{ name: string, action: "set-service-point" | "sync-clock" | "clear-dtcs",
@@ -1489,7 +1489,7 @@ export const IRREVERSIBLE = [
         confirm: "WIPE the stored codes and their freeze frame",
         noUndo: "The freeze frame goes with the codes.",
         does:
-          "OBD Mode 04 — clears every code the bike currently holds stored. The Pi parks its own OBD " +
+          "OBD Mode 04 — clears every code the bike currently holds stored. emcool parks its own OBD " +
           "polling and reads the counters either side of the frame, so this takes a few seconds.",
         caution: clearCodesCaution,
         outcome: ClearOutcome,
@@ -1507,7 +1507,7 @@ export const IRREVERSIBLE = [
  *
  * ⚠️ Read off the served gate rather than by re-testing the bit here. The inlet mask lives in
  * src/vcu/charge-session.ts and is not exported; a copy of it in a browser file would be a
- * constant that can drift from the one the Pi actually vetoes on.
+ * constant that can drift from the one emcool actually vetoes on.
  *
  * @param {ServiceGateVerdict | undefined} gate
  */
@@ -1518,8 +1518,8 @@ export function chargerIsAttached(gate) {
   if (gate.chargingEvidence !== null) {
     return true;
   }
-  // The key is `CHARGE_INLET_VETO.key` on the Pi (src/vcu/charge-session.ts). Spelled out here
-  // because public/ has no build step and cannot import a `.ts` at runtime; the Pi's own copy is
+  // The key is `CHARGE_INLET_VETO.key` on emcool (src/vcu/charge-session.ts). Spelled out here
+  // because public/ has no build step and cannot import a `.ts` at runtime; emcool's own copy is
   // `verdictSeesACable`, and scripts/check-clear-dtcs.ts §8 drives both through the same cases.
   return gate.checks.find(check => check.key === "charge_manager_status")?.state === "ok";
 }
@@ -1549,7 +1549,7 @@ function clearCodesCaution() {
 }
 
 /**
- * What the bike answered — the Pi's own sentence, styled by the Pi's own verdict.
+ * What the bike answered — emcool's own sentence, styled by emcool's own verdict.
  *
  * ⚠️ THE WORDS ARE THE SERVER'S. This used to rebuild the sweep and the proof line from
  * `result.clear`, which put that prose in three places (here, src/vcu/clear-dtcs.ts and the
@@ -1571,7 +1571,7 @@ function ClearOutcome() {
       // ⚠️ `.action-note.failure`, which is WEIGHT as well as hue — --bad and --warn are the
       // closest adjacent pair in the ramp, so in light theme a red line between two amber
       // cautions read as a third near-identical paragraph. NoUndoLine spells the argument out.
-      // No badge: the Pi's own sentence already opens "AND THE BIKE ERASED NOTHING" in caps, and
+      // No badge: emcool's own sentence already opens "AND THE BIKE ERASED NOTHING" in caps, and
       // a badge above it said the same words twice in a row.
       return div({ class: "action-note failure" }, answer.message);
     }
@@ -1591,7 +1591,7 @@ const CLOCK_NO_UNDO = "The bike's clock cannot be read back, so nothing can conf
 /**
  * The clock sync, which needs its own button because its confirmation is a question
  * about a fact rather than about an intention: the caption IS the dialog — "Is it
- * <date and time>?" — and the time in it is echoed back to the Pi, which refuses if
+ * <date and time>?" — and the time in it is echoed back to emcool, which refuses if
  * that minute has passed. So the second tap asserts that the time shown in the first
  * is still true. See docs/dashboard-decisions.md §"The confirm token".
  */
@@ -1614,7 +1614,7 @@ function ClockAction() {
           onclick: () => {
             if (armed.val !== "action:sync-clock") {
               // ⚠️ The FIRST tap refreshes before it arms, so the time the caption then
-              // shows is the Pi's time now rather than the Pi's time when the sheet was
+              // shows is emcool's time now rather than emcool's time when the sheet was
               // opened. Without this the owner could be asked "Is it 09:15 UTC?" at
               // 10:20 and truthfully answer no useful question at all.
               void armClockSync();
@@ -1630,8 +1630,8 @@ function ClockAction() {
             armed.val = "";
             // ⚠️ The minute CONFIRMED is derived from the one that was DISPLAYED, never
             // from the phone's own clock. They are two different clocks: sending
-            // `new Date()` would mean the Pi checked the phone's freshness while the
-            // owner had agreed to a statement about the Pi — so a stale caption would
+            // `new Date()` would mean emcool checked the phone's freshness while the
+            // owner had agreed to a statement about emcool — so a stale caption would
             // sail through, and a phone a minute out of step could never sync at all.
             void performAction("sync-clock", confirmedMinute());
           },
@@ -1642,11 +1642,11 @@ function ClockAction() {
             return "🕒  …";
           }
           if (!clock.trustworthy) {
-            return "🕒  This Pi's clock cannot be copied to the bike";
+            return "🕒  This bike's clock cannot be copied to the bike";
           }
           return armed.val === "action:sync-clock"
             ? `⚠️  Is it ${clock.iso.slice(0, 19).replace("T", " ")} UTC?  Tap again to send`
-            : "🕒  Set the bike's clock from this Pi";
+            : "🕒  Set the bike's clock from this bike";
         }
       ),
       () => (armed.val === "action:sync-clock" ? "Confirm time" : "Set clock")
@@ -1665,7 +1665,7 @@ function ClockAction() {
         // nothing here that cannot be undone. This is red because something is
         // broken, and `no-undo` means one specific thing that this is not.
         return div(
-          div({ class: "action-note", style: `color:${BAD}` }, `The Pi reads ${clock.iso}, and it is not fit to copy:`),
+          div({ class: "action-note", style: `color:${BAD}` }, `emcool reads ${clock.iso}, and it is not fit to copy:`),
           ...clock.reasons.map(reason => div({ class: "action-note", style: `color:${MUTED}` }, `· ${reason}`))
         );
       }
@@ -1882,7 +1882,7 @@ function Journal() {
     div({ class: "action-note" }, () => {
       const recent = state.val?.status.recent ?? [];
       if (recent.length === 0) {
-        return div({ style: `color:${MUTED}` }, "Nothing has been written from this Pi.");
+        return div({ style: `color:${MUTED}` }, "Nothing has been written from this bike.");
       }
       return div(...recent.map(JournalLine));
     })
@@ -1898,14 +1898,14 @@ function JournalLine(record) {
       style: `color:${record.status === "written" || record.status === "started" || record.status === "cleared" || record.status === "sent" ? MUTED : WARN}`,
     },
     // The clock caveat rides on every line rather than being explained once at the
-    // top: these lines get read one at a time, months apart, and a timestamp this Pi
+    // top: these lines get read one at a time, months apart, and a timestamp this bike
     // could not vouch for should say so where it is read.
     `${when}${record.clockTrustworthy ? "" : " (clock unverified)"} · ${what} · ${record.status}`
   );
 }
 
 export function selectedTarget() {
-  // ⚠️ The NAME MUST MATCH. The detail is one object the Pi hands over for the target the page
+  // ⚠️ The NAME MUST MATCH. The detail is one object emcool hands over for the target the page
   // asked about, and it arrives a round trip after the selection moves — so without this the form
   // would render the previous parameter's purpose, warnings and range against the new name, and
   // `control.kind` and `onBike()` are what choose `action=bit` over `action=parameter` and what
@@ -1942,7 +1942,7 @@ function canWrite() {
  *
  * ⚠️ TWO sources, RANKED: a value this page read itself off the bus always wins over
  * the last recorded sweep's, because after a write the sweep's snapshot still says what
- * the parameter used to be. Null when neither has it — a real state, a Pi that has
+ * the parameter used to be. Null when neither has it — a real state, a bike that has
  * never swept, and the write button stays disabled saying so.
  *
  * The reading is only handed back when it belongs to the selected parameter, so no
@@ -1992,7 +1992,7 @@ function forgetSelection() {
 }
 
 /**
- * What the second tap sends as `confirm=` — the Pi's precondition for every action it
+ * What the second tap sends as `confirm=` — emcool's precondition for every action it
  * will not perform on one request.
  *
  * ⚠️ PROTOCOL, not prose. `notes.confirm` is the caption tail and may be rewritten
@@ -2003,12 +2003,12 @@ function forgetSelection() {
  * not against a second copy. See docs/dashboard-decisions.md §"The confirm token".
  *
  * @param {string} action
- * @param {string} displayedIso the Pi's `clock.iso` exactly as the caption showed it
+ * @param {string} displayedIso emcool's `clock.iso` exactly as the caption showed it
  */
 export function confirmationFor(action, displayedIso = "") {
   if (action === "sync-clock") {
     // The minute the button is currently SHOWING, in the shape the server checks:
-    // `2026-08-16T14:03Z`. Sliced out of the Pi's own `clock.iso`, so the value
+    // `2026-08-16T14:03Z`. Sliced out of emcool's own `clock.iso`, so the value
     // confirmed and the value displayed are the same string from the same clock. If the
     // sheet has gone stale the server refuses and names both minutes — the intended
     // behaviour, and the refusal itself refreshes the state so the next attempt shows
@@ -2026,7 +2026,7 @@ function confirmedMinute() {
   return confirmationFor("sync-clock", state.val?.status.clock.iso ?? "");
 }
 
-/** Refreshes the Pi's clock reading, then arms — so the time in the caption is its time now. */
+/** Refreshes emcool's clock reading, then arms — so the time in the caption is its time now. */
 async function armClockSync() {
   busy.val = true;
   try {
@@ -2078,7 +2078,7 @@ async function readCurrent() {
     // may not be the number on screen any more.
     armed.val = "";
   } catch (error) {
-    message.val = `could not reach the Pi — ${error instanceof Error ? error.message : String(error)}`;
+    message.val = `could not reach emcool — ${error instanceof Error ? error.message : String(error)}`;
     console.warn("vcu-write: read failed", error);
   } finally {
     busy.val = false;
@@ -2086,7 +2086,7 @@ async function readCurrent() {
 }
 
 /**
- * Refreshes, THEN arms — so the number the second tap agrees to is the Pi's answer now.
+ * Refreshes, THEN arms — so the number the second tap agrees to is emcool's answer now.
  * Nothing polls /vcu-write while the sheet is open, deliberately, and the age of the
  * reading is the entire basis on which an old one is an acceptable precondition.
  *
@@ -2108,7 +2108,7 @@ async function armWrite() {
   const after = onBike();
   // ⚠️ `refreshed` first, and it is not belt-and-braces. A superseded reply applies NOTHING, so
   // without it `after === before` holds because nothing happened, and this arms on the state the
-  // tap started with — the one case the comparison cannot tell from "the Pi says what it said".
+  // tap started with — the one case the comparison cannot tell from "emcool says what it said".
   // Opening the red fold or changing the picker during the round trip is enough to cause it.
   if (refreshed && after && before && after.value === before.value && selectedTarget()?.name === name && canWrite()) {
     arm("write");
@@ -2127,7 +2127,7 @@ async function performWrite() {
   if (!target || !known) {
     return;
   }
-  // `expected` is the number that was ON SCREEN, whichever source it came from. The Pi
+  // `expected` is the number that was ON SCREEN, whichever source it came from. emcool
   // re-reads the parameter and refuses if the bike disagrees with it, so this is a
   // claim being checked rather than a claim being trusted.
   const query = new URLSearchParams({ name: target.name, expected: String(known.value) });
@@ -2178,7 +2178,7 @@ async function performWrite() {
   // before. Cleared when the attempt reached the bus and produced no reading (refused
   // at the session or security step, or a failure partway): the write may have landed,
   // so the page falls back to the sweep's older value, correctly labelled as old, and
-  // the Pi re-reads before any second attempt exactly as it did before this one.
+  // emcool re-reads before any second attempt exactly as it did before this one.
   reading.val = result.onBike
     ? { name: result.onBike.name, value: result.onBike.value, rawHex: result.onBike.rawHex }
     : null;
@@ -2349,8 +2349,8 @@ async function performAction(action, confirmation) {
  */
 function unreachableForARead() {
   return (
-    "Could not reach the Pi, so the stamp was not read. Nothing was sent to the bike and nothing " +
-    "changed — try again when the Pi answers."
+    "Could not reach emcool, so the stamp was not read. Nothing was sent to the bike and nothing " +
+    "changed — try again when emcool answers."
   );
 }
 
@@ -2408,7 +2408,7 @@ async function send(query) {
     // did not come back may still have reached the bike — the frame goes out before
     // the response comes back — so "it failed" would be a claim nothing supports.
     message.val =
-      `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "⚠️ This does NOT mean nothing was written: the request may have reached the bike. Read the value back before trying again.";
     console.warn("vcu-write: request failed", error);
     return null;
@@ -2477,11 +2477,11 @@ export async function fetchStatus(withListing = false, reAsks = 0) {
   if (reAsks > MAX_STATUS_REASKS) {
     // ⚠️ MEASURED, not defensive — and it was deleted once on the strength of a check too weak to
     // reach it. `adoptListing` cannot say yes twice running, but it does not have to: it ALTERNATES
-    // with the re-ask below, which asks WITH the listing and so hands `listingHeldFor` back. A Pi
+    // with the re-ask below, which asks WITH the listing and so hands `listingHeldFor` back. A bike
     // answering a different tableType and a different listing every time then loops for ever; that
     // takes a sweep landing between back-to-back requests, so it is not reachable from a settled
     // bike — which is exactly why it must be loud rather than silent when it happens.
-    message.val = "the Pi keeps renaming its parameter table — reopen the sheet";
+    message.val = "emcool keeps renaming its parameter table — reopen the sheet";
     console.warn(`vcu-write: gave up re-asking for the status after ${reAsks} rounds`);
     return false;
   }
@@ -2534,7 +2534,7 @@ export async function fetchStatus(withListing = false, reAsks = 0) {
     return true;
   } catch (error) {
     // Loud. A section that silently renders nothing looks like a bike with nothing
-    // writable, which is a different claim from "the Pi did not answer".
+    // writable, which is a different claim from "emcool did not answer".
     message.val = `could not reach /vcu-write — ${error instanceof Error ? error.message : String(error)}`;
     console.warn("vcu-write: status fetch failed", error);
     return false;
@@ -2546,7 +2546,7 @@ export async function fetchStatus(withListing = false, reAsks = 0) {
  *
  * ⚠️ Shared by `fetchStatus()` and `send()`, because a POST answers the same payload and a sweep
  * can finish across one: a reply the page adopted without this check would leave the picker
- * offering names the Pi has stopped accepting.
+ * offering names emcool has stopped accepting.
  *
  * ⚠️ A NEW listing re-points the selection when the old name is not in it. Without that the form
  * asks for a detail that no longer exists, gets null for ever, and sits on "Reading this
@@ -2568,7 +2568,7 @@ function adoptListing(payload) {
   }
   if (listingHeldFor !== null && listingHeldFor.tableType !== tableType) {
     // A sweep finished under the open sheet and named a different table, so the names the
-    // picker is showing are no longer the names the Pi would accept. Ask again, with the list.
+    // picker is showing are no longer the names emcool would accept. Ask again, with the list.
     listingHeldFor = null;
     return true;
   }

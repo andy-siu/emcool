@@ -119,7 +119,7 @@ async function scan() {
     });
     const reply = /** @type {import("../../src/settings/view.ts").HubCandidatesReply} */ (await response.json());
     if (settings.rawVal?.instanceId !== instance) {
-      scanMessage.val = "The connected Pi changed. Scan again on this Pi.";
+      scanMessage.val = "The connected bike changed. Scan again on this bike.";
       return;
     }
     scannedFor.val = instance ?? "";

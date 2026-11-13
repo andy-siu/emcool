@@ -6,6 +6,7 @@ import {
   bluetoothAvailable,
   chooseAndConnect,
   deviceChosen,
+  forgetDevice,
   onBleStatus,
   reconnect,
   rememberSecret,
@@ -15,9 +16,9 @@ import {
 import { BLE_ORIGIN_MESSAGE } from "../lib/ble-origin.js";
 
 // The controls a BLE-served dashboard needs and a wifi-served one does not: a way to pick
-// the Pi (Web Bluetooth will only open its chooser from a tap) and somewhere to type the
+// emcool (Web Bluetooth will only open its chooser from a tap) and somewhere to type the
 // shared secret. Both render nothing unless ../lib/ble-link.js says this page is in
-// BLE mode, so the Pi-served dashboard is unchanged.
+// BLE mode, so emcool-served dashboard is unchanged.
 
 const { button, div, form, h2, input, label, span } = van.tags;
 
@@ -81,7 +82,7 @@ export function BleSection() {
     );
   }
   return div(
-    h2({ class: "sheet-heading" }, "Use an existing access code"),
+    h2({ class: "sheet-heading" }, "Enter the bike’s Bluetooth key"),
     // A form, so Return in the field connects and a password manager can offer to keep
     // the secret. The secret is saved from the form at submit rather than on `change`,
     // which a Return keypress does not reliably fire first.
@@ -117,7 +118,7 @@ export function BleSection() {
         value: storedSecret(),
       }),
       button({ class: "settings-button", type: "submit" }, () =>
-        bleStatus.val === "connected" ? "Choose another Pi" : "Connect this phone"
+        bleStatus.val === "connected" ? "Choose another bike" : "Connect this phone"
       )
     ),
     // Each origin keeps its own copy of the key, so after "wrong secret" the rider needs to see
@@ -146,17 +147,30 @@ export function BleSection() {
     () => (entryError.val ? div({ class: "action-note failure" }, entryError.val) : span()),
     () =>
       secretWanted.val && bleStatus.val !== "refused"
-        ? div({ class: "action-note caution" }, "Paste the Pi’s generated key above, then tap Connect this phone.")
+        ? div({ class: "action-note caution" }, "Paste emcool’s generated key above, then tap Connect this phone.")
         : div(
             { class: bleStatus.val === "refused" ? "action-note failure" : "action-note" },
             describe(bleStatus.val, bleDetail.val)
+          ),
+    // Reachable only while a device is remembered but not connected — which is exactly the state a
+    // page stuck reconnecting to a device permitted in earlier testing sits in, and where the normal
+    // Connect only ever retries that device. Forgetting it falls the next connect back to the chooser.
+    () =>
+      bleStatus.val !== "off" && bleStatus.val !== "connected"
+        ? div(
+            { class: "settings-row" },
+            button(
+              { class: "settings-button", type: "button", onclick: () => forgetAndChoose() },
+              "Forget this bike & choose another"
+            )
           )
+        : span()
   );
 }
 
 /**
  * Web Bluetooth needs a tap to open its chooser. Keep the chosen device for reconnects;
- * a connected rider can explicitly choose another Pi.
+ * a connected rider can explicitly choose another bike.
  * @param {() => void} [openMenu] how to get the field on screen, when it is not already
  */
 function connectNow(openMenu) {
@@ -167,6 +181,24 @@ function connectNow(openMenu) {
   secretWanted.val = false;
   const attempt = deviceChosen() && bleStatus.val !== "connected" ? reconnect() : chooseAndConnect();
   attempt.catch(error => {
+    // The chooser being dismissed is a rider changing their mind, not a fault.
+    if (/** @type {Error} */ (error).name === "NotFoundError") {
+      console.log("ble: device chooser dismissed");
+      return;
+    }
+    console.warn("ble: connect failed", error);
+    bleDetail.val = /** @type {Error} */ (error).message;
+  });
+}
+
+/**
+ * Drops the remembered device and opens the chooser in the same tap, so Web Bluetooth accepts the
+ * gesture. The way out when the page is stuck reconnecting to a device permitted in earlier testing:
+ * ordinary Connect only ever retries that device, so there is otherwise no path back to the chooser.
+ */
+function forgetAndChoose() {
+  forgetDevice();
+  chooseAndConnect().catch(error => {
     // The chooser being dismissed is a rider changing their mind, not a fault.
     if (/** @type {Error} */ (error).name === "NotFoundError") {
       console.log("ble: device chooser dismissed");

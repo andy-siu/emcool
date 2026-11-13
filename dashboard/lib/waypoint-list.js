@@ -30,7 +30,7 @@ import { WAYPOINT_REFUSAL_TEXT, foldAnnouncement } from "./announce.js";
 /**
  * The served events as rows, newest first.
  *
- * ⚠️ REVERSED, never sorted. `at` is the Pi's wall clock and the Pi steps it from GPS
+ * ⚠️ REVERSED, never sorted. `at` is emcool's wall clock and emcool steps it from GPS
  * (src/gps/clock.ts), so events either side of a step are not in time order — but the
  * array is in FIRE order by construction (src/gps/waypoint-log.ts), which is the order a
  * rider means by "newest".
@@ -65,7 +65,7 @@ export function waypointRows(events) {
 export function waypointListSummary({ events, savedTotal, refusedTotal, rowsShown }) {
   if (!Number.isFinite(savedTotal) || !Number.isFinite(refusedTotal)) {
     // Said rather than rendered as "undefined saved": a payload missing its counts is the
-    // phone and the Pi disagreeing about the shape, and the rows above may be short.
+    // phone and emcool disagreeing about the shape, and the rows above may be short.
     return "The bike did not say how many waypoints it has.";
   }
   if (savedTotal === 0 && refusedTotal === 0) {
@@ -142,7 +142,7 @@ function rowFor(event) {
     return refusedRow(event.refusal, event.at, event.clockTrustworthy);
   }
   // Shown rather than dropped: a record this dashboard cannot read is a disagreement
-  // between the phone and the Pi, and hiding it would leave the count saying one thing
+  // between the phone and emcool, and hiding it would leave the count saying one thing
   // and the list another with nothing to point at.
   return {
     outcome: "unknown",
@@ -156,7 +156,7 @@ function rowFor(event) {
 /**
  * ⚠️ Gated here rather than trusted. ./store.js runs isPlausible() over everything that
  * arrives on the WebSocket, and these rows do not arrive on the WebSocket — they come over
- * HTTP and reach the screen without passing it. Nothing the Pi can currently serve fails
+ * HTTP and reach the screen without passing it. Nothing emcool can currently serve fails
  * (src/gps/fix-plausibility.ts refuses the same ranges before a waypoint is ever saved), so
  * this is the gate for the day the payload changes, and the value is SHOWN as a fault
  * rather than dropped or clamped, per CLAUDE.md.
@@ -195,7 +195,7 @@ function refusedRow(refusal, at, clockTrustworthy) {
     // toast that appeared when it happened must not be able to say different things.
     text: WAYPOINT_REFUSAL_TEXT[refusal] ?? "Waypoint not saved.",
     fault: false,
-    // ⚠️ No time of day when the Pi did not believe its own clock — src/gps/waypoint-log.ts
+    // ⚠️ No time of day when emcool did not believe its own clock — src/gps/waypoint-log.ts
     // §clockTrustworthy. ageInWords(null) is where "at an unknown time" already lives, so
     // the two cannot drift apart.
     when: clockTrustworthy ? `${clockTime(at)} · ${ageInWords(at)}` : ageInWords(null),

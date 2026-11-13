@@ -52,7 +52,7 @@ const { button, div } = van.tags;
 // ⚠️ Two taps, NOT press-and-hold, even though the bike's own gesture involves holding: the real
 // command is a discrete frame sent once, so a hold would just re-send it. Stopping is the benign
 // direction (worst case a charge halts), and it is source-agnostic — the same frame ends AC and
-// DC — so there is nothing to type and nothing to choose; the Pi checks only that a charge is
+// DC — so there is nothing to type and nothing to choose; emcool checks only that a charge is
 // live. Like set-current it does NOT use the stationary service gate (a charging bike is
 // energized and tethered by definition; write-runner.ts exempts it).
 
@@ -144,7 +144,7 @@ function Outcome() {
 }
 
 /**
- * Whether a stop could be sent at all — writes on for this Pi and a live charge. The Pi enforces
+ * Whether a stop could be sent at all — writes on for this bike and a live charge. emcool enforces
  * both again; this is the page declining to offer a button whose request it knows would be refused.
  * ⚠️ NOT gate.safe — the stationary service gate does not apply to a charging operation.
  */
@@ -162,7 +162,7 @@ function forgetStop() {
 
 /**
  * Refreshes the status, THEN arms — so whether writes are still enabled and the charge still live
- * is the Pi's answer now, not when the tile first rendered. Does not arm if either went away.
+ * is emcool's answer now, not when the tile first rendered. Does not arm if either went away.
  */
 async function armChargeStop() {
   busy.val = true;
@@ -200,7 +200,7 @@ async function performChargeStop() {
     // before the response — so this is NOT "nothing happened". Stopping is benign, but the
     // message says the honest thing anyway.
     message.val =
-      `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. ` +
       "This does NOT guarantee nothing was sent — check the dash.";
     console.warn("charge-stop: request failed", error);
   } finally {

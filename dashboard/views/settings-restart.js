@@ -22,11 +22,11 @@ export function SettingsRestart(maintenance = true) {
       div(
         { class: "settings-note" },
         settings.val?.pending.length
-          ? `${settingsError.val ? "Pi unconfirmed. Last confirmed saved choices" : "Saved for next start"}: ${pendingChoiceDescriptions(settings.val).join("; ")}.`
+          ? `${settingsError.val ? "emcool unconfirmed. Last confirmed saved choices" : "Saved for next start"}: ${pendingChoiceDescriptions(settings.val).join("; ")}.`
           : settings.val?.fault
             ? "Repair the reported problem before retrying. The original document is retained."
             : settingsError.val
-              ? "Pi unconfirmed. Reconnect to read pending choices."
+              ? "emcool unconfirmed. Reconnect to read pending choices."
               : "No saved changes waiting."
       ),
     () =>

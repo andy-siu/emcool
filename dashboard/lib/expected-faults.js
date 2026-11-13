@@ -4,7 +4,7 @@ import van from "../vendor/van-1.6.1.js";
 import { MUTED, WARN } from "./colors.js";
 import { request } from "./transport.js";
 
-// Which codes this bike is expected to have, as the Pi holds them.
+// Which codes this bike is expected to have, as emcool holds them.
 //
 // ⚠️ A rendering preference, not a filter. An expected code is still read, still counted in
 // every total on the tab and still expandable — what changes is that it sorts below the
@@ -52,7 +52,7 @@ let inFlight = false;
  * ⚠️ Per ENTRY, not once per session, and deliberately: the file is the truth and two
  * phones can be on this tab at once, so coming back should show what the other one did.
  * The in-flight flag is what stops tab-flipping stacking requests — gating on `size`
- * instead would never refetch, because an empty list is the normal state of a Pi nobody
+ * instead would never refetch, because an empty list is the normal state of a bike nobody
  * has marked anything on.
  *
  * A failure leaves the set empty, which renders every code unmarked — the safe direction,
@@ -79,7 +79,7 @@ export async function loadExpectedFaults() {
 }
 
 /**
- * Marks one code expected, or unmarks it, and keeps whatever the Pi says afterwards.
+ * Marks one code expected, or unmarks it, and keeps whatever emcool says afterwards.
  *
  * ⚠️ The server's answer replaces the local set rather than the local set being patched
  * optimistically. Two phones can be on this tab at once, and the file is the truth.
@@ -89,7 +89,7 @@ export async function loadExpectedFaults() {
  */
 export async function setExpectedFault(component, symptom, expected) {
   const key = faultKey(component, symptom);
-  // ⚠️ ONE WRITE AT A TIME, because the Pi's side is a read-modify-write: load the list,
+  // ⚠️ ONE WRITE AT A TIME, because emcool's side is a read-modify-write: load the list,
   // filter, replace the file. Two quick taps on different codes both read the same list and
   // the second write wins, and since this applies the SERVER's answer rather than patching
   // locally, the first tick simply vanishes with nothing said. Refusing the second tap is
@@ -116,12 +116,12 @@ export async function setExpectedFault(component, symptom, expected) {
     }
   } catch (error) {
     // ⚠️ Says the change may not have landed rather than implying it did not: the request
-    // reaches the Pi before the response comes back, so a dropped garage-wifi reply is not
+    // reaches emcool before the response comes back, so a dropped garage-wifi reply is not
     // evidence the file is unchanged.
     console.warn("expected-faults: could not save the change", error);
     expectedFaultsError.val = {
       key,
-      message: `Could not reach the Pi — ${error instanceof Error ? error.message : String(error)}. The change may have saved anyway.`,
+      message: `Could not reach emcool — ${error instanceof Error ? error.message : String(error)}. The change may have saved anyway.`,
     };
   } finally {
     writing.val = "";
@@ -180,7 +180,7 @@ export function ExpectedToggle(key) {
     button(
       {
         class: "code-toggle",
-        // Disabled while any write is in flight, not just this one: the Pi serialises them,
+        // Disabled while any write is in flight, not just this one: emcool serialises them,
         // and a second tap during the first would be read-modify-written over.
         disabled: () => writing.val !== "",
         onclick: () => void setExpectedFault(component, symptom, !expectedFaults.val.has(key)),

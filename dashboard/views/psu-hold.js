@@ -1,5 +1,5 @@
 // @ts-check
-// Frame, stop causes and expected Pi power loss: docs/psu-hold.md.
+// Frame, stop causes and expected emcool power loss: docs/psu-hold.md.
 import van from "../vendor/van-1.6.1.js";
 import { OwnerActionRow } from "./owner-action.js";
 import { arm, armed, armDwellElapsed, refuseKeyRepeat } from "../lib/arming.js";
@@ -31,7 +31,7 @@ export function PsuHoldCard() {
       Rail("Main rail · 12 V", "psu_12v_mv"),
       Rail("Standby · 9 V", "psu_12v_lowpower_mv")
     ),
-    div({ class: "action-note" }, "Sends 0x500 every 150 ms; off after 60 min. The Pi loses power when 12 V drops."),
+    div({ class: "action-note" }, "Sends 0x500 every 150 ms; off after 60 min. emcool loses power when 12 V drops."),
     () =>
       psuHoldState.val?.on
         ? OwnerActionRow("Another 60 minutes", ActionButton(PSU_ACTIONS[2]), () =>
@@ -68,7 +68,7 @@ function ActionButton(entry) {
     () =>
       armed.val === key
         ? action === "stop"
-          ? "Tap again — stop requests; 12 V and the Pi may turn off"
+          ? "Tap again — stop requests; 12 V and emcool may turn off"
           : action === "extend"
             ? "Tap again — restart the 60 minute limit"
             : "Tap again — repeat PSU requests for up to 60 minutes"
@@ -88,7 +88,7 @@ function holdDescription() {
   if (state.on) {
     const seconds = Math.ceil((remaining ?? 0) / 1000);
     return seconds === 0
-      ? "Auto-off due · waiting for the Pi"
+      ? "Auto-off due · waiting for emcool"
       : `Requests active · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} left`;
   }
   return state.lastStopReason

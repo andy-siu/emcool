@@ -107,7 +107,7 @@ function accept(pending, message, timers) {
       timers.clearTimer(request.timer);
     }
     if (request.status === null || (header.error !== undefined && request.receivedBytes > 0)) {
-      request.reject(new Error(header.error ?? "the Pi ended the response before answering"));
+      request.reject(new Error(header.error ?? "emcool ended the response before answering"));
     } else {
       request.resolve({ status: request.status, headers: request.headers, body: concatenate(request.parts) });
     }

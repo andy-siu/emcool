@@ -7,7 +7,7 @@
 // asserted rather than read.
 //
 // ⚠️ What it exists to prevent: `oninput` fires about twenty times a second under a thumb,
-// and a Pi Zero 2 W does not want twenty POSTs and forty `pinctrl` spawns out of one
+// and the ESP32 does not want twenty POSTs and forty GPIO writes out of one
 // gesture. The FEEL is not paced — the thumb, the caption and the local duty move on every
 // event — only the wire is. docs/fan-control.md §"The slider".
 
@@ -28,10 +28,10 @@ export const FAN_COMMAND_INTERVAL_MS = 150;
 /**
  * @typedef {object} FanCommandQueueOptions
  * @property {(command: FanCommand, isSuperseded: () => boolean) => Promise<void>} send what
- *   actually goes to the Pi. `isSuperseded()` answers, AFTER the await, whether something
+ *   actually goes to emcool. `isSuperseded()` answers, AFTER the await, whether something
  *   newer is already waiting — which is how the caller knows not to adopt a stale reply.
  * @property {(settling: boolean) => void} [onSettlingChange] raised while anything is
- *   queued or in flight, so the page can stop mirroring the Pi's PREVIOUS answer back over
+ *   queued or in flight, so the page can stop mirroring emcool's PREVIOUS answer back over
  *   a thumb that has already moved past it.
  * @property {number} [intervalMs]
  * @property {() => number} [now] the clock the interval is measured on.

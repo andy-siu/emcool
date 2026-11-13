@@ -64,13 +64,13 @@ export function duration(totalSeconds) {
 }
 
 /**
- * How long ago a Pi timestamp was — "just now", "17 min ago", "3 days ago".
+ * How long ago a bike timestamp was — "just now", "17 min ago", "3 days ago".
  *
- * ⚠️ Computed on the PHONE against the Pi's wall clock, which ../lib/clock.js otherwise
- * forbids. It is deliberate here and the reason is the Pi: it has no RTC and steps its
+ * ⚠️ Computed on the PHONE against emcool's wall clock, which ../lib/clock.js otherwise
+ * forbids. It is deliberate here and the reason is emcool: it has no RTC and steps its
  * own clock from GPS, so of the two clocks in this pairing the phone's is the one worth
  * trusting. The result is a rough age on a label, never a duration anything depends on,
- * and a Pi that has not had a fix yet will show an absurd one — which is itself the
+ * and a bike that has not had a fix yet will show an absurd one — which is itself the
  * right thing to see.
  *
  * @param {number | null} epochMs
