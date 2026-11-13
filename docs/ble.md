@@ -2,7 +2,7 @@
 
 emcool serves its phone dashboard over Bluetooth LE. The framing and session follow cool-eva's `public/lib/ble-wire.js` (described in cool-eva `docs/ble-server.md`), with one deliberate change: emcool renamed the handshake salts (`emcool/hello`, `emcool/session`) and the request header (`X-Emcool`) so the stack is its own. Open the dashboard in Bluefy on iOS or Chrome on Android. The dashboard has no Wi-Fi path; the optional Wi-Fi ([`wifi.md`](wifi.md)) serves only the console and the ride log.
 
-The dashboard itself lives in this repo at [`../dashboard/`](../dashboard/) — cool-eva's `public/`, copied and rebranded by `tools/sync-dashboard.mts`, paired with this firmware's wire protocol. See its [README](../dashboard/README.md) for how to serve it and how to sync it.
+The dashboard itself lives in this repo at [`../dashboard/`](../dashboard/), paired with this firmware's wire protocol. See its [README](../dashboard/README.md) for how to serve it.
 
 This is **protocol 2**, cool-eva's since its #332. A phone dashboard and the firmware must both speak it: a protocol 1 page is refused with `protocol unsupported; this bike speaks 2`.
 
@@ -22,7 +22,7 @@ emcool> set BLE_SECRET <your key>
 BLE_SECRET saved; Bluetooth is on now. Enter the same key in the dashboard and tap Connect
 ```
 
-Keep a copy of the key: a password manager, or the note you'll paste it from. On the phone, open the dashboard's menu, paste the key under *Bluetooth → Use an existing access code*, and tap *Connect this phone*. A second phone gets the same key.
+Keep a copy of the key: a password manager, or the note you'll paste it from. On the phone, open the dashboard's *Settings → Connections*, paste the key under *Enter the bike's Bluetooth key*, and tap *Connect this phone*. A second phone gets the same key.
 
 - **The key:** 8-64 printable ASCII characters with at least one letter and one digit, and no spaces, quotes or backslashes, or 64 hex characters. `openssl rand -hex 32` makes a random one, and so does the Bike console's *New key*. A 64-hex key pasted in upper case is lowered, as the dashboard does; a typed key keeps its case, so `Bike2024` and `bike2024` are different keys. Anything else is refused, and the dashboard checks the same rule.
 - ⚠️ **A short typed key is weak.** Protocol 2 has no lockout after a wrong key, and anyone who records one connection's HELLO can test guesses against it offline, as fast as their computer allows. An 8-character key can fall in hours to days. Use a random 64-hex key, all the more with `SERVICE_WRITE_ENABLED` on.
