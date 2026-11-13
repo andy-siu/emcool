@@ -1,10 +1,10 @@
-// Drives cool-eva's own automatic-charge CONTROLLER — src/charge/auto.ts's startChargeAutomatic,
+// Drives the reference's own automatic-charge CONTROLLER — src/charge/auto.ts's startChargeAutomatic,
 // the stateful shell around decideChargeCurrent — through a scripted sequence of signal changes and
 // 60 s ticks on a fake clock, and records the charge currents it commanded and the signals it
 // emitted (charge_auto_mode / reason / target_a). host/tests/check_charge_auto.cpp (loop section)
 // replays the identical script through the C++ ChargeAutomatic and must match.
 //
-//   node tools/generate-golden-charge-auto-loop.mts <cool-eva checkout> <output file>
+//   node tools/generate-golden-charge-auto-loop.mts <reference checkout> <output file>
 //
 // Lines:
 //   scenario <n> <enabled 0|1>
@@ -22,13 +22,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const [coolEvaDirectory, outputPath] = process.argv.slice(2);
-if (!coolEvaDirectory || !outputPath) {
-  process.stderr.write("usage: node tools/generate-golden-charge-auto-loop.mts <cool-eva checkout> <output file>\n");
+const [referenceDirectory, outputPath] = process.argv.slice(2);
+if (!referenceDirectory || !outputPath) {
+  process.stderr.write("usage: node tools/generate-golden-charge-auto-loop.mts <reference checkout> <output file>\n");
   process.exit(2);
 }
-const coolEvaRoot = pathToFileURL(resolve(coolEvaDirectory)).href + "/";
-const srcRoot = coolEvaRoot + "src/";
+const referenceRoot = pathToFileURL(resolve(referenceDirectory)).href + "/";
+const srcRoot = referenceRoot + "src/";
 
 const fakeDirectory = await mkdtemp(join(tmpdir(), "emcool-auto-"));
 const fakeMonotonicPath = join(fakeDirectory, "fake-monotonic.mjs");
@@ -106,7 +106,7 @@ async function advanceTo(toMs: number): Promise<void> {
 }
 
 let generation = 0;
-const importFresh = (path: string) => import(`${coolEvaRoot}${path}?gen=${generation}`);
+const importFresh = (path: string) => import(`${referenceRoot}${path}?gen=${generation}`);
 
 interface Step {
   at: number;

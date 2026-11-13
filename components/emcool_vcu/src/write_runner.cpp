@@ -218,7 +218,7 @@ WriteRequestParse parseWriteRequest(const std::function<std::optional<std::strin
     const std::optional<int> expected = parseNumber(get("expected"));
     if (!expected)
       return fail(
-          "expected= must carry the value you read off the bike. Every write is a compare-and-swap: the Pi re-reads "
+          "expected= must carry the value you read off the bike. Every write is a compare-and-swap: emcool re-reads "
           "the parameter and refuses if it does not match.");
     parse.ok = true;
     parse.request.kind = ServiceWriteRequest::Kind::kParameter;
@@ -307,10 +307,10 @@ WriteRequestParse parseWriteRequest(const std::function<std::optional<std::strin
     const std::optional<std::string> confirmed = get("confirm");
     if (!confirmed)
       return fail(
-          "Pass confirm=<the UTC minute you showed, e.g. 2026-08-16T14:03Z>. The Pi checks it is still that minute, "
+          "Pass confirm=<the UTC minute you showed, e.g. 2026-08-16T14:03Z>. emcool checks it is still that minute, "
           "so a page left open cannot sync a stale time.");
     if (*confirmed != utcMinute(nowMs))
-      return fail("You confirmed " + *confirmed + ", but this Pi now reads " + utcMinute(nowMs) +
+      return fail("You confirmed " + *confirmed + ", but emcool now reads " + utcMinute(nowMs) +
                   ". Re-read the time and confirm again.");
     parse.ok = true;
     parse.request.kind = ServiceWriteRequest::Kind::kSyncClock;

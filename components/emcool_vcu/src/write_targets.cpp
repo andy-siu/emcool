@@ -102,7 +102,7 @@ std::string refusalFor(const ParameterNames& names, std::string_view name) {
   for (const VcuParameter& parameter : names.active().parameters) {
     if (upper(parameter.name()) == wanted) duplicates.push_back(parameter.index);
   }
-  // cool-eva quotes the name with curly quotes “ ” (U+201C/U+201D), not straight ASCII.
+  // The name is quoted with curly quotes “ ” (U+201C/U+201D), not straight ASCII.
   const std::string open = "“";
   const std::string close = "”";
   if (duplicates.size() > 1) {

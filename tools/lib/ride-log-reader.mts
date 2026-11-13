@@ -1,7 +1,6 @@
 // Reads emcool ride-log files off the microSD card: finds every intact record, checks it
-// with zlib's CRC-32 (independent of the firmware's own), and parses its body the way cool-eva
-// scripts/decrypt-log.ts parses a decrypted segment. The record format is in
-// components/emcool_ride_log/include/emcool/ride_log/record.hpp and docs/ride-log-format.md.
+// with zlib's CRC-32 (independent of the firmware's own), and parses its body. The record format
+// is in components/emcool_ride_log/include/emcool/ride_log/record.hpp and docs/ride-log-format.md.
 //
 // Anything that is not an intact record — the zero-filled tail of a part, a record torn by a
 // power cut, stale data — is stepped over a 512-byte sector at a time, so one bad sector
@@ -145,7 +144,7 @@ export async function collectFiles(inputs: string[]): Promise<string[]> {
   return files.sort();
 }
 
-// cool-eva decrypt-log.ts readBody(): a header object sets the session and trust for the
+// A record's body, one JSON value per line: a header object sets the session and trust for the
 // rows after it and contributes any `signals` metadata; an array is a row. Returns false if
 // the body doesn't parse or claims a different session from its record header.
 function readBody(record: RideLogRecord, readings: RideLogReading[], meta: Map<string, SignalMeta>): boolean {

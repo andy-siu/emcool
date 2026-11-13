@@ -76,9 +76,9 @@ std::optional<std::int64_t> SignalStore::ageMs(std::string_view key, std::int64_
   return nowMonotonicMs - states_[*index].lastSeenMonotonicMs;
 }
 
-// cool-eva records an unregistered key under group "misc". Here state is a fixed array sized
-// by the registry, so it can't be kept — the host checks make sure every decoded key is
-// registered, which makes this a can't-happen that must be loud when it does.
+// An unregistered key has no slot: state is a fixed array sized by the registry, so it
+// can't be kept — the host checks make sure every decoded key is registered, which
+// makes this a can't-happen that must be loud when it does.
 void SignalStore::noteUnknownKey(std::string_view key) {
   unknownKeyCount_++;
   if (unknownKeyCount_ < nextUnknownKeyReportAt_) {

@@ -24,7 +24,7 @@ using text::TextBuffer;
 namespace {
 
 constexpr const char* kTag = "ride-log";
-// The metadata records that open a part (~25 KB for cool-eva's registry) plus a full segment.
+// The metadata records that open a part (~25 KB for the signal registry) plus a full segment.
 constexpr std::uint32_t kMinPartBytes = 64 * 1024;
 // Kept free beyond a whole part, for the directory and FAT growth that come with it.
 constexpr std::uint64_t kReserveBytes = 1024 * 1024;
@@ -302,7 +302,7 @@ bool LogWriter::writeMakingRoom(int fd, const std::uint8_t* data, std::size_t le
   return true;
 }
 
-// Every logged signal's unit, group and source, as cool-eva's v3 header `signals` map,
+// Every logged signal's unit, group and source, as the v3 header's `signals` map,
 // split across as many records as it takes. The laptop reads them before the rows.
 bool LogWriter::writeMetadataRecords(clock::ClockTrust trust) {
   const std::span<const signals::SignalDef> registry = signals::signalRegistry();

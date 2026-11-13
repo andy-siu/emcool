@@ -1,6 +1,6 @@
 #pragma once
 
-// A small event loop with Node's ordering rules, so cool-eva's async TypeScript can be ported
+// A small event loop with Node's ordering rules, so async TypeScript can be ported
 // as C++20 coroutines that read like the original and run in the same order:
 //   - timers fire in order of due time, ties in the order they were set
 //   - a delay under 1 ms is 1 ms (Node's setTimeout rule)

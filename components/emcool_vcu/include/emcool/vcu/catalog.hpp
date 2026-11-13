@@ -1,9 +1,7 @@
 #pragma once
 
-// Which parameter table names the bike's parameters, ported from cool-eva src/vcu/table-catalog.ts,
-// src/vcu/param-table.ts and src/vcu/a8-firmware-rows.ts: the table in use (cool-eva's module-level
-// `active`, here an object), switching it when a sweep reads the bike's own TABLE_TYPE, and the
-// verdict on that TABLE_TYPE.
+// Which parameter table names the bike's parameters: the table in use (an object, not a global),
+// switching it when a sweep reads the bike's own TABLE_TYPE, and the verdict on that TABLE_TYPE.
 
 #include <optional>
 #include <string>
@@ -37,7 +35,7 @@ struct TableTypeVerdict {
 
 class ParameterNames {
  public:
-  // cool-eva's DEFAULT_TABLE_TYPE, until a sweep or the stored snapshot says otherwise.
+  // kDefaultTableType, until a sweep or the stored snapshot says otherwise.
   ParameterNames();
 
   const VcuParameterTable& active() const { return *active_; }

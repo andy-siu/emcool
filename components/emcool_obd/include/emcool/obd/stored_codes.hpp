@@ -1,8 +1,7 @@
 #pragma once
 
-// What emcool knows about the bike's three trouble-code lists, ported from cool-eva
-// src/diagnostics/stored-codes.ts: the latest answer for each, their counts as signals, the
-// freeze-frame code from mode 01 PID 02, and /stored-dtcs' body.
+// What emcool knows about the bike's three trouble-code lists: the latest answer for each,
+// their counts as signals, the freeze-frame code from mode 01 PID 02, and /stored-dtcs' body.
 //
 // THE DISTINCTION THIS EXISTS TO PROTECT: "the bike says there are no codes" and "the bike
 // said nothing" are different claims. A count is recorded only when the bike answered, and a

@@ -1,10 +1,10 @@
 #pragma once
 
-// Service mode's WRITE engine, ported from cool-eva src/vcu/write-runner.ts and the /vcu-write
-// handler: decide whether the bike may be changed (SERVICE_WRITE_ENABLED, the bus lease, the
-// safety gate, the table-type gate, the allowlist), do exactly one thing, read it back, and write
-// down what happened. A separate switch from the read runner, because the two are not the same
-// risk. Stage 4 carries every write action except charge-current/charge-stop (stage 5).
+// Service mode's WRITE engine and the /vcu-write handler: decide whether the bike may be changed
+// (SERVICE_WRITE_ENABLED, the bus lease, the safety gate, the table-type gate, the allowlist), do
+// exactly one thing, read it back, and write down what happened. A separate switch from the read
+// runner, because the two are not the same risk. Stage 4 carries every write action except
+// charge-current/charge-stop (stage 5).
 
 #include <cstdint>
 #include <functional>
@@ -29,8 +29,8 @@
 
 namespace emcool::vcu {
 
-// Which commit/firmware is running (cool-eva RunningVersion). emcool fills it from the IDF app
-// description; the differential harness normalises it, so only the shape is load-bearing here.
+// Which commit/firmware is running. emcool fills it from the IDF app description; the
+// differential harness normalises it, so only the shape is load-bearing here.
 struct RunningVersion {
   std::optional<std::string> commit;
   bool dirty = false;
@@ -119,12 +119,12 @@ struct ServiceWriteAnswer {
   bool ok = false;
   ServiceWriteResult result;  // ok
   std::string reason;         // !ok
-  // !ok on a charge-current only: a frame may already have left (cool-eva's mayHaveSent). The 0x120
+  // !ok on a charge-current only: a frame may already have left (the reference's mayHaveSent). The 0x120
   // commit twin goes first, so a later failure must never read as "not sent".
   bool mayHaveSent = false;
 };
 
-// cool-eva's VcuWriteResponse.chargeCurrentAttempt: on a charge-current that produced no result,
+// The reference's VcuWriteResponse.chargeCurrentAttempt: on a charge-current that produced no result,
 // whether nothing went out or delivery is uncertain. Absent for every other action.
 enum class ChargeCurrentAttempt : std::uint8_t { kNone, kNotSent, kUnknown };
 
@@ -167,7 +167,7 @@ struct WriteContext {
   std::function<ServiceGateVerdict()> gate;
   GateReader readSignal;
   std::function<double()> wallClockMs;
-  std::function<std::int64_t()> monotonicMs;  // for the charge-ack window (cool-eva's monotonicNow)
+  std::function<std::int64_t()> monotonicMs;  // for the charge-ack window
   // GPS evidence for the clock verdict: the gps_epoch_s value and its monotonic age.
   std::function<PiClockEvidence()> clockEvidence;
   // The last sweep's TABLE_TYPE report, sampled per attempt; nullopt when none.

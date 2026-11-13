@@ -50,8 +50,8 @@ std::string describeMismatchRemedy(const ParameterNames& names, const std::vecto
   return "⚠️ No read clears " + join(who, " and ") +
          " — the bike answered, and the answer is the problem. Writing by index means trusting this software's name "
          "for that index, and on the table it named the name may belong to a different parameter entirely. ✅ This is "
-         "fixable by you and does not need a code change: add the table to cool-eva (its docs/vcu-parameters.md: "
-         "\"Adding your bike's VCU parameter table\") and run tools/generate-vcu-tables.mts, and this gate opens. Carried today: " +
+         "fixable by you and does not need a code change: add the table as docs/service-mode.md (\"Parameter "
+         "tables\") describes and run tools/generate-vcu-tables.mts, and this gate opens. Carried today: " +
          knownTableTypesText() + ".";
 }
 

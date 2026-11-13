@@ -11,7 +11,7 @@ import {
 import { destinationSection, openDestination } from "../lib/destination.js";
 import { ThemeToggle, UnitsToggle } from "./sheet.js";
 import { SettingsCard, BooleanSetting, TextSetting, RecordingKeySetting } from "./settings-fields.js";
-import { MigrationSummary, SiriShortcutLink } from "./settings-summary.js";
+import { MigrationSummary } from "./settings-summary.js";
 import { AccessExplanation } from "./settings-access.js";
 import { SettingsRecovery } from "./settings-recovery.js";
 import { SettingsRestart } from "./settings-restart.js";
@@ -111,7 +111,7 @@ function SettingsContent(section) {
         ),
         a(
           {
-            href: "https://github.com/danieltroger/cool-eva/blob/main/docs/bms-config.md",
+            href: "https://github.com/andy-siu/emcool/blob/main/README.md#settings",
             target: "_blank",
             rel: "noopener",
             class: "settings-link",
@@ -142,15 +142,15 @@ function SettingsContent(section) {
         ),
         SettingsCard(
           "Saved Wi-Fi connections",
-          "Keep the working home network or phone hotspot. To change saved network credentials, use the installation / repair guide over a reachable connection.",
+          "Keep the working home network or phone hotspot. Saved Wi-Fi credentials change on the console (WIFI_SSID, WIFI_PASSWORD), as the Wi-Fi guide describes.",
           a(
             {
               class: "settings-link",
-              href: "https://github.com/danieltroger/cool-eva/blob/main/INSTALL.md",
+              href: "https://github.com/andy-siu/emcool/blob/main/docs/wifi.md",
               target: "_blank",
               rel: "noopener",
             },
-            "Open installation / repair guide →"
+            "Open the Wi-Fi guide →"
           )
         ),
         DashboardBluetooth(),
@@ -212,11 +212,6 @@ function SettingsContent(section) {
         ),
         SettingsCard("CAN capture location", "", () =>
           div({ class: "settings-note" }, settings.val?.locations.captures ?? "Unconfirmed")
-        ),
-        SettingsCard(
-          "Update Siri shortcut",
-          "Older Siri shortcuts no longer save waypoints. Follow the guide to update yours.",
-          SiriShortcutLink()
         ),
         MigrationSummary(false)
       );

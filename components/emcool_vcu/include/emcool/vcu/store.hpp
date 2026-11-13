@@ -1,16 +1,15 @@
 #pragma once
 
-// Where service mode keeps its parameter snapshots, ported from cool-eva src/vcu/snapshot-store.ts
-// and the readers behind src/http/vcu-params.ts and vcu-backup.ts.
+// Where service mode keeps its parameter snapshots, and the readers behind /vcu-params and
+// /vcu-backup.
 //
-// cool-eva keeps a sweep's rows in memory and writes each snapshot as one JSON document. A sweep is
-// 302 rows of about 250 bytes, more than the ESP32 has to spare, so emcool keeps them on the card
-// as JSON lines and never holds a whole snapshot:
-//   sweep.partial.jsonl   every row as it's read, `{"at":…, …row}` — cool-eva's resume file, and
-//                         here also the sweep's working record: the snapshot is written from it
-//   <ISO time>.jsonl      each snapshot: a header line, then one row per line, as cool-eva's
+// A sweep is 302 rows of about 250 bytes, more than the ESP32 has to spare, so emcool keeps them
+// on the card as JSON lines and never holds a whole snapshot:
+//   sweep.partial.jsonl   every row as it's read, `{"at":…, …row}` — the resume file, and
+//                         also the sweep's working record: the snapshot is written from it
+//   <ISO time>.jsonl      each snapshot: a header line, then one row per line, as JavaScript's
 //                         JSON.stringify writes a row. Never rewritten.
-//   latest.txt            the name of the snapshot the dashboard is shown (cool-eva's latest.json),
+//   latest.txt            the name of the snapshot the dashboard is shown,
 //                         replaced only by a sweep that read at least as much
 // The dashboard's bodies are written out from those a row at a time.
 
@@ -128,10 +127,10 @@ class SnapshotReader {
 // One line at a time, up to `capacity`; the newline dropped. False at the end.
 bool readLine(std::FILE* file, std::string& line);
 
-// "2026-11-02T10-00-00.123Z": the snapshot name cool-eva gives `readAt`.
+// "2026-11-02T10-00-00.123Z": the snapshot's file name for `readAt`.
 std::string isoStampForFile(double wallClockMs);
 
-// The rows the CSV backup holds (cool-eva backup-csv.ts).
+// The rows the CSV backup holds.
 bool isExportable(const VcuParameterRow& row);
 // One CSV line, \r\n included; the header line for a null row.
 std::string backupCsvLine(const VcuParameterRow* row);

@@ -1,9 +1,9 @@
-// Runs cool-eva's own VCU code on random inputs and writes what it returned, for
+// Runs the reference's own VCU code on random inputs and writes what it returned, for
 // host/tests/check_vcu.cpp to hold the C++ port to. The pure parts: extended-addressing ISO-TP, the
 // parameter and multi-frame codecs, record interpretation, the service gate, read outcomes as rows,
 // the TABLE_TYPE report and re-naming a snapshot from it, snapshot diffs, and the table catalogue.
 //
-//   node tools/generate-golden-vcu.mts <cool-eva checkout> <output file>
+//   node tools/generate-golden-vcu.mts <reference checkout> <output file>
 //
 // Each line is `<kind> <fields…>`; JSON fields are JSON.stringify's, with byte arrays as hex.
 
@@ -11,12 +11,12 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const [coolEvaDirectory, outputPath] = process.argv.slice(2);
-if (!coolEvaDirectory || !outputPath) {
-  console.error("usage: node tools/generate-golden-vcu.mts <cool-eva checkout> <output file>");
+const [referenceDirectory, outputPath] = process.argv.slice(2);
+if (!referenceDirectory || !outputPath) {
+  console.error("usage: node tools/generate-golden-vcu.mts <reference checkout> <output file>");
   process.exit(2);
 }
-const load = (path: string) => import(pathToFileURL(join(coolEvaDirectory, path)).href);
+const load = (path: string) => import(pathToFileURL(join(referenceDirectory, path)).href);
 const quiet = { log: console.log, warn: console.warn, error: console.error };
 console.log = console.warn = console.error = () => {};
 const report = (line: string) => quiet.error(line);

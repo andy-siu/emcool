@@ -1,7 +1,7 @@
 #pragma once
 
-// Service mode's endpoints, answered as cool-eva's src/http/ handlers answer them — past their
-// method and header checks, which the Bluetooth server makes before a request gets here:
+// Service mode's endpoints, answered once past their method and header checks, which the
+// Bluetooth server makes before a request gets here:
 //   /vcu-read          GET the run, POST to start a sweep, DELETE to stop it
 //   /vcu-probe         POST one identifier
 //   /lifetime-read     POST: read the lifetime statistics, and keep them

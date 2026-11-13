@@ -1,7 +1,7 @@
 #pragma once
 
 // The shape every frame decoder produces, and the byte readers they read fields with.
-// Ported from cool-eva src/can/frame.ts. BE = big-endian pair, LE = little-endian pair.
+// BE = big-endian pair, LE = little-endian pair.
 
 #include <cstddef>
 #include <cstdint>

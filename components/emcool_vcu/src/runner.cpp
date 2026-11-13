@@ -42,7 +42,7 @@ const std::string& pollerRefusal() {
   return refusal;
 }
 
-// One microtask hop: where cool-eva's sweep first awaits its file reads.
+// One microtask hop, standing in for the file reads the reference's sweep awaits first.
 struct Yield {
   bool await_ready() const noexcept { return false; }
   void await_suspend(std::coroutine_handle<> caller) { async::detail::resumeLater(caller); }
@@ -216,7 +216,7 @@ async::Task<VcuReadOutcome> ParameterSweep::readOneTarget(const SweepTarget& tar
 }
 
 async::Task<> ParameterSweep::run() {
-  // cool-eva's sweep awaits its file reads first, so the runner finishes starting it before it moves.
+  // Yield first, so the runner finishes starting the sweep before it moves.
   co_await Yield{};
   VcuStore& store = *context_.store;
   ParameterNames& names = store.names();
@@ -249,7 +249,7 @@ async::Task<> ParameterSweep::run() {
   for (const SweepTarget& target : targets) complete = complete && rows_.count(target.index) > 0;
   SnapshotHeader header{context_.wallClockMs(), complete, {Micro::kA9, Micro::kA8}};
 
-  // cool-eva reportTableTypeToConsole(), on the rows as read.
+  // The TABLE_TYPE report for the console, on the rows as read.
   const TableTypeReport report = reportTableType(
       [&](int index) -> const VcuParameterRow* {
         const auto found = tableTypeRows_.find(index);
@@ -450,7 +450,7 @@ bool VcuReadRunner::cancel() {
 
 namespace {
 
-// A probe as a one-shot read (cool-eva startProbe()).
+// A probe as a one-shot read.
 class ProbeRead final : public OneShotRead {
  public:
   ProbeRead(VcuSend send, VcuProbeRequest request, const ParameterNames& names)

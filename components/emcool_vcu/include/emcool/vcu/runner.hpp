@@ -1,7 +1,6 @@
 #pragma once
 
-// Service mode's reads, ported from cool-eva src/vcu/sweep.ts, probe.ts, read-runner.ts,
-// bus-lease.ts and sweep-targets.ts:
+// Service mode's reads:
 //   - a sweep reads every parameter the table and the A8's firmware table name, resuming whatever
 //     an unfinished sweep already read, and writes a snapshot
 //   - a probe reads one identifier, any bank, off either micro
@@ -44,7 +43,7 @@ ServiceGateVerdict readGate(const ServiceContext& context);
 // Asks the poller to park for `reason`, and waits until it has or won't: the ticket, or nullopt.
 async::Task<std::optional<obd::HoldTicket>> holdObdPoller(ServiceContext& context, std::string reason);
 
-// cool-eva bus-lease.ts: one thing at a time on the bus.
+// One thing at a time on the bus.
 class BusLease {
  public:
   using Ticket = std::uint32_t;
@@ -158,7 +157,7 @@ class VcuReadRunner {
   bool handleCanFrame(std::uint32_t id, std::span<const std::uint8_t> data, ArrivalStamp arrival);
   void stop();
 
-  // cool-eva VcuReadState, as JSON.
+  // The dashboard's VcuReadState, as JSON.
   void writeStateJson(text::TextBuffer& out) const;
   bool running() const { return sweep_ != nullptr; }
 
@@ -175,8 +174,8 @@ class VcuReadRunner {
   static void writeTallyJson(text::TextBuffer& out, const Tally& tally);
 
   std::optional<std::string> checkBusFreeRefusals() const;
-  // cool-eva runOneShotBusModule(): the checks, the poller parked, the lease, the watchdog, then the
-  // read; nullopt and why if it couldn't run.
+  // The checks, the poller parked, the lease, the watchdog, then the read; nullopt and why if it
+  // couldn't run.
   template <typename Result, typename Module>
   async::Task<std::pair<std::optional<Result>, std::string>> runOneShot(std::string what,
                                                                         std::function<std::shared_ptr<Module>()> make);

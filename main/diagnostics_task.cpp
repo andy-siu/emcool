@@ -85,7 +85,7 @@ DiagnosticsTask::DiagnosticsTask(CanBus& bus, signals::SignalStore& store, std::
   context_.wallClockMs = [] { return static_cast<double>(wallClockMs()); };
   context_.hold = obd_ ? &obd_->hold() : nullptr;
   context_.store = &store_;
-  // Like cool-eva's, the bus is active only with OBD_ENABLED; with it off, every read is refused.
+  // The bus is active only with OBD_ENABLED; with it off, every read is refused.
   runner_ = std::make_unique<vcu::VcuReadRunner>(context_, lease_, settings.obdEnabled);
 
   // The WRITE engine, with its own switch and the read runner's gate (one opinion, not two).
@@ -296,7 +296,7 @@ void DiagnosticsTask::route(const ReceivedFrame& frame) {
   }
 }
 
-// cool-eva's index.ts: the names come from the table the last snapshot says the bike runs.
+// The names come from the table the last snapshot says the bike runs.
 void DiagnosticsTask::selectStartupTable() {
   const std::optional<vcu::TableTypeReport> report = store_.loadLatestTableType();
   const std::string active = vcu::describeTableType(names_.active().tableType);

@@ -103,7 +103,7 @@ ChargeAckVerdict judgeChargeCommand(const ChargeAckInput& input) {
       verdict.kind = ChargeAckVerdict::Kind::kSuperseded;
       return verdict;
     }
-    // cool-eva: after.length > 0 ? max(after) : lastBefore.amps — NOT seeded with lastBefore.
+    // The highest reading after, or lastBefore's if there is none — NOT seeded with lastBefore.
     double best = lastBefore.amps;
     if (!after.empty()) {
       best = after.front().amps;

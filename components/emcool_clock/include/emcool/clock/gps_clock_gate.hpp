@@ -1,10 +1,9 @@
 #pragma once
 
-// Decides whether a GPS time is good enough to step the system clock to. A port of cool-eva
-// src/gps/clock-gate.ts: a time must be past the 2026 floor, corroborated by five readings
-// that agree with each other within 3 s, and must agree within 10 s with a recent known-good
-// time carried forward. Only then is a clock more than 60 s off stepped. The reasoning for
-// each threshold is in that file.
+// Decides whether a GPS time is good enough to step the system clock to: a time must be past
+// the 2026 floor, corroborated by five readings that agree with each other within 3 s, and must
+// agree within 10 s with a recent known-good time carried forward. Only then is a clock more
+// than 60 s off stepped.
 
 #include <cstddef>
 #include <cstdint>
@@ -39,7 +38,7 @@ enum class ClockVerdictReason : std::uint8_t {
   kCoolingDown,
 };
 
-// The cool-eva spelling, which tests compare against and logs print.
+// The spelling the tests compare against and the logs print.
 const char* verdictReasonName(ClockVerdictReason reason);
 
 struct ClockVerdict {

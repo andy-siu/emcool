@@ -1,5 +1,5 @@
-# An event loop with Node's ordering rules and C++20 coroutines on it, for porting cool-eva's
-# async TypeScript (the VCU service tools) so it reads, and runs, like the original.
+# An event loop with Node's ordering rules and C++20 coroutines on it, so the VCU service tools'
+# asynchronous code reads, and runs, in Node's order.
 set(emcool_async_sources
   src/loop.cpp
 )

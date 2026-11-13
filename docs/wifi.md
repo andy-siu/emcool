@@ -128,4 +128,4 @@ curl -u x:'the admin password' -OJ 'http://192.168.1.42/dl?boot=12&mb=256'
 - Joining a network, reconnecting, and Wi-Fi and Bluetooth sharing the radio.
 - The console and the page on real sockets, and how fast a download goes.
 - The heap left with both stacks running.
-- Whether `-Os` changes anything in the CAN decoding's timing. The host checks, which compare every decoded value with cool-eva's, don't run the firmware's compiler.
+- Whether `-Os` changes anything in the CAN decoding's timing. The host checks, which compare every decoded value with the reference implementation's, don't run the firmware's compiler.

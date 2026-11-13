@@ -1,7 +1,7 @@
 #pragma once
 
-// A freeze frame — what the VCU recorded when a code set — decoded, ported from cool-eva
-// src/diagnostics/freeze-frame.ts. Pure: the KWP `57` reply to `17 <component>` in, its fields out.
+// A freeze frame — what the VCU recorded when a code set — decoded. Pure: the KWP `57` reply to
+// `17 <component>` in, its fields out.
 //
 // The reply is a 5-byte header (record count, component, a status byte whose high nibble is the
 // symptom), then the fields Energica's shortlist names for that (component, symptom), in that
@@ -77,7 +77,7 @@ struct FreezeFrameResponse {
 const char* freezeFrameKindName(FreezeFrameResponse::Kind kind);
 
 FreezeFrameResponse decodeFreezeFrameResponse(std::span<const std::uint8_t> payload, int requestedComponent);
-// A stored reply that failed, as cool-eva's stores rebuild one: unrecognised, with a reason.
+// A stored reply that failed, as the stores rebuild one: unrecognised, with a reason.
 FreezeFrameResponse unrecognisedResponse(std::string reason, std::string rawHex);
 
 // "NAME = 12.5 V (raw 125)".
@@ -86,7 +86,7 @@ const FreezeFrameValue* fieldOf(const FreezeFrame& frame, std::string_view name)
 
 void writeFreezeFrameResponseJson(text::TextBuffer& out, const FreezeFrameResponse& response);
 
-// "0A FF": cool-eva's toHex, upper case with spaces.
+// "0A FF": upper case with spaces.
 std::string hexWithSpaces(std::span<const std::uint8_t> bytes);
 
 }  // namespace emcool::obd

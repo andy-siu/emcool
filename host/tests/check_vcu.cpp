@@ -1,8 +1,9 @@
-// Holds the C++ VCU port to cool-eva's own code, line by line of tools/generate-golden-vcu.mts'
+// Holds the C++ VCU port to the reference implementation's own code, line by line of tools/generate-golden-vcu.mts'
 // output: the same inputs through the C++, and the same JSON (or text) out.
 //
-// Two of cool-eva's messages point at its own extract script; emcool's say to add the table to
-// cool-eva and regenerate. Those sentences are swapped in the expected text before comparing.
+// Two of the reference's messages point at its own extract script; emcool's point at
+// docs/service-mode.md and the generator. Those sentences are swapped in the expected text before
+// comparing.
 //
 //   check_vcu <golden file>
 
@@ -67,17 +68,18 @@ std::string replaceAll(std::string text, std::string_view from, std::string_view
   return text;
 }
 
-// cool-eva's two pointers at its extract script, as emcool words them (JSON-escaped as in the file).
+// The reference's two pointers at its extract script, as emcool words them (JSON-escaped as in the file).
 std::string emcoolWording(std::string text) {
   text = replaceAll(text,
                     "Add the table with scripts/extract-vcu-tables.ts (docs/vcu-parameters.md: \\\"Adding your bike's VCU parameter "
                     "table\\\").",
-                    "Add the table to cool-eva (its docs/vcu-parameters.md: \\\"Adding your bike's VCU parameter table\\\") and run "
+                    "Add the table as docs/service-mode.md (\\\"Parameter tables\\\") describes and run "
                     "tools/generate-vcu-tables.mts.");
   return replaceAll(text,
                     "run scripts/extract-vcu-tables.ts against your parameter definitions (see docs/vcu-parameters.md) and send the "
                     "diff.",
-                    "add it to cool-eva (see its docs/vcu-parameters.md) and run tools/generate-vcu-tables.mts.");
+                    "add it as docs/service-mode.md's Parameter tables section describes and run "
+                    "tools/generate-vcu-tables.mts.");
 }
 
 template <typename Write>
@@ -94,7 +96,7 @@ std::string jsonString(std::string_view value) {
 }
 
 void compare(const std::string& kind, const std::string& input, const std::string& mine, const std::string& theirs) {
-  EMCOOL_CHECK(mine == theirs, "%s %s:\n  emcool   %s\n  cool-eva %s", kind.c_str(), input.substr(0, 120).c_str(),
+  EMCOOL_CHECK(mine == theirs, "%s %s:\n  emcool    %s\n  reference %s", kind.c_str(), input.substr(0, 120).c_str(),
                mine.substr(0, 1500).c_str(), theirs.substr(0, 1500).c_str());
 }
 

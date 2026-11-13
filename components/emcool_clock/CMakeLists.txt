@@ -1,4 +1,4 @@
-# The GPS clock gate and clock-trust state, ported from cool-eva src/gps/clock*.ts. Pure:
+# The GPS clock gate and clock-trust state. Pure:
 # the firmware does the actual settimeofday.
 set(emcool_clock_sources
   src/gps_clock_gate.cpp

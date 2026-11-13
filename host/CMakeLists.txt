@@ -8,8 +8,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 # No fused multiply-add: an FMA changes the last bit of a*b+c, which breaks bit-exact parity with
-# cool-eva's JavaScript (V8 does not contract). The charge-auto least-squares slope is the first
-# place it bit; keeping it off project-wide is the rule, not the exception.
+# the reference implementation's JavaScript (V8 does not contract). The charge-auto least-squares
+# slope is the first place it bit; keeping it off project-wide is the rule, not the exception.
 add_compile_options(-ffp-contract=off)
 
 # OpenSSL 3 for the host crypto backend; Homebrew keeps it out of the default search path.

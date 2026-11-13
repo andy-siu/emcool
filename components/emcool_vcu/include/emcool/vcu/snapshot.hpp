@@ -1,9 +1,9 @@
 #pragma once
 
-// One sweep's parameters as rows, ported from cool-eva src/vcu/snapshot.ts: each read outcome as a
-// row (named, typed and valued from the table in use), the verdict on the bike's own TABLE_TYPE,
-// re-naming a stored snapshot from the table the bike says it runs, and what changed between two
-// snapshots. Rows are written and read back as cool-eva's JSON.stringify writes them.
+// One sweep's parameters as rows: each read outcome as a row (named, typed and valued from the
+// table in use), the verdict on the bike's own TABLE_TYPE, re-naming a stored snapshot from the
+// table the bike says it runs, and what changed between two snapshots. Rows are written and read
+// back as JavaScript's JSON.stringify writes them.
 
 #include <cstdint>
 #include <functional>
@@ -35,7 +35,7 @@ inline constexpr ReadStatus kReadStatuses[] = {ReadStatus::kRead,      ReadStatu
 const char* readStatusName(ReadStatus status);
 std::optional<ReadStatus> readStatusNamed(std::string_view name);
 
-// How long after a first frame arrived our flow control went out (cool-eva's ArrivalLatency).
+// How long after a first frame arrived our flow control went out.
 struct ArrivalLatency {
   bool known = false;
   double ms = 0;
@@ -45,7 +45,7 @@ struct ArrivalLatency {
 ArrivalLatency arrivalLatencyMs(std::optional<double> arrivalMs, double nowMs);
 void writeLatencyJson(text::TextBuffer& out, const std::optional<ArrivalLatency>& latency);
 
-// How one read came out: what was asked, and what happened (cool-eva's VcuReadResult).
+// How one read came out: what was asked, and what happened.
 struct VcuReadResult {
   ReadStatus status = ReadStatus::kNotSent;
   std::vector<std::uint8_t> record;  // kRead
@@ -88,7 +88,7 @@ VcuParameterRow toParameterRow(const VcuReadOutcome& outcome, const ParameterNam
 std::string describeRow(const VcuParameterRow& row);
 
 void writeRowJson(text::TextBuffer& out, const VcuParameterRow& row);
-// A row as writeRowJson wrote it (or cool-eva's JSON.stringify would). nullopt if it isn't one.
+// A row as writeRowJson wrote it (or JavaScript's JSON.stringify would). nullopt if it isn't one.
 std::optional<VcuParameterRow> parseRowJson(std::string_view json);
 // "0A FF" back to bytes; nullopt (and a warning) if it isn't hex.
 std::optional<std::vector<std::uint8_t>> bytesFromHex(std::string_view rawHex);

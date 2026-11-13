@@ -1,5 +1,5 @@
 // Replays the corpus written by tools/generate-golden.mts — frames, each with the values
-// cool-eva's TypeScript decoded from it — through the C++ FrameDecoder, and requires the same
+// the TypeScript reference decoded from it — through the C++ FrameDecoder, and requires the same
 // keys in the same order with bit-identical values. Then feeds the decoded values through a
 // SignalStore and requires that no location-bearing signal ever reaches the ride log.
 //

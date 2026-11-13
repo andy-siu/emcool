@@ -14,7 +14,7 @@ namespace {
 
 constexpr const char* kTag = "can";
 constexpr std::uint32_t kBitrate = 500000;
-// Roughly 100 ms of traffic, if cool-eva's candump volume (394 MB/h of text, ~2 000 frames/s
+// Roughly 100 ms of traffic, if a candump volume of 394 MB/h of text (~2 000 frames/s
 // by my estimate) is representative. A full queue drops the newest frame and counts it.
 constexpr UBaseType_t kQueueDepth = 256;
 
@@ -52,7 +52,7 @@ bool CanBus::start(int txGpio, int rxGpio, bool transmit) {
   config.bit_timing.bitrate = kBitrate;
   config.flags.enable_listen_only = !transmit;
   config.flags.no_receive_rtr = true;
-  // Retry until acknowledged, as SocketCAN does for cool-eva: the zeroed default is single-shot,
+  // Retry until acknowledged, as SocketCAN does: the zeroed default is single-shot,
   // which would drop a request for losing arbitration to the bike's own traffic.
   config.fail_retry_cnt = -1;
   config.tx_queue_depth = kTransmitSlots;

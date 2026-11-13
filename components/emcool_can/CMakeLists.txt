@@ -1,5 +1,5 @@
-# Pure frame decoders, ported from cool-eva src/can/. Builds under ESP-IDF for the firmware
-# and as a plain CMake library for host/, where tests diff it against the TypeScript.
+# Pure frame decoders. Builds under ESP-IDF for the firmware and as a plain CMake library for
+# host/, where the checks diff it against the TypeScript reference.
 set(emcool_can_sources
   src/abs.cpp
   src/attitude.cpp
@@ -14,7 +14,7 @@ set(emcool_can_sources
   src/vehicle_frames.cpp
 )
 
-# No fused multiply-add: every value must match cool-eva's doubles bit for bit, and an FMA
+# No fused multiply-add: every value must match the reference's doubles bit for bit, and an FMA
 # rounds once where JavaScript rounds twice.
 set(emcool_can_options -ffp-contract=off)
 

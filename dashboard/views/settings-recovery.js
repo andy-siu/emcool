@@ -23,7 +23,7 @@ export function SettingsRecovery() {
         a(
           {
             class: "settings-link",
-            href: "https://github.com/danieltroger/cool-eva/blob/main/docs/configuration.md#repair-settings",
+            href: "https://github.com/andy-siu/emcool/blob/main/docs/setup.md",
             target: "_blank",
             rel: "noopener",
           },
@@ -32,7 +32,7 @@ export function SettingsRecovery() {
         a(
           {
             class: "settings-link",
-            href: "https://github.com/danieltroger/cool-eva/blob/main/INSTALL.md",
+            href: "https://github.com/andy-siu/emcool/blob/main/README.md#build-and-flash",
             target: "_blank",
             rel: "noopener",
           },

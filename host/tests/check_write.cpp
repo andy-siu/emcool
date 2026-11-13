@@ -1,8 +1,8 @@
 // Replays tools/generate-golden-write.mts through the C++ port: the pure stage-4 write parts must
-// produce byte-identical JSON to cool-eva's own code. The one wording divergence — cool-eva names
-// its source file src/vcu/write-targets.ts where emcool names write_targets, and its extract
-// script where emcool regenerates from cool-eva — is normalised before comparing, exactly as
-// check_service.cpp does for the read path.
+// produce byte-identical JSON to the reference implementation's own code. The wording divergences —
+// the reference names its source file src/vcu/write-targets.ts where emcool names write_targets, and
+// its extract script where emcool points at docs/service-mode.md — are normalised before comparing,
+// exactly as check_service.cpp does for the read path.
 //
 //   check_write <golden file>
 
@@ -39,32 +39,36 @@ std::string replaceAll(std::string text, const std::string& from, const std::str
   return text;
 }
 
-// The C++ wording, turned into cool-eva's, so a byte comparison can stand. emcool says "bike"
-// wherever cool-eva's prose says "Pi" (it runs on the bike), the same rewording the read path's
-// SERVICE_MODE_ENABLED message already gets in check_service.cpp.
-std::string asCoolEva(std::string text) {
+// The C++ wording, turned into the reference's, so a byte comparison can stand. emcool says "bike"
+// or "emcool" wherever the reference's prose says "Pi" (it ran on a Raspberry Pi), the same rewording
+// the read path's SERVICE_MODE_ENABLED message already gets in check_service.cpp.
+std::string asReference(std::string text) {
   text = replaceAll(text, "this bike's clock", "this Pi's clock");
+  text = replaceAll(text, "compare-and-swap: emcool re-reads", "compare-and-swap: the Pi re-reads");
+  text = replaceAll(text, "emcool checks it is still that minute", "The Pi checks it is still that minute");
+  text = replaceAll(text, ", but emcool now reads ", ", but this Pi now reads ");
   text = replaceAll(text, "the GPS clock steps it past 60 s", "src/gps/clock.ts steps it past 60 s");
-  // emcool renamed the dashboard's request header X-Cool-Eva -> X-Emcool (the firmware checks the
-  // new name); cool-eva's golden still shows the old one in the table-gate curl example.
+  // emcool's dashboard request header is X-Emcool (the firmware checks that name); the reference's
+  // golden shows its own header name in the table-gate curl example.
   text = replaceAll(text, "X-Emcool: service-mode", "X-Cool-Eva: service-mode");
   text = replaceAll(text, "written down with its reasoning in write_targets.",
                     "written down with its reasoning in src/vcu/write-targets.ts.");
-  // Stage 4 omits charge-current/charge-stop (stage 5); cool-eva's unknown-action list still names
+  // Stage 4 omits charge-current/charge-stop (stage 5); the reference's unknown-action list still names
   // them. The documented divergence: emcool's list grows back when stage 5 lands.
   text = replaceAll(text, "clear-dtcs, charge-soc-limit, charge-soc-limit-read, reset-vcu — not",
                     "clear-dtcs, charge-current, charge-stop, charge-soc-limit, charge-soc-limit-read, reset-vcu — not");
   // The two extract-script wordings check_service.cpp normalises too: the mismatch-reason sentence
   // (plain) and the mismatch-remedy sentence (JSON-escaped quotes).
   text = replaceAll(text,
-                    "add it to cool-eva (see its docs/vcu-parameters.md) and run tools/generate-vcu-tables.mts.",
+                    "add it as docs/service-mode.md's Parameter tables section describes and run "
+                    "tools/generate-vcu-tables.mts.",
                     "run scripts/extract-vcu-tables.ts against your parameter definitions (see docs/vcu-parameters.md) and send the "
                     "diff.");
   for (const char* quote : {"\"", "\\\""}) {
     text = replaceAll(
         text,
-        std::string("add the table to cool-eva (its docs/vcu-parameters.md: ") + quote + "Adding your bike's VCU parameter table" +
-            quote + ") and run tools/generate-vcu-tables.mts, and this gate opens.",
+        std::string("add the table as docs/service-mode.md (") + quote + "Parameter tables" + quote +
+            ") describes and run tools/generate-vcu-tables.mts, and this gate opens.",
         std::string("run `node --experimental-strip-types scripts/extract-vcu-tables.ts <the exe>` against your own "
                     "Energica parameter definitions — commit the "
                     "diff to src/vcu/table-catalog.data.ts and this gate opens. docs/vcu-parameters.md, ") +
@@ -84,7 +88,7 @@ std::string build(const std::function<void(text::TextBuffer&)>& write) {
 }
 
 void expectEqual(const std::string& what, const std::string& got, const std::string& want) {
-  if (asCoolEva(got) == want) return;
+  if (asReference(got) == want) return;
   if (failures < 20) {
     std::fprintf(stderr, "check_write: %s mismatch\n  got:  %s\n  want: %s\n", what.c_str(), got.c_str(), want.c_str());
   }
@@ -219,7 +223,7 @@ std::string jsonUnescape(const std::string& quoted) {
 
 ParameterNames gNames;  // the default table, reset to it before each GATE line
 
-// --- the small decoders, as JSON matching cool-eva ---------------------------------------------
+// --- the small decoders, as JSON matching the reference -----------------------------------------
 
 std::string securityAccessJson(const SecurityAccessReply& reply) {
   return build([&](text::TextBuffer& out) {
@@ -639,13 +643,13 @@ int main(int argc, char** argv) {
           return;
         }
         out.append("{\"ok\":true,\"request\":");
-        // The request shape cool-eva emits is action-specific; compare just ok+kind-driven fields.
+        // The request shape the reference emits is action-specific; compare just ok+kind-driven fields.
         out.append("{\"kind\":");
         out.appendJsonString(serviceWriteKindName(parsed.request.kind));
         out.append("}}");
       });
       // Compare only the ok flag and, when ok, that both call it ok; the refusal strings are the
-      // load-bearing text and are compared in full. cool-eva's ok-request carries the typed union,
+      // load-bearing text and are compared in full. The reference's ok-request carries the typed union,
       // which is validated structurally by the perform tests, so here only the refusal path's
       // exact text matters.
       if (parsed.ok) {
@@ -654,7 +658,7 @@ int main(int argc, char** argv) {
           failures++;
         }
       } else {
-        // Extract cool-eva's reason and compare the refusal text exactly.
+        // Extract the reference's reason and compare the refusal text exactly.
         const std::size_t reasonAt = f[2].find("\"reason\":\"");
         if (f[2].rfind("{\"ok\":false", 0) != 0) {
           if (failures < 20) std::fprintf(stderr, "check_write: PARSE should have been ok for %s\n  want: %s\n", query.c_str(), f[2].c_str());
@@ -744,6 +748,6 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "check_write: %d failures\n", failures);
     return 1;
   }
-  std::fprintf(stderr, "check_write: all pure write parts match cool-eva; 0 failures\n");
+  std::fprintf(stderr, "check_write: all pure write parts match the reference; 0 failures\n");
   return 0;
 }

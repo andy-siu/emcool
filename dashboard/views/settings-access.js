@@ -12,7 +12,7 @@ export function AccessExplanation() {
     a(
       {
         class: "settings-link",
-        href: "https://github.com/danieltroger/cool-eva/blob/main/LICENSE",
+        href: "https://github.com/andy-siu/emcool/blob/main/LICENSE",
         target: "_blank",
         rel: "noopener",
       },

@@ -1,10 +1,9 @@
 #pragma once
 
-// The one-shot keys-paired read from the E-LOCK ECU, ported from cool-eva src/can/elock.ts:
-// KWP2000 ReadDataByLocalIdentifier `21 99` on 0x791, answered on 0x790. If the default
-// session won't answer, it opens a standard session (`10 81`), asks again, and closes it
-// (`20`). The answer becomes the keys_paired signal; no answer leaves it unset rather than 0.
-// Each request waits up to 300 ms.
+// The one-shot keys-paired read from the E-LOCK ECU: KWP2000 ReadDataByLocalIdentifier `21 99`
+// on 0x791, answered on 0x790. If the default session won't answer, it opens a standard session
+// (`10 81`), asks again, and closes it (`20`). The answer becomes the keys_paired signal; no
+// answer leaves it unset rather than 0. Each request waits up to 300 ms.
 
 #include <cstdint>
 #include <optional>

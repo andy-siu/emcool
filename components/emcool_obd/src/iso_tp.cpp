@@ -13,7 +13,7 @@ constexpr std::uint8_t kFirstFrame = 0x1;
 constexpr std::uint8_t kConsecutiveFrame = 0x2;
 constexpr std::uint8_t kFlowControlFrame = 0x3;
 
-static_assert(IsoTpReassembler::kMaxFrames == 147, "cool-eva's Math.ceil((1024 - 6) / 7) + 1");
+static_assert(IsoTpReassembler::kMaxFrames == 147, "ceil((1024 - 6) / 7) + 1");
 
 IsoTpResult ignored(std::string reason) { return {IsoTpStatus::kIgnored, 0, {}, std::move(reason)}; }
 
@@ -76,7 +76,7 @@ IsoTpResult IsoTpReassembler::pushFirstFrame(std::span<const std::uint8_t> frame
             "first frame declares " + std::to_string(totalLength) + " bytes, over the " +
                 std::to_string(kMaxPayloadBytes) + " cap"};
   }
-  // cool-eva starts each transfer with a fresh zeroed buffer.
+  // Each transfer starts with a fresh zeroed buffer.
   std::fill(payload_.begin(), payload_.begin() + totalLength, 0);
   std::memcpy(payload_.data(), frame.data() + 2, 6);
   length_ = totalLength;

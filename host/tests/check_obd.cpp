@@ -2,7 +2,7 @@
 // line for line, and each scenario millisecond by millisecond — the same frames arrive and
 // the same holds are asked for at the same moments, and in every millisecond the C++ must
 // send the same frames, record the same signals, log the same lines and serve the same
-// /stored-dtcs body as cool-eva did. Within one millisecond the order isn't compared (the
+// /stored-dtcs body as the reference did. Within one millisecond the order isn't compared (the
 // E-LOCK read and the poller run side by side), only what happened.
 //
 //   check_obd <golden file>
@@ -32,9 +32,9 @@ using namespace emcool::obd;
 
 namespace {
 
-// The reason cool-eva's transmitCanFrame gives for a send() that returned -1, which reaches
+// The reason the reference's transmitCanFrame gives for a send() that returned -1, which reaches
 // /stored-dtcs and the logs; emcool's own reason is whatever its bus says.
-std::string coolEvaRefusal(std::uint32_t id) {
+std::string referenceRefusal(std::uint32_t id) {
   char text[128];
   std::snprintf(text, sizeof text, "CAN 0x%x not sent: send() returned -1, expected 16 (socketcan does not expose errno)",
                 static_cast<unsigned>(id));
@@ -101,7 +101,7 @@ std::string formatValue(double value) {
 
 struct Expected {
   std::string text;
-  bool fail = false;  // a sent frame whose send cool-eva saw throw
+  bool fail = false;  // a sent frame whose send the reference saw throw
   bool consumed = false;
 };
 
@@ -121,11 +121,11 @@ class Scenario final : public CanTransmitter, public SignalRecorder {
   std::optional<std::string> transmit(std::uint32_t id, const Payload& data) override {
     char text[64];
     std::snprintf(text, sizeof text, "t %x %s", static_cast<unsigned>(id), toHex(data).c_str());
-    // Fails exactly the sends cool-eva's did.
+    // Fails exactly the sends the reference's did.
     for (Expected& expected : bucket().outputs) {
       if (!expected.consumed && expected.text == text) {
         expected.consumed = true;
-        if (expected.fail) return coolEvaRefusal(id);
+        if (expected.fail) return referenceRefusal(id);
         return std::nullopt;
       }
     }
@@ -139,7 +139,7 @@ class Scenario final : public CanTransmitter, public SignalRecorder {
 
   void logged(char level, const char* tag, const char* message) {
     const std::string text = std::string(1, level) + " " + tag + ": " + message;
-    // cool-eva logs a send failure's error as a second argument, which the golden file leaves
+    // The reference logs a send failure's error as a second argument, which the golden file leaves
     // out; emcool puts the reason on the same line.
     for (Expected& expected : bucket().outputs) {
       if (expected.consumed || expected.text.compare(0, 2, "l ") != 0) continue;
@@ -215,7 +215,7 @@ class Scenario final : public CanTransmitter, public SignalRecorder {
       if (current_) {
         stack_.hold().release(*current_);
       } else {
-        mismatch(nowMs_, "cool-eva released a hold the C++ never granted");
+        mismatch(nowMs_, "the reference released a hold the C++ never granted");
       }
       current_.reset();
     } else if (action == "snapshot") {
@@ -303,7 +303,7 @@ void checkCode(const std::string& line, Totals& totals) {
   const int component = entry ? entry->component : -1;
   const int symptom = entry ? entry->symptom : -1;
   EMCOOL_CHECK(code.view() == words[2] && component == std::stoi(words[3]) && symptom == std::stoi(words[4]),
-               "0x%04x: %s %d/%d, cool-eva %s %s/%s", raw, code.characters.data(), component, symptom, words[2].c_str(),
+               "0x%04x: %s %d/%d, the reference %s %s/%s", raw, code.characters.data(), component, symptom, words[2].c_str(),
                words[3].c_str(), words[4].c_str());
   totals.codes++;
 }
@@ -316,7 +316,7 @@ void checkIsoTpPush(IsoTpReassembler& reassembler, const std::string& line, Tota
   const std::string reason = result.reason.empty() ? "-" : result.reason;
   const std::string total = std::to_string(result.totalLength);
   EMCOOL_CHECK(words[2] == statusName(result.status) && words[3] == total && words[4] == payload && words[5] == reason,
-               "ISO-TP push %s: %s %s %s %s, cool-eva %s %s %s %s", words[1].c_str(), statusName(result.status),
+               "ISO-TP push %s: %s %s %s %s, the reference %s %s %s %s", words[1].c_str(), statusName(result.status),
                total.c_str(), payload.c_str(), reason.c_str(), words[2].c_str(), words[3].c_str(), words[4].c_str(),
                words[5].c_str());
   totals.isoPushes++;
@@ -344,7 +344,7 @@ void checkDecode(const std::string& line, Totals& totals) {
     mine = "unrecognised - 0 - 0 0 0 " + response.reason;
   }
   const std::string theirs = line.substr(line.find(' ', line.find(' ', 2) + 1) + 1);
-  EMCOOL_CHECK(mine == theirs, "decode mode 0x%x %s: %s, cool-eva %s", mode, words[2].c_str(), mine.c_str(),
+  EMCOOL_CHECK(mine == theirs, "decode mode 0x%x %s: %s, the reference %s", mode, words[2].c_str(), mine.c_str(),
                theirs.c_str());
   totals.decoded++;
 }
@@ -411,7 +411,7 @@ int main(int argumentCount, char** arguments) {
     } else if (line.rfind("N ", 0) == 0) {
       const std::vector<std::string> words = fields(line, 3);
       const std::string mine = describeNegativeResponseCode(std::stoi(words[1]));
-      EMCOOL_CHECK(mine == words[2], "NRC %s: %s, cool-eva %s", words[1].c_str(), mine.c_str(), words[2].c_str());
+      EMCOOL_CHECK(mine == words[2], "NRC %s: %s, the reference %s", words[1].c_str(), mine.c_str(), words[2].c_str());
       totals.responseCodes++;
     } else if (line == "I") {
       reassembler = IsoTpReassembler();

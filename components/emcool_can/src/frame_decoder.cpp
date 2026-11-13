@@ -2,9 +2,7 @@
 
 #include "decoders.hpp"
 
-// Ported from cool-eva src/can/decode.ts. The evidence behind every field — captures, match
-// rates, refuted hypotheses — is in that file and in cool-eva docs/can-decode-findings.md;
-// the one-line warnings kept here are the ones that stop a known mistake being re-made.
+// The one-line warnings kept here are the ones that stop a known mistake being re-made.
 
 namespace emcool::can {
 
@@ -211,7 +209,7 @@ void decodeBodyAndLightsFrame(FrameBytes data, AxisRangeWatch& roll, AxisRangeWa
 }
 
 // The dashboard's own digital inputs: b2 is the button bitfield, b5 bit 7 the day/night flag.
-// Bit names are Energica's IO table; what each is measured to do is in cool-eva decode.ts.
+// Bit names are Energica's IO table.
 void decodeDashboardInputsFrame(FrameBytes data, DecodedValues& out) {
   if (data.size() < 3) return;
   const std::uint8_t buttons = data[2];

@@ -1,5 +1,5 @@
-// Drives cool-eva's service mode — src/vcu/read-runner.ts with its sweeps and probes, the OBD poller
-// beside it as in production — against cool-eva's own simulated VCU micros
+// Drives the reference's service mode — src/vcu/read-runner.ts with its sweeps and probes, the OBD
+// poller beside it as in production — against the reference's own simulated VCU micros
 // (scripts/simulated-vcu-micro.ts) and a scripted OBD ECU, on a fake clock, and writes what it did
 // for host/tests/check_service.cpp to replay through the C++ port.
 //
@@ -9,11 +9,11 @@
 // the OBD poller parked; TABLE_TYPEs carried, uncarried and split; probes of every bank, refused
 // while a sweep runs or the bike is unsafe; and the bodies of /vcu-read, /vcu-params and /vcu-backup.
 //
-//   node tools/generate-golden-service.mts <cool-eva checkout> <output file>
+//   node tools/generate-golden-service.mts <reference checkout> <output file>
 //
 // The same timing rules as generate-golden-obd.mts: whole milliseconds; in each, scheduled actions,
-// then cool-eva's due timers, then the ECUs' (frames arriving). The simulated micros' setTimeout is
-// rewritten, on load, into the ECUs' queue. cool-eva's fs/promises and storage/durable.ts are
+// then the reference's due timers, then the ECUs' (frames arriving). The simulated micros' setTimeout
+// is rewritten, on load, into the ECUs' queue. The reference's fs/promises and storage/durable.ts are
 // replaced, for the modules under test, by an in-memory store that resolves at once.
 //
 // Lines, besides generate-golden-obd.mts' r/t/s/l:
@@ -25,7 +25,7 @@
 //                                        freeze | lifetime-stats | freeze-frames | expected-get |
 //                                        expected-set <component> <symptom> <expected>
 //   j <ms> <what> <json>                 an action's answer (a probe's when it resolves); for the
-//                                        actions answered by cool-eva's HTTP handlers,
+//                                        actions answered by the reference's HTTP handlers,
 //                                        j <ms> <what> <status> <body>
 //   end
 
@@ -35,14 +35,14 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const [coolEvaDirectory, outputPath] = process.argv.slice(2);
-if (!coolEvaDirectory || !outputPath) {
-  process.stderr.write("usage: node tools/generate-golden-service.mts <cool-eva checkout> <output file>\n");
+const [referenceDirectory, outputPath] = process.argv.slice(2);
+if (!referenceDirectory || !outputPath) {
+  process.stderr.write("usage: node tools/generate-golden-service.mts <reference checkout> <output file>\n");
   process.exit(2);
 }
-const coolEvaRoot = pathToFileURL(resolve(coolEvaDirectory)).href + "/";
-const srcRoot = coolEvaRoot + "src/";
-const scriptsRoot = coolEvaRoot + "scripts/";
+const referenceRoot = pathToFileURL(resolve(referenceDirectory)).href + "/";
+const srcRoot = referenceRoot + "src/";
+const scriptsRoot = referenceRoot + "scripts/";
 
 // The in-memory filesystem, as two small modules standing in for fs/promises and durable.ts.
 const fakeDirectory = await mkdtemp(join(tmpdir(), "emcool-fake-fs-"));
@@ -92,19 +92,19 @@ let generation = 0;
 registerHooks({
   resolve(specifier, context, nextResolve) {
     const parent = context.parentURL ?? "";
-    const fromCoolEva = parent.startsWith(srcRoot) || parent.startsWith(scriptsRoot);
-    if (fromCoolEva && (specifier === "fs/promises" || specifier === "node:fs/promises")) {
+    const fromReference = parent.startsWith(srcRoot) || parent.startsWith(scriptsRoot);
+    if (fromReference && (specifier === "fs/promises" || specifier === "node:fs/promises")) {
       return { url: fakeFsUrl, shortCircuit: true, format: "module" };
     }
-    // cool-eva samples its event loop's delay; emcool has none to sample, and says so.
-    if (fromCoolEva && (specifier === "node:perf_hooks" || specifier === "perf_hooks")) {
+    // The reference samples its event loop's delay; emcool has none to sample, and says so.
+    if (fromReference && (specifier === "node:perf_hooks" || specifier === "perf_hooks")) {
       return { url: fakePerfUrl, shortCircuit: true, format: "module" };
     }
     const result = nextResolve(specifier, context);
-    if (fromCoolEva && result.url.startsWith(srcRoot + "storage/durable.ts")) {
+    if (fromReference && result.url.startsWith(srcRoot + "storage/durable.ts")) {
       return { url: fakeDurableUrl, shortCircuit: true, format: "module" };
     }
-    if (fromCoolEva && (result.url.startsWith(srcRoot) || result.url.startsWith(scriptsRoot)) && !result.url.includes("?")) {
+    if (fromReference && (result.url.startsWith(srcRoot) || result.url.startsWith(scriptsRoot)) && !result.url.includes("?")) {
       const tag = new URL(parent).searchParams.get("gen");
       if (tag !== null) return { ...result, url: `${result.url}?gen=${tag}` };
     }
@@ -115,20 +115,20 @@ registerHooks({
     if (url.startsWith(srcRoot + "can/signals.ts")) {
       const source = String(result.source);
       const marker = "export function record(key: string, value: number, ts: number = Date.now()): void {";
-      if (!source.includes(marker)) throw new Error("cool-eva's record() has changed shape; update the hook");
+      if (!source.includes(marker)) throw new Error("the reference's record() has changed shape; update the hook");
       return { ...result, source: source.replace(marker, `${marker} (globalThis as any).__emcoolRecorded(key, value);`) };
     }
     if (url.startsWith(scriptsRoot + "simulated-vcu-micro.ts")) {
-      // The micros' replies go into the ECUs' queue, after cool-eva's own timers each millisecond.
+      // The micros' replies go into the ECUs' queue, after the reference's own timers each millisecond.
       return { ...result, source: String(result.source).replace(/\bsetTimeout\(/g, "(globalThis as any).__ecuTimeout(") };
     }
     return result;
   },
 });
-// socketcan's send() returns sizeof(struct can_frame) on success, and cool-eva refuses anything else (#359).
+// socketcan's send() returns sizeof(struct can_frame) on success, and the reference refuses anything else (#359).
 const SOCKETCAN_SENT = 16;
 const SOCKETCAN_REFUSED = -1;
-const importFresh = (path: string) => import(`${coolEvaRoot}${path}?gen=${generation}`);
+const importFresh = (path: string) => import(`${referenceRoot}${path}?gen=${generation}`);
 
 // ---------------------------------------------------------------------------------------------
 // The clock, the two timer queues, and the output.
@@ -445,7 +445,7 @@ async function runScenario(index: number, durationMs: number): Promise<void> {
     if (chance(0.3)) act(at, "gate", () => emit(`j ${now} gate ${json(runner.gate())}`));
   }
   if (chance(0.2)) act(between(3000, durationMs - 1000), `expire ${pick(["A9", "A8"])}`, () => {});
-  // The freeze-frame reads and their files, through cool-eva's own handlers.
+  // The freeze-frame reads and their files, through the reference's own handlers.
   const respond = (what: string) => {
     let status = 0;
     return {

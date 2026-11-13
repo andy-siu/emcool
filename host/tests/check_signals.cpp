@@ -1,4 +1,4 @@
-// SignalStore against cool-eva's recordArrival() rules, and the ride-log exclusion list
+// SignalStore against the reference's recordArrival() rules, and the ride-log exclusion list
 // against the registry it names keys from.
 
 #include <cmath>
@@ -68,7 +68,7 @@ void checkRegistryIsSortedAndSearchable() {
   EMCOOL_CHECK(!emcool::signals::findSignal(""), "found the empty key");
 }
 
-// A typo or a cool-eva rename here would silently exclude nothing.
+// A typo or a renamed signal here would silently exclude nothing.
 void checkExclusionListNamesRealSignals() {
   for (const std::string_view key : emcool::signals::kExcludedFromRideLog) {
     EMCOOL_CHECK(emcool::signals::findSignal(key).has_value(), "excluded key %.*s is not in the registry",
@@ -76,7 +76,7 @@ void checkExclusionListNamesRealSignals() {
   }
 }
 
-// cool-eva logs the first reading, then only a change strictly greater than the deadband.
+// The reference logs the first reading, then only a change strictly greater than the deadband.
 // The deadband is read from the registry rather than assumed. Starting at 0 makes the
 // "exactly one deadband away" step an exact comparison in floating point.
 void checkDeadbandGate() {

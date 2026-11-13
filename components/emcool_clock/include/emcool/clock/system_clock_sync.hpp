@@ -1,9 +1,9 @@
 #pragma once
 
-// Whether the wall clock can be believed, and when to step it to GPS time. A port of the
-// state in cool-eva src/gps/clock.ts with the `date -u -s` call taken out: offer() says when
-// to step, the caller steps (settimeofday on the ESP32, nothing on the host) and reports
-// back. The ESP32 has no battery-backed clock, so every boot starts "never-synced".
+// Whether the wall clock can be believed, and when to step it to GPS time. Only the state:
+// offer() says when to step, the caller steps (settimeofday on the ESP32, nothing on the
+// host) and reports back. The ESP32 has no battery-backed clock, so every boot starts
+// "never-synced".
 
 #include <cstdint>
 #include <optional>
@@ -12,7 +12,7 @@
 
 namespace emcool::clock {
 
-// cool-eva's ClockTrust, sealed into every ride-log segment so the laptop can tell which
+// The clock's trust, sealed into every ride-log segment so the laptop can tell which
 // timestamps to doubt. `seq` orders readings whatever this says.
 enum class ClockTrust : std::uint8_t { kSatelliteBacked, kNeverSynced, kContested };
 

@@ -1,13 +1,13 @@
 #pragma once
 
-// /settings for the phone dashboard: cool-eva's SettingsReply (src/settings/view.ts), filled from
+// /settings for the phone dashboard: the reference implementation's SettingsReply, filled from
 // what this boot runs with. The dashboard's riding views read it — Cooling labels the coolant
 // probes and the fan by whether they are installed, the header raises a fault, Charge links to
 // the charging permission — so a bike with no /settings would show them all as unconfirmed.
 //
-// Read-only on purpose. cool-eva saves a change through PATCH /settings and applies it at an
+// Read-only on purpose. The reference saves a change through PATCH /settings and applies it at an
 // explicit restart; on emcool the serial console is that path, so the reply says no change is
-// pending and the PATCH is refused (ble_server/endpoints.hpp). Fields describing Pi-only things
+// pending and the PATCH is refused (ble_server/endpoints.hpp). Fields describing things emcool doesn't have
 // (data directories, a ride-log public key, the motorcycle hub) carry the values that make the
 // dashboard show them as not in use.
 

@@ -1,4 +1,4 @@
-// Drives cool-eva's own pack-temperature routing (src/can/pack-temperature.ts, behind
+// Drives the reference's own pack-temperature routing (src/can/pack-temperature.ts, behind
 // decodeFrame) through scripted 0x200/0x660 sequences on a controlled clock, and writes each
 // frame with the values it produced, and each run with how often it logged, for
 // host/tests/check_pack_temperature.cpp to replay through the C++ port.
@@ -8,7 +8,7 @@
 // - short, long and changing 0x660s, including a 0x660 that starts late
 // - echo mismatches, and clamp gates that aren't masks or are stuck open
 //
-//   node tools/generate-golden-pack-temperature.mts <cool-eva checkout> <output file>
+//   node tools/generate-golden-pack-temperature.mts <reference checkout> <output file>
 //
 // Lines: `run <custom 0|1>`, then `<ms> <id hex> <payload hex> [<key>=<value>]...` per frame,
 // then `logs <errors> <warnings> <infos>`.
@@ -22,13 +22,13 @@ interface DecodedValue {
   value: number;
 }
 
-const [coolEvaDirectory, outputPath] = process.argv.slice(2);
-if (!coolEvaDirectory || !outputPath) {
-  console.error("usage: node tools/generate-golden-pack-temperature.mts <cool-eva checkout> <output file>");
+const [referenceDirectory, outputPath] = process.argv.slice(2);
+if (!referenceDirectory || !outputPath) {
+  console.error("usage: node tools/generate-golden-pack-temperature.mts <reference checkout> <output file>");
   process.exit(2);
 }
 
-// cool-eva's monotonicNow() is performance.now(); the scenarios set it.
+// The reference's monotonicNow() is performance.now(); the scenarios set it.
 let nowMs = 0;
 Object.defineProperty(performance, "now", { value: () => nowMs, configurable: true, writable: true });
 const counts = { error: 0, warn: 0, log: 0 };
@@ -37,8 +37,8 @@ console.warn = () => void counts.warn++;
 console.log = () => void counts.log++;
 const report = (line: string) => process.stdout.write(line + "\n");
 
-const decode = await import(pathToFileURL(join(coolEvaDirectory, "src/can/decode.ts")).href);
-const packTemperature = await import(pathToFileURL(join(coolEvaDirectory, "src/can/pack-temperature.ts")).href);
+const decode = await import(pathToFileURL(join(referenceDirectory, "src/can/decode.ts")).href);
+const packTemperature = await import(pathToFileURL(join(referenceDirectory, "src/can/pack-temperature.ts")).href);
 const decodeFrame = decode.decodeFrame as (id: number, data: Buffer) => DecodedValue[];
 const resolve = packTemperature.resolvePackTemperatures as (
   id: number,

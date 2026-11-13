@@ -1,6 +1,6 @@
 #pragma once
 
-// The phone link on the radio: NimBLE as a peripheral advertising cool-eva's GATT service
+// The phone link on the radio: NimBLE as a peripheral advertising the dashboard's GATT service
 // (rx write, tx notify, info read), and a task that runs BleServer. NimBLE's callbacks run
 // in its host task and never touch the server: writes and link events are queued to this
 // task, and the info characteristic reads a copy this task keeps current. So no lock is

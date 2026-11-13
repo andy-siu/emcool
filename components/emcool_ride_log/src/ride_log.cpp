@@ -101,7 +101,7 @@ void RideLog::seal() {
   counters_.segmentsSealed++;
 }
 
-// The segment's first line: cool-eva's v3 header without the `signals` map — the writer
+// The segment's first line: the v3 header without the `signals` map — the writer
 // puts every signal's unit, group and source in the records that open each file instead.
 bool RideLog::beginSegment(SegmentBuffer& buffer, clock::ClockTrust trust, std::int64_t monotonicMs) {
   TextBuffer header(buffer.payload(), kMaxPayloadBytes);
@@ -131,7 +131,7 @@ SegmentBuffer* RideLog::findFreeBuffer() {
   return nullptr;
 }
 
-// cool-eva seal-on-park: seal when vehicle_state_can enters 60 from something else, at most
+// Seal-on-park: seal when vehicle_state_can enters 60 from something else, at most
 // once per 5 s in case the decode ever chatters about what 60 means.
 void RideLog::sealIfParking(const signals::SignalDef& signal, double value, std::int64_t monotonicMs) {
   if (std::string_view(signal.key) != "vehicle_state_can") {

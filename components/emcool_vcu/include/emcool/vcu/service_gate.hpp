@@ -1,7 +1,7 @@
 #pragma once
 
-// Whether the bike is safe to service, ported from cool-eva src/vcu/service-gate.ts and the
-// evidence half of src/vcu/charge-session.ts. Pure: readings in, a verdict out.
+// Whether the bike is safe to service, including whether a charge is live. Pure: readings in, a
+// verdict out.
 //
 // Every service-mode read and write asks this first, and the runners keep asking while they work.
 // It wants the bike stopped, out of drive and not energized, each on a FRESH reading (a second for
@@ -63,10 +63,10 @@ ServiceGateVerdict evaluateServiceGate(const GateReadings& readings);
 // never does, since a charge keeps the drive energized. The reference's restartMotionBlockers().
 std::vector<std::string> restartMotionBlockers(const GateReadings& readings);
 
-// The verdict as cool-eva's JSON.stringify writes it.
+// The verdict as JavaScript's JSON.stringify writes it.
 void writeVerdictJson(text::TextBuffer& out, const ServiceGateVerdict& verdict);
 
-// --- Charge sessions (src/vcu/charge-session.ts) --------------------------------------------
+// --- Charge sessions ------------------------------------------------------------------------
 
 inline constexpr double kChargeManagerStateAc = 0x02;
 inline constexpr double kChargeManagerStateDc = 0x23;

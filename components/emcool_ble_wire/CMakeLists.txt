@@ -1,5 +1,5 @@
-# The phone link's wire protocol, ported from cool-eva public/lib/ble-wire.js and
-# src/ble-server/session.ts. Pure apart from crypto and inflate, which have one backend per
+# The phone link's wire protocol and session, matching the dashboard's lib/ble-wire.js. Pure
+# apart from crypto and inflate, which have one backend per
 # platform: mbedTLS PSA and the ROM's tinfl on the ESP32, OpenSSL and zlib on the host.
 set(emcool_ble_wire_sources
   src/crypto_self_test.cpp

@@ -3,7 +3,7 @@
 #include "decoders.hpp"
 
 // The BMS's own frames, decoded from its decrypted config file rather than reverse
-// engineered. Ported from cool-eva src/can/decode-bms.ts, which has the provenance.
+// engineered.
 
 namespace emcool::can {
 

@@ -1,10 +1,10 @@
-// End-to-end check of the Bluetooth server against the phone's real protocol code: cool-eva's
-// public/lib/ble-wire.js — the module the dashboard (iOS app and GitHub Pages) runs, with
+// End-to-end check of the Bluetooth server against the phone's real protocol code:
+// dashboard/lib/ble-wire.js — the module the dashboard (iOS app and GitHub Pages) runs, with
 // WebCrypto doing AES-GCM and HMAC and CompressionStream doing deflate-raw. It drives
 // host/build/ble_server_host (the C++ server with the radio replaced by stdin/stdout) through
-// the handshake, the live stream and requests, the way public/lib/ble-link.js would.
+// the handshake, the live stream and requests, the way dashboard/lib/ble-link.js would.
 //
-//   node tools/check-ble.mts <ble_server_host> <golden decode corpus> <cool-eva checkout> [<RIDES dir>]
+//   node tools/check-ble.mts <ble_server_host> <golden decode corpus> <reference checkout> [<RIDES dir>]
 //
 // With a RIDES directory (check_ride_log --corpus's), /dl is downloaded from a copy of it and held
 // to what the laptop reads off the card's own files.
@@ -21,9 +21,9 @@ import { collectFiles, readFileBlob, scanRecords } from "./lib/ride-log-reader.m
 
 const execFileAsync = promisify(execFile);
 
-const [hostBinary, goldenPath, coolEvaDirectory, ridesSource] = process.argv.slice(2);
-if (!hostBinary || !goldenPath || !coolEvaDirectory) {
-  console.error("usage: node tools/check-ble.mts <ble_server_host> <golden decode corpus> <cool-eva checkout> [<RIDES dir>]");
+const [hostBinary, goldenPath, referenceDirectory, ridesSource] = process.argv.slice(2);
+if (!hostBinary || !goldenPath || !referenceDirectory) {
+  console.error("usage: node tools/check-ble.mts <ble_server_host> <golden decode corpus> <reference checkout> [<RIDES dir>]");
   process.exit(2);
 }
 // The server reads a copy, so the check can damage it.
@@ -31,13 +31,13 @@ const workDirectory = await mkdtemp(join(tmpdir(), "emcool-check-ble-"));
 const ridesDirectory = join(workDirectory, "RIDES");
 if (ridesSource) await cp(ridesSource, ridesDirectory, { recursive: true });
 
-// ⚠️ The phone-side wire module is emcool's OWN copy now (dashboard/lib/ble-wire.js), not
-// cool-eva's — emcool renamed the handshake salts (emcool/hello, emcool/session) and the request
-// header (X-Emcool), so this check proves the C++ server handshakes with the dashboard emcool
-// actually ships. The signal registry is still cool-eva's, unchanged, and stays imported from there.
+// ⚠️ The phone-side wire module is emcool's OWN (dashboard/lib/ble-wire.js), not the reference's —
+// emcool has its own handshake salts (emcool/hello, emcool/session) and request header (X-Emcool),
+// so this check proves the C++ server handshakes with the dashboard emcool actually ships. The
+// signal registry is the reference's, unchanged, and stays imported from the reference checkout.
 const emcoolRoot = new URL("..", import.meta.url).pathname;
 const wire = await import(pathToFileURL(join(emcoolRoot, "dashboard/lib/ble-wire.js")).href);
-const registryModule = await import(pathToFileURL(join(coolEvaDirectory, "src/can/registry.ts")).href);
+const registryModule = await import(pathToFileURL(join(referenceDirectory, "src/can/registry.ts")).href);
 const registry = new Map<string, { unit: string; group: string; onDemand?: true }>(
   (registryModule.SIGNALS as { key: string; unit: string; group: string; onDemand?: true }[]).map(signal => [
     signal.key,
@@ -45,9 +45,9 @@ const registry = new Map<string, { unit: string; group: string; onDemand?: true 
   ])
 );
 const { MessageKind, Direction } = wire;
-const load = (path: string) => import(pathToFileURL(join(coolEvaDirectory, path)).href);
+const load = (path: string) => import(pathToFileURL(join(referenceDirectory, path)).href);
 
-// A mode 03 reply with 60 codes from Energica's table, for /stored-dtcs to serve; cool-eva's
+// A mode 03 reply with 60 codes from Energica's table, for /stored-dtcs to serve; the reference's
 // own stored-codes.ts files the same reply, for the body to be compared with.
 const dtcTable = (await load("src/diagnostics/dtc-table.ts")).DTC_TABLE as { obdCode: string }[];
 const storedCodes = dtcTable.filter((_, index) => index % 2 === 1).slice(0, 60).map(entry => {
@@ -55,7 +55,7 @@ const storedCodes = dtcTable.filter((_, index) => index % 2 === 1).slice(0, 60).
   return (letter << 14) | (Number(entry.obdCode[1]) << 12) | parseInt(entry.obdCode.slice(2), 16);
 });
 const storedReply = Uint8Array.from([0x43, storedCodes.length, ...storedCodes.flatMap(code => [code >> 8, code & 0xff])]);
-const coolEvaStoredDtcs = await (async () => {
+const referenceStoredDtcs = await (async () => {
   const obdDtc = await load("src/diagnostics/obd-dtc.ts");
   const stored = await load("src/diagnostics/stored-codes.ts");
   const log = console.log;
@@ -171,7 +171,7 @@ interface Received {
   frameSizes: number[];
 }
 
-// The phone: what public/lib/ble-link.js does, minus Web Bluetooth.
+// The phone: what dashboard/lib/ble-link.js does, minus Web Bluetooth.
 class Phone {
   key: CryptoKey | null = null;
   nextCounter = 0;
@@ -467,8 +467,8 @@ for (const [key, reading] of Object.entries(stalledPatch)) {
   check(Object.is(reading.value, liveAfterStall[key]?.[0]), `after the stall, patch ${key} is not the latest value`);
 }
 
-// 3. Requests: /status in cool-eva's shape; /dtc-table, /fault-infokeys and /stored-dtcs with
-// cool-eva's bodies, several 4 KB pieces each; everything else a 404.
+// 3. Requests: /status in the reference's shape; /dtc-table, /fault-infokeys and /stored-dtcs with
+// the reference's bodies, several 4 KB pieces each; everything else a 404.
 const status = await request(phone, 1, "/status");
 check(status.status === 200 && status.headers["content-type"]?.startsWith("application/json"), `/status ${status.status}`);
 const payload = JSON.parse(status.body);
@@ -481,7 +481,7 @@ check(payload.groups?.battery?.[1] === batteryTotal && payload.groups.battery[0]
 check(payload.groups?.waypoint === undefined, "/status counted the on-demand-only waypoint group");
 const missing = await request(phone, 2, "/fan");
 check(missing.status === 404 && missing.body.includes("isn't available"), `/fan: ${missing.status} ${missing.body}`);
-// /settings: cool-eva's SettingsReply, read-only, with every field the dashboard's views read.
+// /settings: the SettingsReply shape, read-only, with every field the dashboard's views read.
 const settingsReply = await request(phone, 3, "/settings");
 check(settingsReply.status === 200, `/settings ${settingsReply.status}`);
 const settings = JSON.parse(settingsReply.body);
@@ -551,7 +551,7 @@ for (const [path, method] of [["/settings", "PATCH"], ["/settings/apply", "POST"
   const report = await request(phone, 11, "/console/status");
   check(report.status === 200 && report.body === "can: 812 frames/s\n\nwifi: off\n", `GET /console/status: ${report.body}`);
 }
-// cool-eva's Show key (POST /settings/bluetooth-key) reads the key back; emcool refuses, in the
+// The reference's Show key (POST /settings/bluetooth-key) reads the key back; emcool refuses, in the
 // BluetoothKeyReply shape the dashboard reads, and the key appears nowhere in the reply.
 {
   const refused = await request(phone, 4, "/settings/bluetooth-key", "POST", { "X-Emcool": "settings" });
@@ -588,7 +588,7 @@ async function checkDownload(): Promise<void> {
   };
 
   // The newest megabyte. Read with the laptop's own reader it is what those files hold, and saved as
-  // the phone saves it, it imports through cool-eva's db.ts.
+  // the phone saves it, it imports into rides.db.
   const wanted = await expectedDownload(1024 * 1024);
   check(wanted.files.length > 1, "the 1 MB download covers only one part; it should span several");
   const notifiedBefore = phone.frameSizes.reduce((total, size) => total + size, 0);
@@ -625,7 +625,7 @@ async function checkDownload(): Promise<void> {
   );
   const saved = join(workDirectory, name ?? "emcool.log");
   await writeFile(saved, answer.bytes);
-  const summary = await importRideLog([saved], join(workDirectory, "rides.db"), coolEvaDirectory, () => {});
+  const summary = await importRideLog([saved], join(workDirectory, "rides.db"), () => {});
   check(
     summary.readings === fromFiles.length && summary.damagedRecords === 0,
     `/dl imported ${summary.readings} readings, expected ${fromFiles.length}`
@@ -693,15 +693,15 @@ for (const [id, path, module] of [
   const expected = JSON.stringify((await load(module)).buildPayload());
   check(served.status === 200 && served.headers["content-type"]?.startsWith("application/json"), `${path} ${served.status}`);
   check(Number(served.headers["content-length"]) === Buffer.byteLength(expected), `${path} content-length`);
-  check(served.body === expected, `${path}: ${served.body.length} characters, cool-eva ${expected.length}, or different`);
+  check(served.body === expected, `${path}: ${served.body.length} characters, the reference ${expected.length}, or different`);
 }
 // Service mode: the snapshots straight off the card (none yet), and the rest answered later by the
 // task that owns the bus — here a stand-in that answers on its third look with what it was asked.
 const params = await request(phone, 30, "/vcu-params");
-const coolEvaParams = await (await load("src/http/vcu-params.ts")).loadLatestSnapshot("/vcu-params");
+const referenceParams = await (await load("src/http/vcu-params.ts")).loadLatestSnapshot("/vcu-params");
 check(
-  params.status === 200 && params.body === JSON.stringify(coolEvaParams),
-  `/vcu-params: ${params.status} ${params.body}, cool-eva ${JSON.stringify(coolEvaParams)}`
+  params.status === 200 && params.body === JSON.stringify(referenceParams),
+  `/vcu-params: ${params.status} ${params.body}, the reference ${JSON.stringify(referenceParams)}`
 );
 const backup = await request(phone, 31, "/vcu-backup");
 check(backup.status === 404 && backup.body.startsWith("no parameter snapshot in /vcu-params yet"), `/vcu-backup: ${backup.status} ${backup.body}`);
@@ -750,8 +750,8 @@ const servedCodes = JSON.parse(storedDtcs.body);
 check(typeof servedCodes.readAt === "number" && typeof servedCodes.ageMs === "number", "/stored-dtcs has no read time");
 check(Buffer.byteLength(storedDtcs.body) > 8 * 1024, `/stored-dtcs is only ${storedDtcs.body.length} characters`);
 check(
-  JSON.stringify({ ...servedCodes, readAt: 0, ageMs: 0 }) === JSON.stringify({ ...coolEvaStoredDtcs, readAt: 0, ageMs: 0 }),
-  `/stored-dtcs differs from cool-eva's for the same reply: ${storedDtcs.body.slice(0, 300)}`
+  JSON.stringify({ ...servedCodes, readAt: 0, ageMs: 0 }) === JSON.stringify({ ...referenceStoredDtcs, readAt: 0, ageMs: 0 }),
+  `/stored-dtcs differs from the reference's for the same reply: ${storedDtcs.body.slice(0, 300)}`
 );
 const noSlash = await request(phone, 3, "status");
 check(noSlash.status === 400, `a path without / got ${noSlash.status}`);

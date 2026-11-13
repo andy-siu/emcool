@@ -1,8 +1,8 @@
 #pragma once
 
-// The pure half of the service actions, ported from cool-eva src/vcu/service-actions.ts: reading
-// and interpreting the on-bike service stamp, deciding whether this Pi's (bike's) clock is fit to
-// copy, the 0x120 RTC-sync frame, and the OBD Mode 04 clear-DTCs request. Numbers in, numbers out.
+// The pure half of the service actions: reading and interpreting the on-bike service stamp,
+// deciding whether emcool's clock is fit to copy, the 0x120 RTC-sync frame, and the OBD Mode 04
+// clear-DTCs request. Numbers in, numbers out.
 
 #include <array>
 #include <cstdint>

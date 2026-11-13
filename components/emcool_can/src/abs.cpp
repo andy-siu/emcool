@@ -1,13 +1,11 @@
 #include "decoders.hpp"
 
-// Ported from cool-eva src/can/abs.ts; evidence in cool-eva docs/can-decode-findings.md.
-
 namespace emcool::can {
 
 namespace {
 
 // Within ~1 % of GPS. The residual is the tyres, so the GPS-fitted pair is deliberately not
-// used: it would drift with tyre wear and break front/rear comparability. cool-eva abs.ts.
+// used: it would drift with tyre wear and break front/rear comparability.
 constexpr double kWheelSpeedKmhPerCount = 0.05625;
 
 }  // namespace
