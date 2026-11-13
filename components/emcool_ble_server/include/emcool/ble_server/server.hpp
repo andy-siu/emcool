@@ -50,8 +50,9 @@ class BleServer {
   // 128-character password fits with every character escaped twice. A longer body is answered 413,
   // never cut short and acted on.
   static constexpr std::size_t kMaxRequestBodyBytes = 1024;
-  // cool-eva sends response bodies in pieces of at most this much, each its own message.
-  static constexpr std::size_t kResponseChunkBytes = 4 * 1024;
+  // Response bodies go in pieces of at most this much, each its own message, which must fit
+  // ble::kMaxMessageBytes with its header. The phone joins them, whatever their size.
+  static constexpr std::size_t kResponseChunkBytes = 2 * 1024;
   static constexpr std::uint16_t kDefaultAttMtu = 23;
   static constexpr std::int64_t kRequestTimeoutMs = 180000;
   // cool-eva's Rejections: a summary log line and up to four clear refusals per window.

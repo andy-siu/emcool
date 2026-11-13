@@ -23,6 +23,7 @@
 #include <utility>
 
 #include "ble_link.hpp"
+#include "boot_guard.hpp"
 #include "bootloader_random.h"
 #include "can_bus.hpp"
 #include "dashboard_console.hpp"
@@ -117,6 +118,7 @@ struct BluetoothParts {
   const emcool::ride_log::SessionId& session;
   emcool::BleLinkCounters& counters;
   emcool::ble_server::ConsoleEndpoints& console;
+  bool afterBoot = false;
 };
 bool startBluetooth(const BluetoothParts& parts, const std::string& key);
 std::string dashboardInstanceId();
@@ -128,23 +130,34 @@ void logSettings(const emcool::settings::Settings& settings);
 extern "C" void app_main() {
   const esp_app_desc_t* app = esp_app_get_description();
   emcool::logInfo(kTag, "emcool %s, ESP-IDF %s", app->version, app->idf_ver);
+  const bool safeMode = emcool::beginBoot();
+  emcool::noteHeap("boot");
   const bool nvsReady = initNvs();
   // cool-eva's /etc/default/cool-eva, from NVS; defaults wherever nothing has been saved.
   static emcool::NvsSettingsStorage settingsStorage;
   static emcool::settings::RuntimeSettings runtimeSettings(emcool::settings::Settings::load(settingsStorage));
   const emcool::settings::Settings& settings = runtimeSettings.boot();
   logSettings(settings);
+  // The console starts last, or alone: in safe mode, and when a step below fails, so a setting can
+  // still be changed. Before, a failed step returned with no console at all.
+  const auto startConsole = [] {
+    emcool::startSettingsConsole(settingsStorage, runtimeSettings);
+    emcool::noteHeap("the serial console");
+    emcool::bootFinished();
+  };
+  if (safeMode) return startConsole();
 
   if (CONFIG_EMCOOL_CAN_TX_GPIO < 0 || CONFIG_EMCOOL_CAN_RX_GPIO < 0) {
     emcool::logError(kTag, "CAN pins are set to -1 (idf.py menuconfig → emcool), so the CAN bus stays off");
-    return;
+    return startConsole();
   }
   static emcool::CanBus bus;
   // Off the bus entirely (listen-only) unless something is meant to transmit.
   if (!bus.start(CONFIG_EMCOOL_CAN_TX_GPIO, CONFIG_EMCOOL_CAN_RX_GPIO, settings.obdEnabled)) {
     emcool::logError(kTag, "CAN bus did not start; nothing will be decoded");
-    return;
+    return startConsole();
   }
+  emcool::noteHeap("the CAN bus");
 
   // The big buffers come from the heap, once: with Bluetooth on, the controller's reservation
   // leaves the static-data region too small for them, and the heap spans more of the RAM.
@@ -154,12 +167,12 @@ extern "C" void app_main() {
   auto* writerScratch = new (std::nothrow) std::uint8_t[emcool::ride_log::kRecordCapacityBytes];
   if (segmentBuffers == nullptr || writerScratch == nullptr) {
     emcool::logError(kTag, "no memory for the ride log's buffers");
-    return;
+    return startConsole();
   }
   static emcool::FreeRtosSegmentQueue segmentQueue;
   if (!segmentQueue.create(2)) {
     emcool::logError(kTag, "no memory for the segment queue");
-    return;
+    return startConsole();
   }
   static emcool::FatCardSpace cardSpace;
   static emcool::ride_log::LogWriter writer({std::string(emcool::kSdMountPoint) + "/RIDES"}, session,
@@ -174,9 +187,10 @@ extern "C" void app_main() {
   // /dl reads the card from the Bluetooth task; with no card configured there is nothing to read.
   static emcool::ride_log::LogDownload logDownload(cardAccess);
   emcool::ride_log::LogDownload* download = emcool::startRideLogTask(rideLogTaskContext) ? &logDownload : nullptr;
+  emcool::noteHeap("the ride log");
 
   auto* storeAllocation = allocate<emcool::signals::SignalStore>("live state", rideLog);
-  if (storeAllocation == nullptr) return;
+  if (storeAllocation == nullptr) return startConsole();
   emcool::signals::SignalStore& store = *storeAllocation;
   static std::mutex storeMutex;
   static emcool::can::FrameDecoder decoder;
@@ -186,30 +200,36 @@ extern "C" void app_main() {
   // Everything that transmits, and service mode's snapshots on the card.
   auto* diagnostics = allocate<emcool::DiagnosticsTask>("the diagnostics task", bus, store, storeMutex, settings,
                                                         std::string(emcool::kSdMountPoint) + "/vcu-params");
-  if (diagnostics == nullptr || !diagnostics->start()) return;
+  if (diagnostics == nullptr || !diagnostics->start()) return startConsole();
+  emcool::noteHeap(settings.obdEnabled ? "live state and diagnostics (OBD on)" : "live state and diagnostics");
   // Settings → Bike console: the console's commands and status report over the Bluetooth link.
   static emcool::StatusText statusText;
   static emcool::DashboardConsoleHost consoleHost(statusText, store, storeMutex, *diagnostics);
   static emcool::ble_server::ConsoleEndpoints consoleEndpoints(settingsStorage, runtimeSettings, consoleHost);
   // NimBLE keeps PHY calibration in NVS; without it the radio can't start.
-  static const BluetoothParts bluetoothParts{settings, store,           storeMutex,      storageReport,  *diagnostics,
-                                             download, session,         bleLinkCounters, consoleEndpoints};
+  static BluetoothParts bluetoothParts{settings, store,           storeMutex,      storageReport,  *diagnostics,
+                                       download, session,         bleLinkCounters, consoleEndpoints};
   const bool keyAtBoot = emcool::ble::BleSession::secretIsUsable(settings.bleSecret);
   if (!keyAtBoot) {
     emcool::logWarning(kTag, "Bluetooth is off: no Bluetooth key. On the serial console: set BLE_SECRET <key>, and "
                              "Bluetooth starts at once");
   }
   const bool bluetooth = nvsReady && keyAtBoot && startBluetooth(bluetoothParts, settings.bleSecret);
+  if (bluetooth) emcool::noteHeap("Bluetooth");
   // Started at most once per boot: with no key at boot, the first `set BLE_SECRET` starts it.
   runtimeSettings.setBluetoothStarter(
       nvsReady && !keyAtBoot ? emcool::settings::RuntimeSettings::BluetoothStarter(
-                                   [](const std::string& key) { return startBluetooth(bluetoothParts, key); })
+                                   [](const std::string& key) {
+                                     bluetoothParts.afterBoot = true;
+                                     return startBluetooth(bluetoothParts, key);
+                                   })
                              : nullptr,
       bluetooth);
   // Wi-Fi after Bluetooth: they share the radio, and coexistence wants the Bluetooth controller up first.
   static emcool::WifiCounters wifiCounters;
   const bool wifi = nvsReady && emcool::startWifi(settings, settingsStorage, runtimeSettings,
                                                   download != nullptr ? &cardAccess : nullptr, wifiCounters);
+  if (wifi) emcool::noteHeap("Wi-Fi");
   static emcool::StatusReport status({bus, store, storeMutex, rideLog, writer, rideLogTaskCounters, clock,
                                       bleLinkCounters, wifiCounters, wifi, runtimeSettings, diagnostics, statusText});
   static DecodeContext context{bus, decoder, packTemperature, store, storeMutex, rideLog, clock, status, *diagnostics};
@@ -217,7 +237,7 @@ extern "C" void app_main() {
                               kDecodeTaskCore) != pdPASS) {
     emcool::logError(kTag, "could not create the decode task (%" PRIu32 " bytes of stack)", kDecodeTaskStackBytes);
   }
-  emcool::startSettingsConsole(settingsStorage, runtimeSettings);
+  startConsole();
 }
 
 namespace {
@@ -330,7 +350,11 @@ bool startBluetooth(const BluetoothParts& parts, const std::string& key) {
                                       : allocate<emcool::ble_server::BleServer>("the Bluetooth server", key,
                                                                                  parts.store, parts.storeMutex,
                                                                                  *endpoints);
-  return server != nullptr && emcool::startBleLink(*server, parts.settings.bleName.c_str(), parts.counters);
+  const bool started =
+      server != nullptr && emcool::startBleLink(*server, parts.settings.bleName.c_str(), parts.counters);
+  // A start from a console after boot: the boot log's last heap line no longer covers it.
+  if (started && parts.afterBoot) emcool::noteHeap("Bluetooth");
+  return started;
 }
 
 // What this boot runs with — the secret only by its length — and cool-eva's BMS line.

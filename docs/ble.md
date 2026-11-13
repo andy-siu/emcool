@@ -103,7 +103,7 @@ The key lives in NVS, not in the firmware image or the build directory. The cons
 
 - **No HTTP tunnel.** cool-eva replays each Bluetooth request into its own HTTP server. emcool has no HTTP server, so requests are answered directly (`DashboardEndpoints`).
 - **Response bodies are read a piece at a time.** cool-eva sends a body in 4 KB messages, and so does emcool, but it never holds a whole one: static bodies come out of flash, and `/stored-dtcs` is written out again for each piece from a copy of the lists taken when the request arrived, so the pieces always agree.
-- **Snapshots go in chunks.** A snapshot is about 25 KB of JSON, and emcool's messages are capped at about 4.5 KB to fit the ESP32's RAM.
+- **Snapshots go in chunks.** A snapshot is about 25 KB of JSON, and emcool's messages are capped at 2.5 KB to fit the ESP32's RAM.
   - This is safe because the dashboard's store (`public/lib/store.js` `apply()`) folds every message in key by key, snapshot or patch alike.
   - One cost: the pack-resistance estimate pairs `pack_v` with `pack_a` only within one message, so a snapshot chunk that splits them gives it no pair. Patches, which carry each 0x200 frame's values together, still do.
 - **Real flow control instead of a guessed pace.** cool-eva paces BlueZ notifications at a guessed 24 kB/s.
@@ -114,19 +114,21 @@ The key lives in NVS, not in the firmware image or the build directory. The cons
 
 ## Memory
 
-The server's buffers come from the heap once at boot, about 52 KB:
+The server's buffers come from the heap once, when Bluetooth starts, about 37 KB. Each is sized by the message cap (`kMaxMessageBytes`, 2.5 KB), which was 4.5 KB until Bluetooth, OBD and the card together ran the heap out at boot:
 
 | Buffer | Size |
 | --- | --- |
-| Three outbound slots | ~14 KB |
-| Session, including the deflate tables | ~24 KB |
-| Frame assembler | ~5 KB |
-| Header buffer | ~4.5 KB |
+| Three outbound slots | ~7.6 KB |
+| Session, including the deflate tables | ~18 KB |
+| Frame assembler | ~2.5 KB |
+| Header buffer | ~2.5 KB |
 | The endpoints' body buffer | 4 KB |
+
+Response bodies go in 2 KB pieces. The phone joins them, so a smaller piece only means more messages.
 
 A `/dl` in progress adds one open file on the card, which FatFs allocates when it's opened (a `FIL` and its 4 KB sector buffer, since `FATFS_USE_DYN_BUFFERS` is on). The mount allows six open files: the ride log's two, two for service mode's snapshots, the download's one, and one to spare.
 
-With Bluetooth on, the static-data region is too small for them. The 10 s status line reports free heap and its low point. If the heap runs short on the bike, the first things to shrink are the slot count and the message cap (`kMaxMessageBytes`).
+With Bluetooth on, the static-data region is too small for them. The boot log prints the heap left after each step, `heap after Bluetooth: …` among them, and the 10 s status line reports free heap and its low point. The ESP-IDF side is trimmed in `sdkconfig.defaults`: the controller allows one connection, not three, and NimBLE keeps about half its default buffers. If the heap still runs short, the next things to shrink are the slot count and the message cap.
 
 ## Verified, and not
 

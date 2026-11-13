@@ -76,6 +76,28 @@ OBD_ENABLED=1                 the CAN controller becomes an active node; polls O
 
 ⚠️ `SERVICE_WRITE_ENABLED` is the one that lets a web page change a calibration EEPROM, stamp the service record, clear the fault memory or actuate charging. It is off by default and would be even if the others weren't, and the boot journal says so loudly when it's on.
 
+## When a setting runs the memory out
+
+Each step of startup logs the memory (heap) it leaves, so a boot log shows where it went:
+
+```
+I (412) boot: heap after the CAN bus: 187264 free, largest block 110592, lowest so far 187000
+I (980) boot: heap after Bluetooth: 61220 free, largest block 31744, lowest so far 60900
+```
+
+An allocation that fails logs its size and what was left, as `E (heap) … could not get N bytes`, just before whatever needed it gives up or crashes.
+
+**Safe mode.** If the board crashes (a panic or a watchdog) within 30 s of boot three times in a row, the next boot starts only the serial console. CAN, OBD, the ride log, Bluetooth and Wi-Fi all stay off, so a setting that crashes the boot can be undone:
+
+```
+E (40) boot: SAFE MODE: 3 crashes in a row, so only the serial console runs …
+emcool> show
+emcool> set OBD_ENABLED 0
+emcool> restart
+```
+
+The `restart` boots normally. A power cycle also leaves safe mode, since it clears the count. If a step of startup fails without crashing, for example on no memory for a buffer, the console still starts, so you can always reach it.
+
 ## The dashboard's Bike console
 
 **Menu → Settings → Bike console** runs this console's commands over the Bluetooth link. It writes the same NVS, with the same checks. A change made there is a change made at `emcool>`, and `show` here reports it. It offers:
