@@ -11,6 +11,7 @@
 #include <mutex>
 #include <string>
 
+#include "card_files.hpp"
 #include "dashboard_console.hpp"
 #include "emcool/log.hpp"
 #include "emcool/settings/remote_console.hpp"
@@ -123,11 +124,26 @@ bool drainLog(int client) {
 // ---------------------------------------------------------------------------------- the console
 
 // The console's commands, as the USB console runs them: `help`, `restart`, and the settings'.
+// The card commands' state for the Wi-Fi console: its folder, kept from client to client unless reset.
+std::unique_ptr<files::CardShell> cardShell;
+
 void runCommand(int argumentCount, char** arguments, std::string& output) {
   const std::string_view command = arguments[0];
+  if (files::CardShell::handles(command)) {
+    if (cardFiles().card == nullptr) {
+      output += kNoCardConfigured;
+      return;
+    }
+    if (!cardShell) cardShell = std::make_unique<files::CardShell>(*cardFiles().card, cardFiles().gate, "Wi-Fi console", 16 * 1024);
+    cardShell->run(argumentCount, arguments, [&](std::string& piece) { output += piece; });
+    return;
+  }
   if (command == "help") {
     output += "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | network | restart | exit\n"
-              "`show` lists every setting and what it does is in the USB console's `help`.\n";
+              "`show` lists every setting and what it does is in the USB console's `help`.\n"
+              "The card: ";
+    output += files::CardShell::summary();
+    output += "\n";
     return;
   }
   if (command == "network") {
@@ -163,6 +179,7 @@ void serveConsoleClient(int client, settings::RemoteConsole& console) {
   const int on = 1;
   setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &on, sizeof on);
   std::string out = console.connected(nowMs());
+  if (cardShell) cardShell->reset();
   if (!sendAll(client, out.data(), out.size())) return;
   std::int64_t lastHeardMs = nowMs();
   bool wasAuthenticated = false;

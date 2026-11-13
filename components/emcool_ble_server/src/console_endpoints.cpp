@@ -46,10 +46,13 @@ ConsoleAnswer reply(int status, bool ok, const std::string& output, std::uint32_
   return {status, kJson, std::move(body)};
 }
 
-constexpr std::string_view kHelp =
-    "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | network | restart\n"
-    "Quote a value with spaces: set WIFI_SSID \"garage wifi\". Most settings take effect after restart; "
-    "the status report's apply at once.\n";
+std::string helpText() {
+  return std::string("show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | network | restart\n"
+                     "Quote a value with spaces: set WIFI_SSID \"garage wifi\". Most settings take effect after "
+                     "restart; the status report's apply at once.\n"
+                     "The card: ") +
+         std::string(files::CardShell::summary()) + "\n";
+}
 
 }  // namespace
 
@@ -73,7 +76,26 @@ std::optional<ConsoleAnswer> ConsoleEndpoints::begin(std::string_view method, st
   return run(body);
 }
 
+void ConsoleEndpoints::abandon() {
+  waitingForStatus_ = false;
+  askedForStatus_ = false;
+  if (cardRunning_ && card_ != nullptr) {
+    std::string ignored;
+    card_->cancel(ignored);
+  }
+  cardRunning_ = false;
+  cardOutput_.clear();
+}
+
 std::optional<ConsoleAnswer> ConsoleEndpoints::poll() {
+  if (cardRunning_) {
+    if (!card_->step(cardOutput_)) return std::nullopt;
+    cardRunning_ = false;
+    const bool ok = card_->succeeded();
+    std::string output = std::move(cardOutput_);
+    cardOutput_.clear();
+    return reply(ok ? 200 : 400, ok, output, running_.revision());
+  }
   if (!waitingForStatus_) return std::nullopt;
   const bool first = !askedForStatus_;
   askedForStatus_ = true;
@@ -161,7 +183,19 @@ std::optional<ConsoleAnswer> ConsoleEndpoints::run(std::string_view body) {
   const int count = static_cast<int>(words.size());
   const std::string_view command = words[0];
 
-  if (command == "help") return reply(200, true, std::string(kHelp), revisionNow);
+  if (command == "help") return reply(200, true, helpText(), revisionNow);
+  if (files::CardShell::handles(command)) {
+    if (card_ == nullptr) return reply(503, false, "no card: the ride log isn't running, so neither is the card (the boot log says why)\n", revisionNow);
+    cardOutput_.clear();
+    if (card_->begin(count, arguments.data(), cardOutput_)) {
+      const bool ok = card_->succeeded();
+      std::string output = std::move(cardOutput_);
+      cardOutput_.clear();
+      return reply(ok ? 200 : 400, ok, output, revisionNow);
+    }
+    cardRunning_ = true;
+    return std::nullopt;
+  }
   // A report now, as on the console, only here it comes back to the page rather than to the serial log.
   if (command == "status" && count == 1) {
     waitingForStatus_ = true;

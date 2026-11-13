@@ -1,7 +1,9 @@
 #include "settings_console.hpp"
 
 #include <cstdio>
+#include <memory>
 
+#include "card_files.hpp"
 #include "emcool/log.hpp"
 #include "esp_console.h"
 #include "esp_system.h"
@@ -19,12 +21,27 @@ constexpr const char* kNamespace = "emcool";
 
 settings::SettingsStorage* consoleStorage = nullptr;
 settings::RuntimeSettings* runningSettings = nullptr;
+// The card commands' state for this console: its folder, and a command in progress.
+std::unique_ptr<files::CardShell> cardShell;
 
 int runCommand(int argumentCount, char** arguments) {
   std::string output;
   const int status = settings::runSettingsCommand(*consoleStorage, *runningSettings, argumentCount, arguments, output);
   std::fputs(output.c_str(), stdout);
   return status;
+}
+
+// A card command, printed as it goes: rm -r and a big cp print their summary at the end.
+int card(int argumentCount, char** arguments) {
+  if (cardFiles().card == nullptr) {
+    std::fputs(kNoCardConfigured, stdout);
+    return 1;
+  }
+  if (!cardShell) cardShell = std::make_unique<files::CardShell>(*cardFiles().card, cardFiles().gate, "USB console", 64 * 1024);
+  return cardShell->run(argumentCount, arguments, [](std::string& piece) {
+    std::fputs(piece.c_str(), stdout);
+    std::fflush(stdout);
+  });
 }
 
 int network(int, char**) {
@@ -158,6 +175,15 @@ bool startSettingsConsole(settings::SettingsStorage& storage, settings::RuntimeS
     result = esp_console_cmd_register(&command);
     if (result != ESP_OK) {
       logError(kTag, "registering `%s` failed: %s", command.command, esp_err_to_name(result));
+      return false;
+    }
+  }
+  for (const files::CardCommand& command : files::CardShell::commands()) {
+    const esp_console_cmd_t entry = {.command = command.name, .help = command.help, .hint = command.hint, .func = card,
+                                     .argtable = nullptr, .func_w_context = nullptr, .context = nullptr};
+    result = esp_console_cmd_register(&entry);
+    if (result != ESP_OK) {
+      logError(kTag, "registering `%s` failed: %s", command.name, esp_err_to_name(result));
       return false;
     }
   }

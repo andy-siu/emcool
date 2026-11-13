@@ -24,7 +24,7 @@ The phone dashboard runs the same commands over Bluetooth, in **Menu → Setting
 
 ## Commands
 
-There are six, no more:
+Six change the settings and the bike; the rest work on the microSD card ([below](#the-card)).
 
 | Command | What it does |
 | --- | --- |
@@ -40,6 +40,40 @@ There is deliberately **no `get`** — `show` prints everything, and it is short
 **When a change applies.** Settings are read at boot, so almost every change takes effect at the next `restart`; `show` marks any change still waiting for one. Two exceptions apply the instant they're set: the status-report settings (`STATUS_REPORT`, `STATUS_INTERVAL_S`), and `BLE_SECRET` while Bluetooth is off, which turns it on. `set`/`unset` tell you which case you're in.
 
 **Secrets are never printed back.** `show` reports only whether a secret is set (and, for the passwords, its length), never its characters.
+
+## The card
+
+These work on the microSD card, the same on this console, the Wi-Fi console and the dashboard's Bike console:
+
+| Command | What it does |
+| --- | --- |
+| `dir [PATH]` (or `ls`) | Lists a folder: each entry's date, size (`<DIR>` for a folder) and name, in name order, then the totals and the card's free space. `dir *.LOG` lists what matches. A folder of more than 100 lists its first 100 and says how many more. |
+| `cd [FOLDER]` | Changes this console's folder: `cd RIDES`, `cd ..`, `cd /`. Alone, back to the top. Each console has its own. |
+| `pwd` | Prints this console's folder. |
+| `type FILE` (or `cat`) | Prints a text file's first 4 KB. A file with a NUL byte in it isn't text, and is refused. |
+| `mkdir FOLDER` | Makes a folder. |
+| `rmdir FOLDER` | Removes an empty folder. |
+| `rm [-r] PATH...` | Deletes files: `rm OLD.TXT`, `rm RIDES/00003/*`. With `-r`, folders too, and everything in them. |
+| `cp FROM... TO` | Copies a file, or several into a folder: `cp RIDES/00003/PART0001.LOG SAVED`. |
+| `mv FROM... TO` | Moves or renames a file or a folder. |
+
+Paths start at the card's top folder, `/`, and go with `/` between folders. Names ignore case, as FAT does: `rides/00003` is `RIDES/00003`. A `*` or `?` in the last part of a path matches several names: `rm RIDES/00004/PART00*`. Quote a name with a space in it: `cd "old rides"`.
+
+**What they won't do.** The ride log and service mode keep files open on the card, and removing or renaming an open file corrupts it. So these are refused, with the reason:
+
+- **The ride being recorded,** `RIDES/<this boot>`: nothing in it is deleted, moved or renamed. `rm -r RIDES/*` deletes every other ride and says it kept this one.
+- **`RIDES` itself,** and anything new in it: no `mkdir`, `cp` or `mv` into `RIDES`. The ride log numbers the folders there, and when the card fills it deletes the oldest parts on its own, so a file of yours there could be deleted.
+- **Anything in `RIDES` while the ride log is starting,** for the moment after the card mounts.
+- **`vcu-params`,** service mode's folder: it can open a file there at any moment. List, `type` and `cp` out of it all you like.
+- **The card's top folder,** which can't be removed or moved.
+
+`cp` and `mv` never overwrite: a name that's already there is refused. `cp` leaves 16 MB free, room for the ride log's next part, and refuses a copy that wouldn't.
+
+**One console at a time** changes the card. While one runs `rm`, `cp`, `mv`, `mkdir` or `rmdir`, the others are told *the USB console is changing the card* (or whichever it is); they can still list and print.
+
+**Long commands.** `rm -r` of a big folder and `cp` of a ride-log part (8 MB) take a while; how long on this board's card hasn't been measured yet. Here and over Wi-Fi the console waits until the command finishes. The Bike console runs it in slices, so the phone's link keeps going, and shows the summary when it finishes; leaving the page stops it, and a part-made copy is deleted. Every change is logged under the `card` tag with the command and the console it came from.
+
+**Deleting ride-log parts by hand.** The ride log deletes its oldest parts itself when the card fills, so this is rarely needed. When it is, `rm -r RIDES/00002` deletes one old ride. The ride log counts its parts again at its next quiet moment, so the status report's part count catches up within a few seconds.
 
 ## Every setting
 
@@ -105,7 +139,7 @@ The `restart` boots normally. A power cycle also leaves safe mode, since it clea
 - **Every setting**, each on its own card: its saved value, the value in use now, a note when it is waiting for a restart, and its help text. Flags get an on/off menu, integers a number field, and text and passwords a text field. **Save** runs `set NAME VALUE`. **Default** runs `unset NAME`. The two status-report settings save as `status on|off` and `status every SECONDS`, so they apply at once, as here.
 - **Status**, the status report this console prints, read on request over the window since the last report, followed by the `network` report.
 - **Restart**, with two taps.
-- **A command line** for `show`, `status`, `network`, `help` and any `set`/`unset`, with a transcript. A secret typed into it shows as `••••••••` in the transcript.
+- **A command line** for `show`, `status`, `network`, `help`, any `set`/`unset`, and the [card's commands](#the-card), with a transcript. A secret typed into it shows as `••••••••` in the transcript.
 
 What differs from this console:
 

@@ -2,8 +2,9 @@
 
 // The settings on the device: NVS storage under the "emcool" namespace, and the serial
 // console that changes them — `idf.py monitor`, then `show`, `set NAME VALUE`, `unset NAME`,
-// `status [on | off | every SECONDS]`, `network`, `restart`, `help`. A secret is never printed
-// back: a password only by its length, the Bluetooth key only as set or not.
+// `status [on | off | every SECONDS]`, `network`, `restart`, `help`, and the card's commands
+// (`dir`, `cd`, `type`, `rm`, `cp`, `mv`, …; card_files.hpp). A secret is never printed back: a
+// password only by its length, the Bluetooth key only as set or not.
 
 #include <optional>
 #include <span>

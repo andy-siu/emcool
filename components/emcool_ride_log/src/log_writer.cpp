@@ -83,11 +83,7 @@ bool LogWriter::open() {
   // Numbered before any old boot is rotated away, so numbers only ever go up.
   const std::vector<std::uint32_t> boots = numberedEntries(config_.rootDirectory, "", "");
   bootNumber_ = (boots.empty() ? 0 : boots.back()) + 1;
-  std::uint32_t partsOnCard = 0;
-  for (const std::uint32_t boot : boots) {
-    partsOnCard += static_cast<std::uint32_t>(numberedEntries(bootDirectory(boot), layout::kPartPrefix, layout::kPartSuffix).size());
-  }
-  counters_.partsOnCard.store(partsOnCard, std::memory_order_relaxed);
+  recountParts();
   nextPartBlocked_ = false;
   if (!makeRoomForPart()) {
     return false;
@@ -136,9 +132,21 @@ bool LogWriter::write(SegmentBuffer& segment) {
   return writeRecordAtEnd(segment.bytes, length);
 }
 
+void LogWriter::recountParts() {
+  std::uint32_t partsOnCard = 0;
+  for (const std::uint32_t boot : numberedEntries(config_.rootDirectory, "", "")) {
+    partsOnCard += static_cast<std::uint32_t>(numberedEntries(bootDirectory(boot), layout::kPartPrefix, layout::kPartSuffix).size());
+  }
+  counters_.partsOnCard.store(partsOnCard, std::memory_order_relaxed);
+}
+
 bool LogWriter::prepareAhead() {
   if (!isOpen()) {
     return false;
+  }
+  if (cardChanged_.exchange(false, std::memory_order_relaxed)) {
+    recountParts();
+    nextPartBlocked_ = false;
   }
   if (current_.allocatedBytes < config_.partBytes) {
     zeroFillStep(current_);

@@ -26,6 +26,9 @@
 #     the reference's own controller driven through scripted charges commands and reports the same
 #   - the settings and the serial console's commands behave, and the dashboard's Bike console runs
 #     them with the same checks, refuses a stale page's save, and guards its restart
+#   - the card commands (dir, cd, type, rm, cp, mv, …) work on a folder standing in for the card,
+#     refuse the ride being recorded, RIDES and vcu-params, let one console at a time change it, and
+#     leave nothing half-done when the card goes or the phone gives up
 #   - the ride log's rules hold, and the decoder corpus pushed through the whole C++ pipeline
 #     onto disk reads back exactly on the laptop, survives simulated power cuts and card
 #     damage, and imports into rides.db
@@ -137,6 +140,10 @@ node "${node_flags[@]}" "$root/tools/generate-golden-charge-auto-loop.mts" "$ref
 }
 "$build/check_console" 2>"$build/check_console.stderr" || {
   grep -vE '^[IW] console: ' "$build/check_console.stderr" >&2
+  exit 1
+}
+"$build/check_card_shell" 2>"$build/check_card_shell.stderr" || {
+  grep -vE '^[IW] card: ' "$build/check_card_shell.stderr" >&2
   exit 1
 }
 

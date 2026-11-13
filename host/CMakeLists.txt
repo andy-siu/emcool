@@ -48,6 +48,7 @@ add_subdirectory(../components/emcool_obd emcool_obd)
 add_subdirectory(../components/emcool_async emcool_async)
 add_subdirectory(../components/emcool_vcu emcool_vcu)
 add_subdirectory(../components/emcool_settings emcool_settings)
+add_subdirectory(../components/emcool_files emcool_files)
 add_subdirectory(../components/emcool_ble_server emcool_ble_server)
 
 add_executable(ble_server_host tests/ble_server_host.cpp)
@@ -60,7 +61,10 @@ add_executable(check_settings tests/check_settings.cpp)
 target_link_libraries(check_settings PRIVATE emcool_settings)
 
 add_executable(check_console tests/check_console.cpp)
-target_link_libraries(check_console PRIVATE emcool_ble_server emcool_settings)
+target_link_libraries(check_console PRIVATE emcool_ble_server emcool_files emcool_settings)
+
+add_executable(check_card_shell tests/check_card_shell.cpp)
+target_link_libraries(check_card_shell PRIVATE emcool_files)
 
 
 

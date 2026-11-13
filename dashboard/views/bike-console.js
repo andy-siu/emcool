@@ -495,7 +495,7 @@ function Editor(setting, draft) {
 function CommandCard() {
   return SettingsCard(
     "Command line",
-    "Type a command as at the emcool> prompt: help, show, status, network, set NAME VALUE, unset NAME. Quote a value with spaces.",
+    "Type a command as at the emcool> prompt: help, show, status, network, set NAME VALUE, unset NAME, and the card's dir, cd, type, mkdir, rm, cp and mv. Quote a value with spaces.",
     div(
       { class: "settings-row" },
       div(
