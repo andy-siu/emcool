@@ -10,6 +10,7 @@
 //                              resend one frame in the background, leaving the console free
 //   can-dump [id]              print frames as they arrive, until a key is pressed
 //   poller [on | off]          stop or restart the OBD poller, so manual sends don't clash with it
+//   psu [on | off | status]    hold the PSU's 12 V rail on, as the VCU does; shares can-repeat's slot
 //
 // app_main wires the bus and the diagnostics task in with setConsoleBus() (can_bus.hpp) and
 // setConsoleDiagnostics() below, before the console starts.
@@ -22,7 +23,7 @@ namespace emcool {
 // until OBD exists.
 void setConsoleDiagnostics(DiagnosticsTask* diagnostics);
 
-// Registers can-send, can-repeat, can-dump and poller on the UART console. Call from startSettingsConsole.
+// Registers can-send, can-repeat, can-dump, poller and psu on the UART console. Call from startSettingsConsole.
 bool registerCanConsoleCommands();
 
 }  // namespace emcool

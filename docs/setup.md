@@ -38,7 +38,7 @@ Seven change the settings and the firmware; the rest work on the microSD card ([
 
 There is deliberately **no `get`** — `show` prints everything, and it is short. An unknown name tells you so and points at `show`.
 
-**Manual CAN, USB only.** The USB console also has `can-send`, `can-dump` and `poller`, for putting a frame on the bike's bus by hand, watching raw frames, and stopping or restarting the OBD poller. They need `OBD_ENABLED` and are **not** on the Wi-Fi or Bluetooth consoles, so nothing over the network can reach the bus. See [`obd.md`](obd.md#manual-can-from-the-usb-console).
+**Manual CAN, USB only.** The USB console also has `can-send`, `can-repeat`, `can-dump`, `poller` and `psu`, for putting a frame on the bike's bus by hand, watching raw frames, stopping or restarting the OBD poller, and holding the PSU's 12 V rail on. They need `OBD_ENABLED` and are **not** on the Wi-Fi or Bluetooth consoles, so nothing over the network can reach the bus. See [`obd.md`](obd.md#manual-can-from-the-usb-console).
 
 **When a change applies.** Settings are read at boot, so almost every change takes effect at the next `restart`; `show` marks any change still waiting for one. Two exceptions apply the instant they're set: the status-report settings (`STATUS_REPORT`, `STATUS_INTERVAL_S`), and `BLE_SECRET` while Bluetooth is off, which turns it on. `set`/`unset` tell you which case you're in.
 

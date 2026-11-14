@@ -12,6 +12,7 @@
 
 #include "check.hpp"
 #include "emcool/can/console.hpp"
+#include "emcool/can/psu.hpp"
 
 using emcool::can::CanSendCommand;
 using emcool::can::ConsoleFrame;
@@ -151,6 +152,31 @@ void checkRepeat() {
   }
 }
 
+void checkPsu() {
+  // A real 0x501 from the bike with its rail on: 12 776 mV main, 9 076 mV standby, 907 mA.
+  const std::array<std::uint8_t, 8> on = {0xE8, 0x31, 0x74, 0x23, 0x8B, 0x03, 0xD2, 0x0A};
+  const auto railOn = emcool::can::decodePsuMonitor(on);
+  EMCOOL_CHECK(railOn && railOn->mainMv == 12776 && railOn->standbyMv == 9076 && railOn->loadMa == 907,
+               "0x501 rail on: %u / %u / %u", railOn ? static_cast<unsigned>(railOn->mainMv) : 0,
+               railOn ? static_cast<unsigned>(railOn->standbyMv) : 0, railOn ? static_cast<unsigned>(railOn->loadMa) : 0);
+  EMCOOL_CHECK(railOn && railOn->mainMv >= emcool::can::kPsuRailOnMv, "a 12.8 V rail should read as on");
+  // The bench unit's, rail off: 70 mV.
+  const std::array<std::uint8_t, 8> off = {0x46, 0x00, 0xB8, 0x23, 0x00, 0x00, 0x0A, 0x0A};
+  const auto railOff = emcool::can::decodePsuMonitor(off);
+  EMCOOL_CHECK(railOff && railOff->mainMv == 70 && railOff->mainMv < emcool::can::kPsuRailOnMv,
+               "0x501 rail off: %u", railOff ? static_cast<unsigned>(railOff->mainMv) : 0);
+  const std::array<std::uint8_t, 5> shortFrame = {0, 0, 0, 0, 0};
+  EMCOOL_CHECK(!emcool::can::decodePsuMonitor(shortFrame), "a 5-byte 0x501 was decoded");
+  EMCOOL_CHECK(std::string(emcool::can::describePsuState(0x03)) == "rail on", "state 03");
+  EMCOOL_CHECK(std::string(emcool::can::describePsuState(0x00)) == "rail off", "state 00");
+  EMCOOL_CHECK(std::string(emcool::can::describePsuState(0x02)) == "not starting", "state 02");
+  EMCOOL_CHECK(std::string(emcool::can::describePsuState(0x7F)) == "unknown", "state 7F");
+  // The hold sends exactly what the VCU sends.
+  EMCOOL_CHECK(emcool::can::kPsuControlId == 0x500 && emcool::can::kPsuEnableRequest[0] == 0x01 &&
+                   emcool::can::kPsuEnableRequest[7] == 0x00,
+               "the enable request isn't the VCU's");
+}
+
 void checkFilter() {
   {
     std::optional<emcool::can::CanId> id;
@@ -186,6 +212,7 @@ int main() {
   checkSend();
   checkRepeat();
   checkExtended();
+  checkPsu();
   checkFilter();
   checkFormat();
   if (emcool::test::failures() == 0) std::printf("check_can_console: ok\n");
