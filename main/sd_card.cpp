@@ -1,9 +1,15 @@
 #include "sd_card.hpp"
 
+#include <cstring>
+
+#include "driver/gpio.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
 #include "emcool/log.hpp"
+#include "esp_timer.h"
 #include "esp_vfs_fat.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 // Follows ESP-IDF's examples/storage/sd_card/sdspi.
 
@@ -13,6 +19,69 @@ namespace {
 
 constexpr const char* kTag = "sd";
 constexpr spi_host_device_t kSpiHost = SPI3_HOST;
+constexpr int kMountAttempts = 5;
+
+// One full-duplex exchange of up to four bytes; what came back on MISO in `in`.
+void exchange(spi_device_handle_t device, const std::uint8_t* out, std::uint8_t* in, std::size_t length) {
+  spi_transaction_t transfer = {};
+  transfer.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
+  transfer.length = length * 8;
+  std::memcpy(transfer.tx_data, out, length);
+  if (spi_device_polling_transmit(device, &transfer) == ESP_OK && in != nullptr) {
+    std::memcpy(in, transfer.rx_data, length);
+  }
+}
+
+// The card keeps its power when the ESP32 resets (flashing, the USB serial's reset line, a crash),
+// so it can be left part-way through whatever it was doing, and then it doesn't answer the next
+// CMD0: the mount times out, on every boot until the card loses power. Measured on the bench:
+// 0 of 6 resets mounted without this, every one of 8 with it and the retry in mount(). Finish
+// what a card mid-write would be waiting for, with CS low: the rest of a 512-byte block and its
+// CRC as 0xFF, the multi-block write's stop token, then wait out its busy. A card that was idle
+// ignores all of that as filler (0xFD isn't a command: those start 01). Then CS high and the
+// usual run of clocks.
+void releaseStuckCard(int csGpio) {
+  spi_device_interface_config_t config = {};
+  config.clock_speed_hz = 400 * 1000;
+  config.mode = 0;
+  config.spics_io_num = -1;  // CS by hand, so it can stay low across the whole sequence
+  config.queue_size = 1;
+  spi_device_handle_t device = nullptr;
+  if (spi_bus_add_device(kSpiHost, &config, &device) != ESP_OK) {
+    logWarning(kTag, "couldn't take the SPI bus to free a stuck card; mounting anyway");
+    return;
+  }
+  const gpio_num_t cs = static_cast<gpio_num_t>(csGpio);
+  gpio_set_level(cs, 1);
+  gpio_set_direction(cs, GPIO_MODE_OUTPUT);
+
+  const std::uint8_t idle[4] = {0xff, 0xff, 0xff, 0xff};
+  std::uint8_t in[4] = {};
+  unsigned answered = 0;  // bytes the card drove to something other than 0xFF
+  gpio_set_level(cs, 0);
+  // A whole block's worth and its CRC, and a margin.
+  for (int i = 0; i < 132; i++) {
+    exchange(device, idle, in, 4);
+    for (const std::uint8_t byte : in) answered += byte != 0xff;
+  }
+  const std::uint8_t stopToken[4] = {0xfd, 0xff, 0xff, 0xff};
+  exchange(device, stopToken, nullptr, 4);
+  // Busy is MISO held low; a card finishing a write can take a few hundred ms.
+  const std::int64_t deadline = esp_timer_get_time() + 500 * 1000;
+  bool busy = true;
+  while (esp_timer_get_time() < deadline) {
+    exchange(device, idle, in, 1);
+    if (in[0] == 0xff) {
+      busy = false;
+      break;
+    }
+    vTaskDelay(1);
+  }
+  gpio_set_level(cs, 1);
+  for (int i = 0; i < 4; i++) exchange(device, idle, nullptr, 4);
+  spi_bus_remove_device(device);
+  if (busy) logWarning(kTag, "the card was still busy 500 ms after being released (%u bytes answered)", answered);
+}
 
 }  // namespace
 
@@ -53,7 +122,15 @@ bool SdCard::mount(int sckGpio, int mosiGpio, int misoGpio, int csGpio) {
   mountConfig.max_files = 8;
   mountConfig.allocation_unit_size = 16 * 1024;
 
-  const esp_err_t result = esp_vfs_fat_sdspi_mount(kSdMountPoint, &host, &slot, &mountConfig, &card_);
+  esp_err_t result = ESP_FAIL;
+  for (int attempt = 1; attempt <= kMountAttempts; attempt++) {
+    releaseStuckCard(csGpio);
+    result = esp_vfs_fat_sdspi_mount(kSdMountPoint, &host, &slot, &mountConfig, &card_);
+    // Only a card that didn't answer is worth asking again; one without a filesystem won't grow one.
+    if (result != ESP_ERR_TIMEOUT) break;
+    if (attempt < kMountAttempts) logInfo(kTag, "the card didn't answer; trying again (%d of %d)", attempt + 1, kMountAttempts);
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
   if (result != ESP_OK) {
     card_ = nullptr;
     if (result == ESP_FAIL) {
