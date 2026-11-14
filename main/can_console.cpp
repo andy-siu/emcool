@@ -211,9 +211,13 @@ void backgroundRepeatTask(void*) {
   }
   logInfo(kTag, "background repeat of %s ended (%s): %u queued, %u refused", background.shown.c_str(), why.c_str(),
           static_cast<unsigned>(background.queued.load()), static_cast<unsigned>(background.refused.load()));
-  const std::lock_guard<std::mutex> lock(background.mutex);
-  background.ended = why;
-  background.task = nullptr;
+  {
+    const std::lock_guard<std::mutex> lock(background.mutex);
+    background.ended = why;
+    background.task = nullptr;
+  }
+  // Only once the lock is released: a task deleted inside the guard never runs its destructor,
+  // and the mutex stays locked for good — `can-repeat stop` then hangs the console.
   vTaskDelete(nullptr);
 }
 
