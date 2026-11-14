@@ -7,6 +7,7 @@
 #include <atomic>
 #include <mutex>
 #include <cstdio>
+#include <cstring>
 #include <optional>
 #include <span>
 #include <string>
@@ -335,9 +336,36 @@ int canSend(int argumentCount, char** arguments) {
   return 0;
 }
 
+// can-dump -c: per id, what has been seen, for printing changes and the closing summary.
+struct SeenId {
+  std::uint32_t id;
+  bool extended;
+  std::uint32_t count;
+  std::int64_t firstUs;
+  std::int64_t lastPrintedUs;
+  std::uint8_t length;
+  std::uint8_t data[8];
+  bool unprinted;  // changed since it was last printed (held back by the rate cap)
+};
+
+// A changing id is printed at most this often, so a bus of fast-moving signals still fits the
+// serial link; its first appearance is always printed.
+constexpr std::int64_t kChangePrintIntervalUs = 500 * 1000;
+constexpr std::size_t kMaxSeenIds = 128;
+
 int canDump(int argumentCount, char** arguments) {
+  bool changesOnly = false;
+  std::vector<const char*> rest = {arguments[0]};
+  for (int at = 1; at < argumentCount; at++) {
+    if (std::string_view(arguments[at]) == "-c") {
+      changesOnly = true;
+    } else {
+      rest.push_back(arguments[at]);
+    }
+  }
   std::optional<can::CanId> filter;
-  if (const std::optional<std::string> error = can::parseCanDumpFilter(argumentCount, arguments, filter)) {
+  if (const std::optional<std::string> error =
+          can::parseCanDumpFilter(static_cast<int>(rest.size()), rest.data(), filter)) {
     std::printf("%s\n", error->c_str());
     return 1;
   }
@@ -346,40 +374,103 @@ int canDump(int argumentCount, char** arguments) {
     std::fputs(kNoBus, stdout);
     return 1;
   }
+  std::vector<SeenId> seen;
+  if (changesOnly) seen.reserve(kMaxSeenIds);
   if (!bus->startDump()) {
     std::fputs("no memory for the dump\n", stdout);
     return 1;
   }
+  const char* mode = changesOnly ? " (new ids and changed payloads only, each id at most every 500 ms)" : "";
   if (filter) {
-    std::printf(filter->extended ? "dumping id %08X — press Enter to stop\n" : "dumping id %03X — press Enter to stop\n",
-                static_cast<unsigned>(filter->id));
+    std::printf(filter->extended ? "dumping id %08X%s — press Enter to stop\n" : "dumping id %03X%s — press Enter to stop\n",
+                static_cast<unsigned>(filter->id), mode);
   } else {
-    std::fputs("dumping every frame — press Enter to stop\n", stdout);
+    std::printf("dumping every frame%s — press Enter to stop\n", mode);
   }
+  std::fputs("time is seconds since the dump started\n", stdout);
   std::fflush(stdout);
 
   // Remote frames never reach the dump (the receive path drops them), so count them instead, or a
   // bus carrying only those would look silent.
   const CanBusCounters& counters = bus->counters();
   const std::uint32_t remoteBefore = counters.ignoredRemote.load(std::memory_order_relaxed);
+  const std::int64_t startedUs = esp_timer_get_time();
+  std::uint32_t untracked = 0;
+
+  const auto print = [&](const ReceivedFrame& frame, const char* tag) {
+    const std::string line =
+        can::formatCanFrame(frame.id, std::span<const std::uint8_t>(frame.data, frame.length), frame.extended);
+    const std::int64_t at = frame.arrivedUs - startedUs;
+    std::printf("%4lld.%03lld %s%s\n", static_cast<long long>(at / 1000000), static_cast<long long>((at / 1000) % 1000),
+                line.c_str(), tag);
+  };
 
   // Watch stdin without blocking, so the dump can be stopped by a keypress while it waits on frames.
   KeyWatch keys;
+  std::int64_t nextKeyCheckUs = 0;
   while (true) {
     ReceivedFrame frame;
-    if (bus->nextDumpFrame(frame, pdMS_TO_TICKS(200))) {
+    if (bus->nextDumpFrame(frame, pdMS_TO_TICKS(50))) {
       if (!filter || (frame.id == filter->id && frame.extended == filter->extended)) {
-        const std::string line =
-            can::formatCanFrame(frame.id, std::span<const std::uint8_t>(frame.data, frame.length), frame.extended);
-        std::fputs(line.c_str(), stdout);
-        std::fputc('\n', stdout);
-        std::fflush(stdout);
+        if (!changesOnly) {
+          print(frame, "");
+        } else {
+          auto found = std::find_if(seen.begin(), seen.end(), [&](const SeenId& entry) {
+            return entry.id == frame.id && entry.extended == frame.extended;
+          });
+          if (found == seen.end()) {
+            if (seen.size() < kMaxSeenIds) {
+              SeenId entry = {frame.id, frame.extended, 1, frame.arrivedUs, frame.arrivedUs, frame.length, {}, false};
+              std::memcpy(entry.data, frame.data, frame.length);
+              seen.push_back(entry);
+              print(frame, "  (new)");
+            } else {
+              untracked++;
+            }
+          } else {
+            found->count++;
+            const bool changed =
+                found->length != frame.length || std::memcmp(found->data, frame.data, frame.length) != 0;
+            if (changed || found->unprinted) {
+              found->length = frame.length;
+              std::memcpy(found->data, frame.data, frame.length);
+              if (frame.arrivedUs - found->lastPrintedUs >= kChangePrintIntervalUs) {
+                found->lastPrintedUs = frame.arrivedUs;
+                found->unprinted = false;
+                print(frame, "");
+              } else {
+                found->unprinted = true;
+              }
+            }
+          }
+        }
       }
     }
-    if (keys.pressed()) break;
+    // Checking stdin is a syscall; at a few thousand frames a second, don't do it per frame.
+    const std::int64_t nowUs = esp_timer_get_time();
+    if (nowUs >= nextKeyCheckUs) {
+      nextKeyCheckUs = nowUs + 50 * 1000;
+      std::fflush(stdout);
+      if (keys.pressed()) break;
+    }
   }
 
   bus->stopDump();
+  const std::int64_t endedUs = esp_timer_get_time();
+  if (changesOnly) {
+    std::sort(seen.begin(), seen.end(), [](const SeenId& a, const SeenId& b) { return a.firstUs < b.firstUs; });
+    std::printf("summary: %u ids over %.1f s, by first appearance (first at, id, frames, rate, last payload)\n",
+                static_cast<unsigned>(seen.size()), static_cast<double>(endedUs - startedUs) / 1e6);
+    for (const SeenId& entry : seen) {
+      const double span = static_cast<double>(endedUs - entry.firstUs) / 1e6;
+      const std::string line =
+          can::formatCanFrame(entry.id, std::span<const std::uint8_t>(entry.data, entry.length), entry.extended);
+      std::printf("  %8.3f  %s  x%u  %.0f/s\n", static_cast<double>(entry.firstUs - startedUs) / 1e6, line.c_str(),
+                  static_cast<unsigned>(entry.count), span > 0 ? entry.count / span : 0.0);
+    }
+    if (untracked > 0) std::printf("  and %u frames of ids past the first %u\n", static_cast<unsigned>(untracked),
+                                   static_cast<unsigned>(kMaxSeenIds));
+  }
   const unsigned remote = counters.ignoredRemote.load(std::memory_order_relaxed) - remoteBefore;
   if (remote > 0) std::printf("not shown: %u remote frames (only data frames are printed)\n", remote);
   const std::uint32_t dropped = bus->dumpDropped();
@@ -449,10 +540,11 @@ bool registerCanConsoleCommands() {
        .hint = "<ms> <id> [byte ...] | stop", .func = canRepeat, .argtable = nullptr, .func_w_context = nullptr,
        .context = nullptr},
       {.command = "can-dump",
-       .help = "Print CAN frames, 29-bit ones too, as they arrive until a key is pressed; can-dump <id> shows "
-               "only that id. "
+       .help = "Print CAN frames, 29-bit ones too, as they arrive until a key is pressed, each with its time; "
+               "can-dump <id> shows only that id. -c prints only new ids and changed payloads, and a summary "
+               "of every id at the end. "
                "The USB console only.",
-       .hint = "[id]", .func = canDump, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
+       .hint = "[-c] [id]", .func = canDump, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
       {.command = "poller",
        .help = "Stop or restart the OBD poller: `poller off` frees the bus for can-send, `poller on` resumes it; "
                "`poller` alone says which it is. Needs OBD_ENABLED.",
