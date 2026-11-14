@@ -3,7 +3,11 @@
 // The USB serial console's manual CAN commands, registered only on the UART console (never on the
 // Wi-Fi or Bluetooth consoles, which reach the bike's bus and could be misused over the network):
 //
-//   can-send <id> [byte ...]   put one standard-id frame on the bus (needs OBD_ENABLED)
+//   can-send [-r <ms>] <id> [byte ...]
+//                              put one standard-id frame on the bus, or with -r resend it every
+//                              <ms> ms until a key is pressed (needs OBD_ENABLED)
+//   can-repeat <ms> <id> [byte ...] | stop
+//                              resend one frame in the background, leaving the console free
 //   can-dump [id]              print frames as they arrive, until a key is pressed
 //   poller [on | off]          stop or restart the OBD poller, so manual sends don't clash with it
 //
@@ -18,7 +22,7 @@ namespace emcool {
 // until OBD exists.
 void setConsoleDiagnostics(DiagnosticsTask* diagnostics);
 
-// Registers can-send, can-dump and poller on the UART console. Call from startSettingsConsole.
+// Registers can-send, can-repeat, can-dump and poller on the UART console. Call from startSettingsConsole.
 bool registerCanConsoleCommands();
 
 }  // namespace emcool

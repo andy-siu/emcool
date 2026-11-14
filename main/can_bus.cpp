@@ -101,15 +101,16 @@ bool CanBus::start(int txGpio, int rxGpio, bool transmit) {
 }
 
 std::optional<std::string> CanBus::transmit(std::uint32_t id, const obd::Payload& data) {
-  return enqueue(id, data.data(), data.size());
+  return enqueue(id, data.data(), data.size(), false);
 }
 
-std::optional<std::string> CanBus::sendRaw(std::uint32_t id, std::span<const std::uint8_t> data) {
+std::optional<std::string> CanBus::sendRaw(std::uint32_t id, std::span<const std::uint8_t> data, bool extended) {
   if (data.size() > 8) return std::string("a classic CAN frame carries at most 8 data bytes");
-  return enqueue(id, data.data(), data.size());
+  return enqueue(id, data.data(), data.size(), extended);
 }
 
-std::optional<std::string> CanBus::enqueue(std::uint32_t id, const std::uint8_t* data, std::size_t length) {
+std::optional<std::string> CanBus::enqueue(std::uint32_t id, const std::uint8_t* data, std::size_t length,
+                                           bool extended) {
   if (!transmitting_) return std::string("the bus is listen-only");
   // One picker at a time, so the console and the diagnostics task never claim the same slot.
   const std::lock_guard<std::mutex> lock(txMutex_);
@@ -127,6 +128,7 @@ std::optional<std::string> CanBus::enqueue(std::uint32_t id, const std::uint8_t*
   std::memcpy(slot->data.data(), data, length);
   slot->frame = {};
   slot->frame.header.id = id;
+  slot->frame.header.ide = extended;
   // Classic CAN: the DLC is the byte count for 0-8.
   slot->frame.header.dlc = static_cast<std::uint32_t>(length);
   slot->frame.buffer = slot->data.data();
@@ -205,10 +207,6 @@ bool IRAM_ATTR CanBus::onReceive(twai_node_handle_t node, const twai_rx_done_eve
   if (twai_node_receive_from_isr(node, &frame) != ESP_OK) {
     return false;
   }
-  if (frame.header.ide) {
-    bus.counters_.ignoredExtended.fetch_add(1, std::memory_order_relaxed);
-    return false;
-  }
   if (frame.header.rtr) {
     bus.counters_.ignoredRemote.fetch_add(1, std::memory_order_relaxed);
     return false;
@@ -216,10 +214,20 @@ bool IRAM_ATTR CanBus::onReceive(twai_node_handle_t node, const twai_rx_done_eve
   ReceivedFrame received = {};
   received.arrivedUs = esp_timer_get_time();
   received.id = frame.header.id;
+  received.extended = frame.header.ide;
   // Classic CAN: a DLC of 9-15 still carries 8 bytes.
   received.length = static_cast<std::uint8_t>(std::min<unsigned>(frame.header.dlc, 8));
   std::memcpy(received.data, payload, received.length);
   BaseType_t higherPriorityTaskWoken = pdFALSE;
+  if (received.extended) {
+    // Nothing decodes a 29-bit frame; only the console's dump shows them.
+    bus.counters_.ignoredExtended.fetch_add(1, std::memory_order_relaxed);
+    if (bus.dumping_.load(std::memory_order_acquire) && bus.dumpQueue_ != nullptr &&
+        xQueueSendFromISR(bus.dumpQueue_, &received, &higherPriorityTaskWoken) != pdTRUE) {
+      bus.dumpDropped_.fetch_add(1, std::memory_order_relaxed);
+    }
+    return higherPriorityTaskWoken == pdTRUE;
+  }
   if (xQueueSendFromISR(bus.queue_, &received, &higherPriorityTaskWoken) != pdTRUE) {
     bus.counters_.droppedQueueFull.fetch_add(1, std::memory_order_relaxed);
   } else {
