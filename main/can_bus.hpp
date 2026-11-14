@@ -11,7 +11,9 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 
 #include "emcool/obd/bus.hpp"
@@ -65,13 +67,27 @@ class CanBus final : public obd::CanTransmitter {
   const CanBusCounters& counters() const { return counters_; }
   bool transmitting() const { return transmitting_; }
 
-  // From the decode task only.
+  // The OBD side's fixed eight-byte request (from the diagnostics task).
   std::optional<std::string> transmit(std::uint32_t id, const obd::Payload& data) override;
+  // A raw frame from the USB console's can-send: a standard id and 0-8 data bytes. Shares the
+  // transmit slots with the OBD side, so it is serialised the same way.
+  std::optional<std::string> sendRaw(std::uint32_t id, std::span<const std::uint8_t> data);
   // A node that went bus-off stays silent until told to recover; this does, at most once a
   // second.
   void recoverIfBusOff(std::int64_t nowMs);
 
+  // The USB console's can-dump: every received frame is copied here while it is on, for the
+  // console task to print. startDump() is cheap to call again (it empties what was waiting).
+  bool startDump();
+  void stopDump();
+  bool nextDumpFrame(ReceivedFrame& frame, TickType_t timeout);
+  std::uint32_t dumpDropped() const { return dumpDropped_.load(std::memory_order_relaxed); }
+
  private:
+  // At most 8 bytes to the transmit slots, honouring the DLC; the shared slot picking is under
+  // txMutex_ so the console and the diagnostics task never claim the same slot.
+  std::optional<std::string> enqueue(std::uint32_t id, const std::uint8_t* data, std::size_t length);
+
   struct TransmitSlot {
     twai_frame_t frame = {};
     std::array<std::uint8_t, 8> data = {};
@@ -83,13 +99,27 @@ class CanBus final : public obd::CanTransmitter {
   static bool onError(twai_node_handle_t node, const twai_error_event_data_t* event, void* context);
   static bool onStateChange(twai_node_handle_t node, const twai_state_change_event_data_t* event, void* context);
 
+  // A short burst of received frames held for the console to print; a full one drops the newest.
+  static constexpr UBaseType_t kDumpQueueDepth = 64;
+
   twai_node_handle_t node_ = nullptr;
   QueueHandle_t queue_ = nullptr;
   CanBusCounters counters_;
   bool transmitting_ = false;
   std::array<TransmitSlot, kTransmitSlots> slots_;
+  std::mutex txMutex_;
   std::atomic<bool> busOff_{false};
   std::int64_t lastRecoveryMs_ = -1000000;
+  // The dump queue is made the first time a console asks and kept after, so can-dump needn't
+  // allocate on a loaded heap each time.
+  QueueHandle_t dumpQueue_ = nullptr;
+  std::atomic<bool> dumping_{false};
+  std::atomic<std::uint32_t> dumpDropped_{0};
 };
+
+// The bus the USB console's can-send and can-dump use; null until app_main sets it, and so left
+// off the Wi-Fi and Bluetooth consoles, which never see these commands.
+void setConsoleBus(CanBus* bus);
+CanBus* consoleBus();
 
 }  // namespace emcool

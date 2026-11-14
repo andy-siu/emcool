@@ -58,6 +58,9 @@ target_link_libraries(ble_server_host PRIVATE emcool_ble_server emcool_can emcoo
 add_executable(check_pack_temperature tests/check_pack_temperature.cpp)
 target_link_libraries(check_pack_temperature PRIVATE emcool_can)
 
+add_executable(check_can_console tests/check_can_console.cpp)
+target_link_libraries(check_can_console PRIVATE emcool_can)
+
 add_executable(check_settings tests/check_settings.cpp)
 target_link_libraries(check_settings PRIVATE emcool_settings)
 

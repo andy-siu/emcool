@@ -102,6 +102,7 @@ node "${node_flags[@]}" "$root/tools/generate-golden-obd.mts" "$reference" "$bui
 node "${node_flags[@]}" "$root/tools/generate-golden-numbers.mts" >"$build/golden-numbers.txt"
 "$build/check_text" "$build/golden-numbers.txt"
 "$build/check_async"
+"$build/check_can_console"
 
 node "${node_flags[@]}" "$root/tools/generate-golden-vcu.mts" "$reference" "$build/golden-vcu.txt"
 "$build/check_vcu" "$build/golden-vcu.txt" 2>"$build/check_vcu.stderr" || {

@@ -156,13 +156,15 @@ std::string StatusReport::describe(std::int64_t nowMs) {
     appendLine(out, "obd: off, %s%s", sources_.bus.transmitting() ? "but the bus is active" : "listen-only",
             diagnostics.sweepRunning ? " | service mode: sweep running" : "");
   } else {
+    const std::string pollerState = diagnostics.pollerStopped ? std::string("stopped (console)")
+                                    : diagnostics.heldBy.empty() ? std::string("free")
+                                                                 : "held for " + diagnostics.heldBy;
     appendLine(out,
             "obd: round %" PRIu32 " | %.1f frames/s sent, %" PRIu32 " never acknowledged, %" PRIu32
             " refused, %" PRIu32 " bus-off recoveries | stored codes: %s | poller %s%s",
             diagnostics.rounds, static_cast<double>(now.sent - windowStart_.sent) / seconds,
             bus.sendFailed.load(std::memory_order_relaxed), bus.sendRefused.load(std::memory_order_relaxed),
-            bus.recoveries.load(std::memory_order_relaxed), diagnostics.storedCodes.c_str(),
-            diagnostics.heldBy.empty() ? "free" : ("held for " + diagnostics.heldBy).c_str(),
+            bus.recoveries.load(std::memory_order_relaxed), diagnostics.storedCodes.c_str(), pollerState.c_str(),
             diagnostics.sweepRunning ? " | service mode: sweep running" : "");
   }
 

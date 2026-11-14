@@ -48,6 +48,7 @@ class ObdPoller {
   // startObdPoller(): the first round begins now.
   void start(Now now);
   void stop() { phase_ = Phase::kStopped; }
+  bool running() const { return phase_ != Phase::kStopped; }
 
   static bool isResponse(std::uint32_t id) { return id >= kResponseLowId && id <= kResponseHighId; }
   // Any frame in 0x7E0-0x7EF. A trouble-code read in progress gets

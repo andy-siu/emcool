@@ -24,6 +24,7 @@
 
 #include "ble_link.hpp"
 #include "boot_guard.hpp"
+#include "can_console.hpp"
 #include "card_files.hpp"
 #include "firmware_update.hpp"
 #include "bootloader_random.h"
@@ -160,6 +161,8 @@ extern "C" void app_main() {
     emcool::logError(kTag, "CAN bus did not start; nothing will be decoded");
     return startConsole();
   }
+  // The USB console's can-send and can-dump reach the bus through this.
+  emcool::setConsoleBus(&bus);
   emcool::noteHeap("the CAN bus");
 
   // The big buffers come from the heap, once: with Bluetooth on, the controller's reservation
@@ -207,6 +210,8 @@ extern "C" void app_main() {
   auto* diagnostics = allocate<emcool::DiagnosticsTask>("the diagnostics task", bus, store, storeMutex, settings,
                                                         std::string(emcool::kSdMountPoint) + "/vcu-params");
   if (diagnostics == nullptr || !diagnostics->start()) return startConsole();
+  // The USB console's `poller` command drives the OBD poller through this.
+  emcool::setConsoleDiagnostics(diagnostics);
   emcool::noteHeap(settings.obdEnabled ? "live state and diagnostics (OBD on)" : "live state and diagnostics");
   // Settings → Bike console: the console's commands and status report over the Bluetooth link.
   static emcool::StatusText statusText;

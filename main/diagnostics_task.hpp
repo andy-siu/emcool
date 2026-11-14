@@ -35,6 +35,8 @@ struct DiagnosticsSummary {
   std::string storedCodes;
   std::string heldBy;
   bool sweepRunning = false;
+  // The poller exists (OBD on) but is stopped by the console's `poller off`.
+  bool pollerStopped = false;
   std::uint32_t framesDropped = 0;
   // What holds the bus for service mode (a parameter read, a service write), or empty.
   std::string busHeldBy;
@@ -64,6 +66,12 @@ class DiagnosticsTask final : public ble_server::ServiceDesk, public ble_server:
 
   // For the status report.
   DiagnosticsSummary summary();
+
+  // The USB console's `poller` command, from its own task. Stops or restarts the OBD poller.
+  // false when OBD is off, so there is no poller to touch.
+  bool setPollerRunning(bool run);
+  // OBD on, and the poller not stopped by the console. nullopt when OBD is off.
+  std::optional<bool> pollerRunning();
 
  private:
   struct Item {

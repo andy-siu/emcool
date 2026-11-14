@@ -419,6 +419,7 @@ DiagnosticsSummary DiagnosticsTask::summary() {
   if (const std::string* holder = lease_.heldBy()) summary.busHeldBy = *holder;
   if (!obd_) return summary;
   summary.obd = true;
+  summary.pollerStopped = !obd_->polling();
   summary.rounds = obd_->poller().rounds();
   const obd::TroubleCodeListState& stored = obd_->stored().list(obd::DtcList::kStored);
   summary.storedCodes = storedState(stored);
@@ -427,6 +428,23 @@ DiagnosticsSummary DiagnosticsTask::summary() {
   }
   summary.heldBy = std::string(obd_->hold().heldBy());
   return summary;
+}
+
+bool DiagnosticsTask::setPollerRunning(bool run) {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  if (!obd_) return false;
+  if (run) {
+    obd_->startPolling(now());
+  } else {
+    obd_->stopPolling();
+  }
+  return true;
+}
+
+std::optional<bool> DiagnosticsTask::pollerRunning() {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  if (!obd_) return std::nullopt;
+  return obd_->polling();
 }
 
 }  // namespace emcool
