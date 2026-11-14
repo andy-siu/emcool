@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bitset>
 #include <cinttypes>
 #include <cstdio>
 #include <mutex>
@@ -286,10 +287,13 @@ void decodeTask(void* argument) {
       context.status.noteFrame(decoded.size(), decoded.overflowed());
       const std::int64_t arrivedWallClockMs = emcool::wallClockMs();
       std::optional<double> gpsEpochSeconds;
+      // Which decoded values passed their deadband, for the charge subscribers below.
+      std::bitset<emcool::can::DecodedValues::kCapacity> changed;
       {
         const std::lock_guard<std::mutex> lock(context.storeMutex);
+        std::size_t at = 0;
         for (const emcool::can::DecodedValue& value : decoded) {
-          context.store.record(value.key, value.value, arrivedWallClockMs, arrivedMonotonicMs);
+          changed[at++] = context.store.record(value.key, value.value, arrivedWallClockMs, arrivedMonotonicMs);
           if (std::string_view(value.key) == "gps_epoch_s") {
             gpsEpochSeconds = value.value;
           }
@@ -298,9 +302,13 @@ void decodeTask(void* argument) {
       if (gpsEpochSeconds) {
         offerGpsTime(context.clock, *gpsEpochSeconds);
       }
-      // The charge-current ack-watch and the automatic controller see these as they arrive.
-      // Outside storeMutex: observeChargeSignal takes the diagnostics task's own lock.
+      // The charge-current ack-watch and the automatic controller see these as they CHANGE, as the
+      // reference's subscribe to its store's onChange. Not every repeat: they keep time-windowed
+      // histories, and fed every frame at the bike's rate those ran the heap out within seconds of
+      // key-on. Outside storeMutex: observeChargeSignal takes the diagnostics task's own lock.
+      std::size_t at = 0;
       for (const emcool::can::DecodedValue& value : decoded) {
+        if (!changed[at++]) continue;
         const std::string_view key(value.key);
         if (key == "fast_dc_target_a" || key == "charge_limit_a" || key == "charge_manager_state" ||
             key == "batt_temp_hi" || key == "soc" || key == "dc_charge_limit_selected_a") {

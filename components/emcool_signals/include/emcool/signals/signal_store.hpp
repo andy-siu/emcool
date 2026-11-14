@@ -37,7 +37,9 @@ class SignalStore {
 
   // `monotonicMs` times arrivals; `wallClockMs` stamps readings. They are separate because
   // the wall clock gets stepped when GPS time arrives, and an age must not jump with it.
-  void record(std::string_view key, double value, std::int64_t wallClockMs, std::int64_t monotonicMs);
+  // True when the value passed its deadband (the reference's onChange): what a subscriber that
+  // keeps a history should be fed, rather than every repeat on the bus.
+  bool record(std::string_view key, double value, std::int64_t wallClockMs, std::int64_t monotonicMs);
 
   std::optional<LiveValue> latest(std::string_view key) const;
   std::optional<std::int64_t> ageMs(std::string_view key, std::int64_t nowMonotonicMs) const;

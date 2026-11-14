@@ -33,12 +33,12 @@ SignalStore::SignalStore(RideLogSink& rideLog) : rideLog_(rideLog) {
   }
 }
 
-void SignalStore::record(std::string_view key, double value, std::int64_t wallClockMs, std::int64_t monotonicMs) {
-  if (!std::isfinite(value)) return;
+bool SignalStore::record(std::string_view key, double value, std::int64_t wallClockMs, std::int64_t monotonicMs) {
+  if (!std::isfinite(value)) return false;
   const std::optional<std::size_t> index = findSignal(key);
   if (!index) {
     noteUnknownKey(key);
-    return;
+    return false;
   }
   SignalState& state = states_[*index];
   state.liveValue = value;
@@ -50,7 +50,7 @@ void SignalStore::record(std::string_view key, double value, std::int64_t wallCl
   // still repeats on the bus, and skipping repeats would make it look like it went missing.
   const SignalDef& signal = signalRegistry()[*index];
   if (state.everLogged && !(std::fabs(value - state.lastLogged) > signal.deadband)) {
-    return;
+    return false;
   }
   state.lastLogged = value;
   state.everLogged = true;
@@ -58,6 +58,7 @@ void SignalStore::record(std::string_view key, double value, std::int64_t wallCl
   if (!state.excludedFromRideLog) {
     rideLog_.appendReading(wallClockMs, monotonicMs, signal, value);
   }
+  return true;
 }
 
 std::optional<LiveValue> SignalStore::latest(std::string_view key) const {
