@@ -7,11 +7,13 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "check.hpp"
 #include "emcool/can/console.hpp"
 
+using emcool::can::CanSendCommand;
 using emcool::can::ConsoleFrame;
 using emcool::can::formatCanFrame;
 using emcool::can::parseCanDumpFilter;
@@ -21,11 +23,22 @@ namespace {
 
 // A can-send/can-dump argument vector from words, as the console hands it over (argv[0] is the
 // command name).
-std::optional<std::string> runSend(std::vector<const char*> words, ConsoleFrame& out) {
+std::optional<std::string> runSend(std::vector<const char*> words, CanSendCommand& out) {
   return parseCanSend(static_cast<int>(words.size()), words.data(), out);
 }
 
-std::optional<std::string> runFilter(std::vector<const char*> words, std::optional<std::uint32_t>& out) {
+std::optional<std::string> runSend(std::vector<const char*> words, ConsoleFrame& out) {
+  CanSendCommand command;
+  const auto error = runSend(std::move(words), command);
+  if (!error) {
+    EMCOOL_CHECK(command.repeatMs == 0, "a send without -r should go once, not every %u ms",
+                 static_cast<unsigned>(command.repeatMs));
+    out = command.frame;
+  }
+  return error;
+}
+
+std::optional<std::string> runFilter(std::vector<const char*> words, std::optional<emcool::can::CanId>& out) {
   return parseCanDumpFilter(static_cast<int>(words.size()), words.data(), out);
 }
 
@@ -69,19 +82,88 @@ void checkSend() {
   }
 }
 
+void checkExtended() {
+  // Four to eight digits is an extended id, as cansend reads it: the PSU's diagnostic address.
+  {
+    ConsoleFrame frame;
+    const auto error = runSend({"can-send", "18DAA0F1", "01", "3E"}, frame);
+    EMCOOL_CHECK(!error, "an extended can-send was refused: %s", error ? error->c_str() : "");
+    EMCOOL_CHECK(frame.extended && frame.id == 0x18daa0f1 && frame.length == 2, "ext %d id %x len %u", frame.extended,
+                 static_cast<unsigned>(frame.id), frame.length);
+  }
+  {
+    ConsoleFrame frame;
+    EMCOOL_CHECK(!runSend({"can-send", "0x1FFFFFFF"}, frame) && frame.extended && frame.id == 0x1fffffff,
+                 "the largest extended id was refused");
+    // A short id padded to four digits is extended, as in cansend.
+    EMCOOL_CHECK(!runSend({"can-send", "07DF"}, frame) && frame.extended && frame.id == 0x7df, "07DF should be extended");
+    EMCOOL_CHECK(!runSend({"can-send", "7DF"}, frame) && !frame.extended, "7DF should be standard");
+    EMCOOL_CHECK(runSend({"can-send", "20000000"}, frame).has_value(), "an id past 1FFFFFFF was accepted");
+    EMCOOL_CHECK(runSend({"can-send", "118DAA0F1"}, frame).has_value(), "a nine-digit id was accepted");
+  }
+  {
+    std::optional<emcool::can::CanId> id;
+    EMCOOL_CHECK(!runFilter({"can-dump", "18DAF1A0"}, id) && id && id->extended && id->id == 0x18daf1a0,
+                 "can-dump should filter on an extended id");
+  }
+  const std::array<std::uint8_t, 2> two = {0x01, 0x7e};
+  EMCOOL_CHECK(formatCanFrame(0x18daf1a0, two, true) == "18DAF1A0 [2] 01 7E", "extended frame: %s",
+               formatCanFrame(0x18daf1a0, two, true).c_str());
+  EMCOOL_CHECK(formatCanFrame(0x7df, two, true) == "000007DF [2] 01 7E", "small extended id padded: %s",
+               formatCanFrame(0x7df, two, true).c_str());
+}
+
+void checkRepeat() {
+  // The PSU keep-on request, every 150 ms.
+  {
+    CanSendCommand command;
+    const auto error = runSend({"can-send", "-r", "150", "500", "01", "00", "00", "00", "00", "00", "00", "00"}, command);
+    EMCOOL_CHECK(!error, "a repeating can-send was refused: %s", error ? error->c_str() : "");
+    EMCOOL_CHECK(command.repeatMs == 150, "repeat %u ms", static_cast<unsigned>(command.repeatMs));
+    EMCOOL_CHECK(command.frame.id == 0x500 && command.frame.length == 8 && command.frame.data[0] == 0x01 &&
+                     command.frame.data[7] == 0x00,
+                 "id %x len %u b0 %u", static_cast<unsigned>(command.frame.id), command.frame.length,
+                 command.frame.data[0]);
+  }
+  // The bounds are inclusive, and an empty frame can repeat too.
+  {
+    CanSendCommand command;
+    EMCOOL_CHECK(!runSend({"can-send", "-r", "10", "123"}, command) && command.repeatMs == 10 &&
+                     command.frame.length == 0,
+                 "the 10 ms floor was refused");
+    EMCOOL_CHECK(!runSend({"can-send", "-r", "60000", "123"}, command) && command.repeatMs == 60000,
+                 "the 60 s ceiling was refused");
+  }
+  // Refusals.
+  {
+    CanSendCommand command;
+    EMCOOL_CHECK(runSend({"can-send", "-r"}, command).has_value(), "-r with no interval was accepted");
+    EMCOOL_CHECK(runSend({"can-send", "-r", "150"}, command).has_value(), "-r with no id was accepted");
+    EMCOOL_CHECK(runSend({"can-send", "-r", "9", "500"}, command).has_value(), "a 9 ms repeat was accepted");
+    EMCOOL_CHECK(runSend({"can-send", "-r", "60001", "500"}, command).has_value(), "a 60001 ms repeat was accepted");
+    EMCOOL_CHECK(runSend({"can-send", "-r", "0", "500"}, command).has_value(), "a 0 ms repeat was accepted");
+    EMCOOL_CHECK(runSend({"can-send", "-r", "0x96", "500"}, command).has_value(), "a hex repeat was accepted");
+    EMCOOL_CHECK(runSend({"can-send", "-r", "15a", "500"}, command).has_value(), "a non-decimal repeat was accepted");
+    EMCOOL_CHECK(runSend({"can-send", "-r", "999999999999", "500"}, command).has_value(),
+                 "an overlong repeat was accepted");
+    // -r goes before the id; after it, it is a (bad) data byte.
+    EMCOOL_CHECK(runSend({"can-send", "500", "-r", "150"}, command).has_value(), "a trailing -r was accepted");
+  }
+}
+
 void checkFilter() {
   {
-    std::optional<std::uint32_t> id;
+    std::optional<emcool::can::CanId> id;
     const auto error = runFilter({"can-dump"}, id);
     EMCOOL_CHECK(!error && !id, "can-dump with no filter should leave the id unset");
   }
   {
-    std::optional<std::uint32_t> id;
+    std::optional<emcool::can::CanId> id;
     const auto error = runFilter({"can-dump", "7E8"}, id);
-    EMCOOL_CHECK(!error && id && *id == 0x7e8, "can-dump 7E8 should filter on 0x7e8");
+    EMCOOL_CHECK(!error && id && id->id == 0x7e8 && !id->extended, "can-dump 7E8 should filter on standard 0x7e8");
   }
   {
-    std::optional<std::uint32_t> id;
+    std::optional<emcool::can::CanId> id;
     EMCOOL_CHECK(runFilter({"can-dump", "800"}, id).has_value(), "an out-of-range dump filter was accepted");
     EMCOOL_CHECK(runFilter({"can-dump", "7e8", "extra"}, id).has_value(), "a second dump argument was accepted");
   }
@@ -102,6 +184,8 @@ void checkFormat() {
 
 int main() {
   checkSend();
+  checkRepeat();
+  checkExtended();
   checkFilter();
   checkFormat();
   if (emcool::test::failures() == 0) std::printf("check_can_console: ok\n");
