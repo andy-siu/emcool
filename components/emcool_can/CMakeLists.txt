@@ -5,6 +5,7 @@ set(emcool_can_sources
   src/attitude.cpp
   src/charge_manager.cpp
   src/charge_setpoint.cpp
+  src/console.cpp
   src/decode_bms.cpp
   src/frame.cpp
   src/frame_decoder.cpp

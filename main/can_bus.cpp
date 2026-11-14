@@ -101,7 +101,18 @@ bool CanBus::start(int txGpio, int rxGpio, bool transmit) {
 }
 
 std::optional<std::string> CanBus::transmit(std::uint32_t id, const obd::Payload& data) {
+  return enqueue(id, data.data(), data.size());
+}
+
+std::optional<std::string> CanBus::sendRaw(std::uint32_t id, std::span<const std::uint8_t> data) {
+  if (data.size() > 8) return std::string("a classic CAN frame carries at most 8 data bytes");
+  return enqueue(id, data.data(), data.size());
+}
+
+std::optional<std::string> CanBus::enqueue(std::uint32_t id, const std::uint8_t* data, std::size_t length) {
   if (!transmitting_) return std::string("the bus is listen-only");
+  // One picker at a time, so the console and the diagnostics task never claim the same slot.
+  const std::lock_guard<std::mutex> lock(txMutex_);
   TransmitSlot* slot = nullptr;
   for (TransmitSlot& candidate : slots_) {
     if (!candidate.busy.load(std::memory_order_acquire)) {
@@ -113,12 +124,13 @@ std::optional<std::string> CanBus::transmit(std::uint32_t id, const obd::Payload
     counters_.sendRefused.fetch_add(1, std::memory_order_relaxed);
     return "all " + std::to_string(kTransmitSlots) + " transmit slots are waiting to go out (is anything acknowledging?)";
   }
-  slot->data = data;
+  std::memcpy(slot->data.data(), data, length);
   slot->frame = {};
   slot->frame.header.id = id;
-  slot->frame.header.dlc = 8;
+  // Classic CAN: the DLC is the byte count for 0-8.
+  slot->frame.header.dlc = static_cast<std::uint32_t>(length);
   slot->frame.buffer = slot->data.data();
-  slot->frame.buffer_len = slot->data.size();
+  slot->frame.buffer_len = length;
   slot->busy.store(true, std::memory_order_release);
   const esp_err_t result = twai_node_transmit(node_, &slot->frame, 0);
   if (result != ESP_OK) {
@@ -127,6 +139,27 @@ std::optional<std::string> CanBus::transmit(std::uint32_t id, const obd::Payload
     return std::string("twai_node_transmit: ") + esp_err_to_name(result);
   }
   return std::nullopt;
+}
+
+bool CanBus::startDump() {
+  if (dumpQueue_ == nullptr) {
+    dumpQueue_ = xQueueCreate(kDumpQueueDepth, sizeof(ReceivedFrame));
+    if (dumpQueue_ == nullptr) {
+      logError(kTag, "no memory for the %u-frame dump queue", static_cast<unsigned>(kDumpQueueDepth));
+      return false;
+    }
+  } else {
+    xQueueReset(dumpQueue_);
+  }
+  dumpDropped_.store(0, std::memory_order_relaxed);
+  dumping_.store(true, std::memory_order_release);
+  return true;
+}
+
+void CanBus::stopDump() { dumping_.store(false, std::memory_order_release); }
+
+bool CanBus::nextDumpFrame(ReceivedFrame& frame, TickType_t timeout) {
+  return dumpQueue_ != nullptr && xQueueReceive(dumpQueue_, &frame, timeout) == pdTRUE;
 }
 
 void CanBus::recoverIfBusOff(std::int64_t nowMs) {
@@ -144,7 +177,13 @@ void CanBus::recoverIfBusOff(std::int64_t nowMs) {
 }
 
 bool CanBus::receive(ReceivedFrame& frame, TickType_t timeout) {
-  return xQueueReceive(queue_, &frame, timeout) == pdTRUE;
+  if (xQueueReceive(queue_, &frame, timeout) != pdTRUE) return false;
+  // Tee to the console's dump while it is on. Only this task reads queue_, so the copy adds no
+  // contention; a full dump queue drops the newest frame and counts it.
+  if (dumping_.load(std::memory_order_acquire) && dumpQueue_ != nullptr) {
+    if (xQueueSend(dumpQueue_, &frame, 0) != pdTRUE) dumpDropped_.fetch_add(1, std::memory_order_relaxed);
+  }
+  return true;
 }
 
 CanBusStatus CanBus::status() const {
@@ -212,5 +251,12 @@ bool IRAM_ATTR CanBus::onTransmitted(twai_node_handle_t, const twai_tx_done_even
   }
   return false;
 }
+
+namespace {
+CanBus* consoleBus_ = nullptr;
+}  // namespace
+
+void setConsoleBus(CanBus* bus) { consoleBus_ = bus; }
+CanBus* consoleBus() { return consoleBus_; }
 
 }  // namespace emcool

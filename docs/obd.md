@@ -86,6 +86,18 @@ FreeRTOS ticks at 100 Hz, so a timeout can run up to 10 ms long on the bike. Tha
 
 Memory: the OBD side is about 2 KB, mostly the ISO-TP reassembly buffer. It's allocated only when `OBD_ENABLED` is on.
 
+## Manual CAN from the USB console
+
+Three commands on the USB serial console (`idf.py monitor`, or `make monitor`) let you drive the bus by hand. They are **registered on the USB console only** — the Wi-Fi console (port 23) and the dashboard's Bike console reject them, so nothing reachable over the network can put a frame on the bike's bus.
+
+| Command | What it does |
+| --- | --- |
+| `can-send <id> [byte …]` | Puts one standard 11-bit frame on the bus. The id and each data byte are hex, up to 8 bytes: `can-send 7DF 02 01 0C`. A one-digit byte is read padded (`1` is `0x01`); no data bytes sends an empty frame. The frame is queued, not acked synchronously — the TWAI driver retries until something acknowledges it, and the status report's *sent* / *never acknowledged* counts say how it went. Needs `OBD_ENABLED`; with it off the bus is listen-only and the send is refused. |
+| `can-dump [id]` | Prints received frames as they arrive — `7DF [3] 02 01 0C` — until you press a key. `can-dump 7E8` shows only that id. Frames are teed off the receive path, so a flood never slows decoding; if printing can't keep up the oldest waiting frames are dropped and the count is shown when it stops. Shows every id, diagnostic replies included. |
+| `poller [on \| off]` | Stops or restarts the OBD poller without a reboot: `poller off` frees the bus so a `can-send` isn't racing the poller's PID requests, `poller on` resumes it. `poller` alone reports which it is. Needs `OBD_ENABLED`; the status report shows `poller stopped (console)` while it's off. |
+
+A manual send shares the eight transmit slots and the active-node behaviour with the poller, so it also needs the bus active (`OBD_ENABLED`). To send without the poller's traffic interleaving, `poller off` first.
+
 ## Verified, and not
 
 **Verified on the laptop** by `tools/check.sh`:
@@ -125,3 +137,4 @@ Memory: the OBD side is about 2 KB, mostly the ISO-TP reassembly buffer. It's al
 
 - **Transmitting through the TWAI driver and the MCP2562,** and the bus-off recovery. Receiving at 500 kbit already needs the transceiver out of standby, so once listening works, transmitting should too.
 - **That the bike answers emcool's requests.** They're byte-identical to the reference implementation's, which the bike answers, so it should.
+- **The manual console commands on hardware.** `can-send`'s argument parsing, `can-dump`'s filter and the frame formatting are host-tested (`host/tests/check_can_console.cpp`), but putting a hand-typed frame on a real bus, the dump tee under load, and `poller off`/`on` on the running task haven't been exercised on the ESP32.

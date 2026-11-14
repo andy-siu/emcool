@@ -38,6 +38,11 @@ class ObdStack {
 
   // Starts polling, and the E-LOCK read if it's on, in that order.
   void start(Now now);
+  // Stopping and restarting just the PID poller, for the USB console's `poller` command. A stopped
+  // poller sends nothing; restarting begins a fresh round now.
+  void stopPolling() { poller_.stop(); }
+  void startPolling(Now now) { poller_.start(now); }
+  bool polling() const { return poller_.running(); }
   // A diagnostic reply (isDiagnosticReply).
   void handleFrame(std::uint32_t id, std::span<const std::uint8_t> data, Now now);
   // Fires every deadline that's due, earliest (and first set) first.

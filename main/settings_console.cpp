@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <memory>
 
+#include "can_console.hpp"
 #include "card_files.hpp"
 #include "firmware_update.hpp"
 #include "emcool/log.hpp"
@@ -197,6 +198,8 @@ bool startSettingsConsole(settings::SettingsStorage& storage, settings::RuntimeS
       return false;
     }
   }
+  // The manual CAN commands (can-send, can-dump, poller), on the USB console only.
+  registerCanConsoleCommands();
   esp_console_register_help_command();
   result = esp_console_start_repl(repl);
   if (result != ESP_OK) {
