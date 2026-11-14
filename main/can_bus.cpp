@@ -262,7 +262,28 @@ bool IRAM_ATTR CanBus::onTransmitted(twai_node_handle_t, const twai_tx_done_even
 
 namespace {
 CanBus* consoleBus_ = nullptr;
+std::mutex psuMutex;
+PsuSnapshot psu;
 }  // namespace
+
+void notePsuFrame(const ReceivedFrame& frame) {
+  if (frame.extended || (frame.id != 0x501 && frame.id != 0x502)) return;
+  const std::lock_guard<std::mutex> lock(psuMutex);
+  if (frame.id == 0x501) {
+    std::memcpy(psu.monitor.data(), frame.data, frame.length);
+    psu.monitorLength = frame.length;
+    psu.monitorAtUs = frame.arrivedUs;
+  } else {
+    std::memcpy(psu.status.data(), frame.data, frame.length);
+    psu.statusLength = frame.length;
+    psu.statusAtUs = frame.arrivedUs;
+  }
+}
+
+PsuSnapshot psuSnapshot() {
+  const std::lock_guard<std::mutex> lock(psuMutex);
+  return psu;
+}
 
 void setConsoleBus(CanBus* bus) { consoleBus_ = bus; }
 CanBus* consoleBus() { return consoleBus_; }

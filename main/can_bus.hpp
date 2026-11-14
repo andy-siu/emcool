@@ -120,6 +120,20 @@ class CanBus final : public obd::CanTransmitter {
   std::atomic<std::uint32_t> dumpDropped_{0};
 };
 
+// The PSU's latest status frames (0x501 monitor, 0x502 state), for the console's `psu status`:
+// noted by the decode task as they arrive, read by the console. A frame's arrival time is 0
+// until one has been seen.
+struct PsuSnapshot {
+  std::array<std::uint8_t, 8> monitor = {};
+  std::uint8_t monitorLength = 0;
+  std::int64_t monitorAtUs = 0;
+  std::array<std::uint8_t, 8> status = {};
+  std::uint8_t statusLength = 0;
+  std::int64_t statusAtUs = 0;
+};
+void notePsuFrame(const ReceivedFrame& frame);
+PsuSnapshot psuSnapshot();
+
 // The bus the USB console's can-send and can-dump use; null until app_main sets it, and so left
 // off the Wi-Fi and Bluetooth consoles, which never see these commands.
 void setConsoleBus(CanBus* bus);

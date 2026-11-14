@@ -276,6 +276,8 @@ void decodeTask(void* argument) {
       }
       decoded.clear();
       const emcool::can::FrameBytes data(frame.data, frame.length);
+      // The console's `psu status` reads the PSU's two status frames from here.
+      emcool::notePsuFrame(frame);
       if (frame.id == 0x410) {
         hubRecorder.at(emcool::wallClockMs(), emcool::monotonicMs());
         hubDiagnostics.handle(std::span<const std::uint8_t>(frame.data, frame.length), hubRecorder);

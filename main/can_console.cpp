@@ -16,6 +16,7 @@
 
 #include "can_bus.hpp"
 #include "emcool/can/console.hpp"
+#include "emcool/can/psu.hpp"
 #include "emcool/log.hpp"
 #include "esp_console.h"
 #include "esp_timer.h"
@@ -222,6 +223,9 @@ void backgroundRepeatTask(void*) {
   vTaskDelete(nullptr);
 }
 
+bool startBackground(const can::CanSendCommand& command, const char* busyHint);
+bool stopBackground();
+
 void reportBackground() {
   const std::lock_guard<std::mutex> lock(background.mutex);
   if (background.task == nullptr) {
@@ -247,21 +251,9 @@ int canRepeat(int argumentCount, char** arguments) {
     return 0;
   }
   if (argumentCount == 2 && std::string_view(arguments[1]) == "stop") {
-    {
-      const std::lock_guard<std::mutex> lock(background.mutex);
-      if (background.task == nullptr) {
-        std::fputs("nothing is repeating\n", stdout);
-        return 0;
-      }
-      background.stop.store(true, std::memory_order_release);
-    }
-    // The task notices within one period; wait for it so the report below is final.
-    for (int waited = 0; waited < 700; waited++) {
-      {
-        const std::lock_guard<std::mutex> lock(background.mutex);
-        if (background.task == nullptr) break;
-      }
-      vTaskDelay(pdMS_TO_TICKS(100));
+    if (!stopBackground()) {
+      std::fputs("nothing is repeating\n", stdout);
+      return 0;
     }
     reportBackground();
     return 0;
@@ -285,10 +277,46 @@ int canRepeat(int argumentCount, char** arguments) {
     std::fputs("not started: the bus is listen-only\n", stdout);
     return 1;
   }
+  if (!startBackground(command, "`can-repeat stop` (or `psu off`)")) return 1;
+  const std::string shown = can::formatCanFrame(
+      command.frame.id, std::span<const std::uint8_t>(command.frame.data.data(), command.frame.length),
+      command.frame.extended);
+  logInfo(kTag, "background repeat of %s every %u ms started from the USB console", shown.c_str(),
+          static_cast<unsigned>(command.repeatMs));
+  std::printf("repeating %s every %u ms in the background; `can-repeat stop` ends it\n", shown.c_str(),
+              static_cast<unsigned>(command.repeatMs));
+  return 0;
+}
+
+// psu on | off | status: hold the PSU's main rail on by sending its enable request in the
+// background, as the VCU does while the bike is on. Shares can-repeat's one background slot, so a
+// hold and a can-repeat can't both run. The PSU drops the rail about a second after the request
+// stops; the hold stops itself after 60 minutes, like any repeat.
+const can::CanSendCommand& psuHoldCommand() {
+  static const can::CanSendCommand command = [] {
+    can::CanSendCommand built;
+    built.frame.id = can::kPsuControlId;
+    built.frame.length = static_cast<std::uint8_t>(can::kPsuEnableRequest.size());
+    std::copy(can::kPsuEnableRequest.begin(), can::kPsuEnableRequest.end(), built.frame.data.begin());
+    built.repeatMs = can::kPsuHoldIntervalMs;
+    return built;
+  }();
+  return command;
+}
+
+bool isPsuHold(const can::CanSendCommand& command) {
+  const can::CanSendCommand& hold = psuHoldCommand();
+  return !command.frame.extended && command.frame.id == hold.frame.id && command.frame.length == hold.frame.length &&
+         std::equal(hold.frame.data.begin(), hold.frame.data.begin() + hold.frame.length, command.frame.data.begin());
+}
+
+// Starts `command` in the background slot; the caller has checked the bus. False (and says why) if
+// the slot is taken or the task can't start.
+bool startBackground(const can::CanSendCommand& command, const char* busyHint) {
   const std::lock_guard<std::mutex> lock(background.mutex);
   if (background.task != nullptr) {
-    std::printf("already repeating %s; `can-repeat stop` first\n", background.shown.c_str());
-    return 1;
+    std::printf("already repeating %s; %s first\n", background.shown.c_str(), busyHint);
+    return false;
   }
   background.command = command;
   background.shown = can::formatCanFrame(command.frame.id,
@@ -302,12 +330,130 @@ int canRepeat(int argumentCount, char** arguments) {
   if (xTaskCreate(backgroundRepeatTask, "can-repeat", 3072, nullptr, 5, &background.task) != pdPASS) {
     background.task = nullptr;
     std::fputs("no memory for the repeat task\n", stdout);
+    return false;
+  }
+  return true;
+}
+
+// Stops whatever the background slot is sending and waits for it; false if nothing was.
+bool stopBackground() {
+  {
+    const std::lock_guard<std::mutex> lock(background.mutex);
+    if (background.task == nullptr) return false;
+    background.stop.store(true, std::memory_order_release);
+  }
+  // The task notices within one period; wait for it so what follows is final.
+  for (int waited = 0; waited < 700; waited++) {
+    {
+      const std::lock_guard<std::mutex> lock(background.mutex);
+      if (background.task == nullptr) break;
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+  return true;
+}
+
+// The hold's state: running (with how long), or not.
+bool psuHoldRunning(std::uint64_t& forSeconds) {
+  const std::lock_guard<std::mutex> lock(background.mutex);
+  if (background.task == nullptr || !isPsuHold(background.command)) return false;
+  forSeconds = static_cast<std::uint64_t>((esp_timer_get_time() - background.startedUs) / 1000000);
+  return true;
+}
+
+void printPsuStatus() {
+  std::uint64_t heldFor = 0;
+  if (psuHoldRunning(heldFor)) {
+    std::printf("hold: on for %llu s, sending 500 01 00 00 00 00 00 00 00 every %u ms\n",
+                static_cast<unsigned long long>(heldFor), static_cast<unsigned>(can::kPsuHoldIntervalMs));
+  } else {
+    std::fputs("hold: off\n", stdout);
+  }
+  const PsuSnapshot snapshot = psuSnapshot();
+  const std::int64_t nowUs = esp_timer_get_time();
+  // The PSU sends both at ~10 Hz while it is awake; older than this, it has gone quiet.
+  constexpr std::int64_t kFreshUs = 2 * 1000 * 1000;
+  const bool monitorFresh = snapshot.monitorAtUs != 0 && nowUs - snapshot.monitorAtUs < kFreshUs;
+  const bool statusFresh = snapshot.statusAtUs != 0 && nowUs - snapshot.statusAtUs < kFreshUs;
+  if (!monitorFresh && !statusFresh) {
+    if (snapshot.monitorAtUs == 0 && snapshot.statusAtUs == 0) {
+      std::fputs("psu: not heard since boot (asleep, or not on this bus)\n", stdout);
+    } else {
+      const std::int64_t lastUs = std::max(snapshot.monitorAtUs, snapshot.statusAtUs);
+      std::printf("psu: quiet for %.1f s (asleep: the rail is off)\n", static_cast<double>(nowUs - lastUs) / 1e6);
+    }
+    return;
+  }
+  if (statusFresh && snapshot.statusLength >= 1) {
+    const std::string raw =
+        can::formatCanFrame(can::kPsuStatusId, std::span<const std::uint8_t>(snapshot.status.data(), snapshot.statusLength));
+    std::printf("psu: state %02X (%s)   [%s]\n", snapshot.status[0], can::describePsuState(snapshot.status[0]),
+                raw.c_str());
+  }
+  if (monitorFresh) {
+    if (const std::optional<can::PsuMonitor> monitor = can::decodePsuMonitor(
+            std::span<const std::uint8_t>(snapshot.monitor.data(), snapshot.monitorLength))) {
+      std::printf("rail: main %.2f V (%s), standby %.2f V, load %.2f A\n", monitor->mainMv / 1000.0,
+                  monitor->mainMv >= can::kPsuRailOnMv ? "on" : "off", monitor->standbyMv / 1000.0,
+                  monitor->loadMa / 1000.0);
+    }
+  }
+}
+
+int psu(int argumentCount, char** arguments) {
+  const std::string_view choice = argumentCount >= 2 ? std::string_view(arguments[1]) : std::string_view("status");
+  if (argumentCount > 2 || (choice != "on" && choice != "off" && choice != "status")) {
+    std::fputs("usage: psu [on | off | status]\n", stdout);
     return 1;
   }
-  logInfo(kTag, "background repeat of %s every %u ms started from the USB console", background.shown.c_str(),
-          static_cast<unsigned>(command.repeatMs));
-  std::printf("repeating %s every %u ms in the background; `can-repeat stop` ends it\n", background.shown.c_str(),
-              static_cast<unsigned>(command.repeatMs));
+  if (choice == "status") {
+    printPsuStatus();
+    return 0;
+  }
+  if (choice == "off") {
+    {
+      const std::lock_guard<std::mutex> lock(background.mutex);
+      if (background.task != nullptr && !isPsuHold(background.command)) {
+        std::printf("not holding the PSU: the background slot is repeating %s (`can-repeat stop` ends that)\n",
+                    background.shown.c_str());
+        return 1;
+      }
+    }
+    if (!stopBackground()) {
+      std::fputs("the hold was already off\n", stdout);
+      return 0;
+    }
+    logInfo(kTag, "PSU hold stopped from the USB console");
+    std::fputs("hold stopped; the PSU drops its main rail in about a second\n", stdout);
+    return 0;
+  }
+  // on
+  CanBus* bus = consoleBus();
+  if (bus == nullptr) {
+    std::fputs(kNoBus, stdout);
+    return 1;
+  }
+  if (!bus->transmitting()) {
+    std::fputs("not started: the bus is listen-only (set OBD_ENABLED 1 and restart)\n", stdout);
+    return 1;
+  }
+  std::uint64_t heldFor = 0;
+  if (psuHoldRunning(heldFor)) {
+    std::printf("already holding the PSU on (%llu s)\n", static_cast<unsigned long long>(heldFor));
+    return 0;
+  }
+  if (!startBackground(psuHoldCommand(), "`can-repeat stop`")) return 1;
+  logInfo(kTag, "PSU hold started from the USB console");
+  std::printf("holding the PSU on: 500 01 00 00 00 00 00 00 00 every %u ms (stops itself after 60 min)\n",
+              static_cast<unsigned>(can::kPsuHoldIntervalMs));
+  // Wait for the PSU to answer, up to 2 s, so the reply says whether the rail came up.
+  const std::int64_t startedUs = esp_timer_get_time();
+  while (esp_timer_get_time() - startedUs < 2 * 1000 * 1000) {
+    vTaskDelay(pdMS_TO_TICKS(100));
+    const PsuSnapshot snapshot = psuSnapshot();
+    if (snapshot.statusAtUs > startedUs && snapshot.statusLength >= 1 && snapshot.status[0] == 0x03) break;
+  }
+  printPsuStatus();
   return 0;
 }
 
@@ -543,6 +689,12 @@ bool registerCanConsoleCommands() {
                "the USB console only.",
        .hint = "<ms> <id> [byte ...] | stop", .func = canRepeat, .argtable = nullptr, .func_w_context = nullptr,
        .context = nullptr},
+      {.command = "psu",
+       .help = "Hold the PSU's 12 V main rail on from here, as the VCU does: `psu on` sends its enable request "
+               "(500 01 00 00 00 00 00 00 00) every 150 ms in the background, `psu off` stops it (the rail drops "
+               "about a second later), `psu status` (or `psu`) shows the hold and the PSU's own state and rail "
+               "voltages. Stops itself after 60 minutes. Needs OBD_ENABLED; the USB console only.",
+       .hint = "[on | off | status]", .func = psu, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
       {.command = "can-dump",
        .help = "Print CAN frames, 29-bit ones too, as they arrive until a key is pressed, each with its time; "
                "can-dump <id> shows only that id. -c prints only new ids and changed payloads, and a summary "

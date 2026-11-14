@@ -12,6 +12,7 @@ set(emcool_can_sources
   src/gps.cpp
   src/hub_output.cpp
   src/pack_temperature.cpp
+  src/psu.cpp
   src/vehicle_frames.cpp
 )
 
