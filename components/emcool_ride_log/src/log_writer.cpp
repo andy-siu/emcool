@@ -193,7 +193,12 @@ bool LogWriter::createPart(Part& part, std::uint32_t number) {
 }
 
 // Extends a part with zeros. FAT allocates the clusters here, ahead of time, instead of
-// while a record is being written; the fsync at the end commits the part's final size.
+// while a record is being written. Every step ends in an fsync, which commits the clusters it
+// claimed and the file's new size to the FAT and the directory entry. Committing only once
+// the whole part was filled left up to 8 MB claimed in the cached FAT and nowhere on the card,
+// so a reset mid-fill (flashing, a crash, the power) left the card's FAT and directory out of
+// step — on the bench, after a day of resets, the RIDES directory itself was overwritten by a
+// later fill and ~400 MB was lost to orphaned clusters. Now a reset loses at most one step.
 bool LogWriter::zeroFillStep(Part& part) {
   const std::uint64_t target =
       std::min<std::uint64_t>(part.allocatedBytes + config_.fillStepBytes, config_.partBytes);
@@ -205,13 +210,11 @@ bool LogWriter::zeroFillStep(Part& part) {
     }
     part.allocatedBytes += chunk;
   }
-  if (part.allocatedBytes == config_.partBytes) {
-    if (fsync(part.fd) != 0) {
-      return fail("fsync", partPath(part.number));
-    }
-    if (&part == &next_) {
-      nextReady_ = true;
-    }
+  if (fsync(part.fd) != 0) {
+    return fail("fsync", partPath(part.number));
+  }
+  if (part.allocatedBytes == config_.partBytes && &part == &next_) {
+    nextReady_ = true;
   }
   return true;
 }
