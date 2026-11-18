@@ -83,7 +83,7 @@ Other pins:
 
 ## Build and flash
 
-Needs ESP-IDF v6.1.
+Needs ESP-IDF v6.1. [`docs/mac-setup.md`](docs/mac-setup.md) has the full setup for a Mac.
 
 ```bash
 . ~/esp/esp-idf/export.sh
