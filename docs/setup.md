@@ -7,10 +7,10 @@ Every per-bike option emcool has lives in the ESP32's NVS (non-volatile storage)
 Flashing opens it:
 
 ```
-idf.py flash monitor
+idf.py --preset esp32 flash monitor
 ```
 
-or, on a board that's already flashed, just `idf.py monitor`. It is a UART REPL at the ESP-IDF default (115200 baud, 8N1) over the board's CP2104 USB-C bridge. The prompt is:
+or, on a board that's already flashed, just `idf.py --preset esp32 monitor` (`esp32s3` for an ESP32-S3). On the ESP32 it is a UART REPL at the ESP-IDF default (115200 baud, 8N1) over the board's CP2104 USB-C bridge. On the ESP32-S3 it runs on the chip's own USB Serial/JTAG port. The prompt is:
 
 ```
 emcool>

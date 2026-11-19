@@ -1,0 +1,4 @@
+poller off     # optional: keep the poller's requests off the bus
+psu on         # holds the PSU's 12 V rail on (500 01 00 00 00 00 00 00 00 every 150 ms)
+psu status     # state 03 and main ~12.8 V when it's on
+psu off        # the rail drops about a second later

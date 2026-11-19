@@ -1,0 +1,2 @@
+python -m esptool --chip esp32 -p COM5 erase-region 0x9000 0x6000
+python -m esptool --chip esp32s3 -p /dev/cu.usbmodem1101 erase-region 0x9000 0x6000   # ESP32-S3

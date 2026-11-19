@@ -69,6 +69,7 @@ class CanBus final : public obd::CanTransmitter {
   CanBusStatus status() const;
   const CanBusCounters& counters() const { return counters_; }
   bool transmitting() const { return transmitting_; }
+  bool busOff() const { return busOff_.load(std::memory_order_relaxed); }
 
   // The OBD side's fixed eight-byte request (from the diagnostics task).
   std::optional<std::string> transmit(std::uint32_t id, const obd::Payload& data) override;

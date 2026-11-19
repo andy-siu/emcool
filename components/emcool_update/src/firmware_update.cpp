@@ -10,7 +10,6 @@ namespace {
 
 constexpr const char* kTag = "update";
 constexpr std::uint8_t kImageMagic = 0xE9;
-constexpr std::uint16_t kChipEsp32 = 0x0000;
 constexpr std::uint32_t kAppDescMagic = 0xABCD5432;
 // The image header, then the first segment's header; the app description opens that segment.
 constexpr std::size_t kImageHeaderBytes = 24;
@@ -35,19 +34,31 @@ std::string field(std::span<const std::uint8_t> bytes, std::size_t at, std::size
 
 }  // namespace
 
-HeaderCheck checkHeader(std::span<const std::uint8_t> head) {
+std::string chipName(std::uint16_t chip) {
+  switch (chip) {
+    case kChipEsp32:
+      return "ESP32";
+    case kChipEsp32S3:
+      return "ESP32-S3";
+    default:
+      return "chip id " + std::to_string(chip);
+  }
+}
+
+HeaderCheck checkHeader(std::span<const std::uint8_t> head, std::uint16_t chip) {
   HeaderCheck check;
   if (head.size() < kHeaderBytes) {
     check.problem = "too short to be firmware (" + std::to_string(head.size()) + " bytes)";
     return check;
   }
   if (head[0] != kImageMagic) {
-    check.problem = "not an ESP32 firmware image (it should start with 0xE9); use build/emcool.bin";
+    check.problem = "not an ESP32 firmware image (it should start with 0xE9); use the build's emcool.bin";
     return check;
   }
-  const std::uint16_t chip = static_cast<std::uint16_t>(head[12] | head[13] << 8);
-  if (chip != kChipEsp32) {
-    check.problem = "firmware for another chip (id " + std::to_string(chip) + "), not the ESP32";
+  const std::uint16_t imageChip = static_cast<std::uint16_t>(head[12] | head[13] << 8);
+  if (imageChip != chip) {
+    check.problem = "firmware for another chip (" + chipName(imageChip) + "), but this is an " + chipName(chip) +
+                    ": use the build for this board";
     return check;
   }
   if (head[1] == 0) {
@@ -57,7 +68,7 @@ HeaderCheck checkHeader(std::span<const std::uint8_t> head) {
   const std::span<const std::uint8_t> description = head.subspan(kDescription);
   if (little32(description, 0) != kAppDescMagic) {
     // A bootloader or partition table starts 0xE9 too, but carries no app description.
-    check.problem = "an ESP32 image, but not an app (no app description): use build/emcool.bin, not the "
+    check.problem = "an ESP32 image, but not an app (no app description): use the build's emcool.bin, not the "
                     "bootloader or a merged image";
     return check;
   }
@@ -121,7 +132,7 @@ bool Updater::feed(std::span<const std::uint8_t> data) {
     data = data.subspan(take);
     if (head_.size() < kHeaderBytes) return true;
     const std::span<const std::uint8_t> head(reinterpret_cast<const std::uint8_t*>(head_.data()), head_.size());
-    HeaderCheck check = checkHeader(head);
+    HeaderCheck check = checkHeader(head, slot_.chip());
     if (!check.info) return fail(check.problem);
     incoming_ = check.info;
     std::string why;

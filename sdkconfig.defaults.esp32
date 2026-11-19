@@ -1,0 +1,9 @@
+# The Copperhill ESP32 CAN-BUS board: ESP32-WROOM-32, 4 MB flash, console on UART0 through its
+# CP2104 USB-C bridge. ESP-IDF reads this after sdkconfig.defaults when the target is esp32.
+
+# Bluetooth LE only: the ESP32's controller can also do Classic Bluetooth, which emcool never uses.
+CONFIG_BTDM_CTRL_MODE_BLE_ONLY=y
+CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY=n
+CONFIG_BTDM_CTRL_MODE_BTDM=n
+# The controller keeps 1 KB per connection it allows; emcool serves one phone.
+CONFIG_BTDM_CTRL_BLE_MAX_CONN=1

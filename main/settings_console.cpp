@@ -176,8 +176,15 @@ bool startSettingsConsole(settings::SettingsStorage& storage, settings::RuntimeS
   replConfig.task_stack_size = 6144;
   // History lives only in RAM, but a typed secret would sit in it until the next restart.
   replConfig.max_history_len = 8;
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+  // The ESP32-S3's own USB port (sdkconfig.defaults.esp32s3).
+  esp_console_dev_usb_serial_jtag_config_t usbConfig = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
+  esp_err_t result = esp_console_new_repl_usb_serial_jtag(&usbConfig, &replConfig, &repl);
+#else
+  // UART0, through the board's USB-serial bridge.
   esp_console_dev_uart_config_t uartConfig = ESP_CONSOLE_DEV_UART_CONFIG_DEFAULT();
   esp_err_t result = esp_console_new_repl_uart(&uartConfig, &replConfig, &repl);
+#endif
   if (result != ESP_OK) {
     logError(kTag, "the serial console did not start: %s", esp_err_to_name(result));
     return false;

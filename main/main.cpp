@@ -70,6 +70,13 @@ constexpr std::uint32_t kDecodeTaskStackBytes = 8192;
 constexpr UBaseType_t kDecodeTaskPriority = 5;
 // Core 1, leaving core 0 to the ride-log task and the Bluetooth stack.
 constexpr BaseType_t kDecodeTaskCore = 1;
+// `can_link` is 1 while the bike has been heard this recently and the controller isn't bus-off,
+// and 0 once it hasn't (from boot too): the reference implementation's 15 s, so an asleep bike
+// reads as down rather than as up on a value from before it slept.
+constexpr std::int64_t kCanLinkHeardWithinMs = 15000;
+// Recorded this often, so its arrival time stays fresh for the dashboard's staleness check even
+// when the value doesn't change (the heartbeat snapshot carries the arrival time).
+constexpr std::int64_t kCanLinkRecordEveryMs = 1000;
 
 // The hub's fault list records into live state, stamped with its frame's arrival; the decode task
 // holds no lock while it runs, so this takes storeMutex for each record.
@@ -265,10 +272,14 @@ void decodeTask(void* argument) {
   // The active fault list off 0x410, beside its decoding.
   static emcool::obd::HubDiagnostics hubDiagnostics;
   static ArrivalRecorder hubRecorder(context.store, context.storeMutex);
+  const std::int64_t startedMs = emcool::monotonicMs();
+  std::int64_t lastFrameMs = -1;
+  std::int64_t lastCanLinkMs = -kCanLinkRecordEveryMs;
 
   while (true) {
     emcool::ReceivedFrame frame;
     if (context.bus.receive(frame, pdMS_TO_TICKS(1000))) {
+      lastFrameMs = emcool::monotonicMs();
       // The diagnostic replies are the diagnostics task's, and never decoded.
       if (emcool::obd::isDiagnosticReply(frame.id)) {
         context.diagnostics.forward(frame);
@@ -319,6 +330,16 @@ void decodeTask(void* argument) {
       }
     }
     const std::int64_t nowMs = emcool::monotonicMs();
+    if (nowMs - lastCanLinkMs >= kCanLinkRecordEveryMs) {
+      lastCanLinkMs = nowMs;
+      const bool heard = lastFrameMs >= 0 && nowMs - lastFrameMs < kCanLinkHeardWithinMs;
+      // Nothing yet, but not long enough since boot to say the bus is down: leave it unknown.
+      if (heard || nowMs - startedMs >= kCanLinkHeardWithinMs) {
+        const bool up = heard && !context.bus.busOff();
+        const std::lock_guard<std::mutex> lock(context.storeMutex);
+        context.store.record("can_link", up ? 1 : 0, emcool::wallClockMs(), nowMs);
+      }
+    }
     context.bus.recoverIfBusOff(nowMs);
     context.rideLog.tick(nowMs);
     context.status.reportIfDue(nowMs);

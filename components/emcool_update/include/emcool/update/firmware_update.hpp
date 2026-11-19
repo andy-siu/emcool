@@ -5,9 +5,10 @@
 // emcool.bin; the firmware supplies the slot (esp_ota_*).
 //
 // How a slot is written (ESP-IDF's two-slot OTA, partitions.csv's ota_0 and ota_1):
-//   1. The image's first bytes are checked before anything is erased: an ESP32 app image (magic
-//      0xE9, chip ESP32), whose app description names this project, "emcool". A file that is
-//      something else, or another project's firmware, is refused with the slot untouched.
+//   1. The image's first bytes are checked before anything is erased: an app image (magic 0xE9)
+//      for the chip it is running on, whose app description names this project, "emcool". A file
+//      that is something else, another chip's build, or another project's firmware, is refused with
+//      the slot untouched.
 //   2. The spare slot is erased as it is written, and the image streamed into it.
 //   3. At the end, the slot checks the whole image (esp_ota_end: every segment's checksum, and the
 //      SHA-256 the build appends) before anything switches. A short or corrupt file is refused there.
@@ -40,12 +41,19 @@ struct ImageInfo {
 inline constexpr std::size_t kHeaderBytes = 24 + 8 + 128;
 inline constexpr std::string_view kProject = "emcool";
 
-// The description, or why `head` (the image's first kHeaderBytes or more) isn't an emcool image.
+// The image header's chip ids (ESP-IDF's CONFIG_IDF_FIRMWARE_CHIP_ID) for the chips emcool builds for.
+inline constexpr std::uint16_t kChipEsp32 = 0x0000;
+inline constexpr std::uint16_t kChipEsp32S3 = 0x0009;
+// "ESP32", "ESP32-S3", or "chip id N" for any other.
+std::string chipName(std::uint16_t chip);
+
+// The description, or why `head` (the image's first kHeaderBytes or more) isn't an emcool image for
+// `chip`.
 struct HeaderCheck {
   std::optional<ImageInfo> info;
   std::string problem;
 };
-HeaderCheck checkHeader(std::span<const std::uint8_t> head);
+HeaderCheck checkHeader(std::span<const std::uint8_t> head, std::uint16_t chip);
 
 // The spare slot, as the firmware has it. One write at a time.
 class Slot {
@@ -54,6 +62,8 @@ class Slot {
   // The slot's size, and the running image's description, for the messages.
   virtual std::size_t capacity() const = 0;
   virtual ImageInfo running() const = 0;
+  // The chip this runs on (kChipEsp32, kChipEsp32S3): an image built for another is refused.
+  virtual std::uint16_t chip() const = 0;
   // Starts writing an image of `bytes` (erasing as it goes); false, with why, if it can't.
   virtual bool begin(std::size_t bytes, std::string& why) = 0;
   virtual bool write(std::span<const std::uint8_t> data, std::string& why) = 0;

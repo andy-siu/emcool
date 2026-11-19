@@ -1,0 +1,10 @@
+# An ESP32-S3 board. ESP-IDF reads this after sdkconfig.defaults when the target is esp32s3.
+
+# The S3 dev boards' USB-C port goes straight to the chip's own USB Serial/JTAG controller, so the
+# console (and idf.py monitor) runs on that, not UART0. Boards with a second, UART bridge port
+# still flash and monitor through either.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# The controller keeps about 830 bytes per BLE "activity", each connection and the advertising
+# set. One phone connected, and advertising for it again the moment it drops, is two.
+CONFIG_BT_CTRL_BLE_MAX_ACT=2
