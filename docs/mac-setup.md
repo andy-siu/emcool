@@ -47,11 +47,11 @@ make menuconfig   # change the build's options, such as the pins (the emcool men
 make defaults     # throw away the build's options; the next build starts from the defaults
 ```
 
-`CHIP` picks the board, and defaults to `esp32` (the Copperhill ESP32-WROOM-32 board). For an ESP32-S3 board:
+`CHIP` picks the board, and defaults to `esp32s3` (an ESP32-S3 board, such as the ESP32-CAN-X2). For the Copperhill ESP32-WROOM-32 board:
 
 ```bash
-make flash CHIP=esp32s3      # or: idf.py --preset esp32s3 flash
-make monitor CHIP=esp32s3
+make flash CHIP=esp32        # or: idf.py --preset esp32 flash
+make monitor CHIP=esp32
 ```
 
 Each chip builds into its own directory, `build/esp32/` or `build/esp32s3/`.

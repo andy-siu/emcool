@@ -8,13 +8,13 @@
 #   make defaults     throw away the build's options and start again from the defaults
 #
 # CHIP picks the board (a preset in CMakePresets.json); each builds into build/<CHIP>:
-#   CHIP=esp32      the Copperhill ESP32 CAN-BUS board, ESP32-WROOM-32 (the default)
-#   CHIP=esp32s3    an ESP32-S3 board
-#   make flash CHIP=esp32s3
+#   CHIP=esp32s3    an ESP32-S3 board (the default)
+#   CHIP=esp32      the Copperhill ESP32 CAN-BUS board, ESP32-WROOM-32
+#   make flash CHIP=esp32
 #
 # idf.py finds the serial port on its own. To choose one, set PORT:
-#   make flash PORT=/dev/cu.usbserial-0001
-#   make monitor CHIP=esp32s3 PORT=/dev/cu.usbmodem1101
+#   make flash PORT=/dev/cu.usbmodem1101
+#   make monitor CHIP=esp32 PORT=/dev/cu.usbserial-0001
 #   make monitor PORT=COM5
 #
 # A build keeps the options it was first configured with in build/<CHIP>/sdkconfig, so a changed
@@ -24,7 +24,7 @@
 
 IDF ?= idf.py
 PYTHON ?= python
-CHIP ?= esp32
+CHIP ?= esp32s3
 PORT ?=
 
 PORT_ARG := $(if $(PORT),-p $(PORT))

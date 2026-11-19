@@ -19,14 +19,15 @@
     make flash      (or: make flash PORT=COM5)
     make monitor    (or: make monitor PORT=COM5)
 
-   Add CHIP=esp32s3 for an ESP32-S3 board, e.g. make flash CHIP=esp32s3.
+   make builds for the ESP32-S3. Add CHIP=esp32 for the ESP32-WROOM-32 board,
+   e.g. make flash CHIP=esp32.
 
     make menuconfig   change the options, such as the pins (emcool menu)
     make defaults     forget the build's options; the next build uses the defaults
 
    A build keeps the options (pins included) it was first made with, in
    build\<chip>\sdkconfig. After the defaults change, run make defaults
-   (with CHIP=esp32s3 for the S3) and build again.
+   (with CHIP=esp32 for the WROOM-32) and build again.
 
    Ctrl-] quits the monitor. If make doesn't work in that PowerShell, use step 3.
 

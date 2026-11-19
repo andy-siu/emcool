@@ -98,7 +98,7 @@ idf.py --preset esp32 build flash monitor      # or: make flash CHIP=esp32
 idf.py --preset esp32s3 build flash monitor    # or: make flash CHIP=esp32s3
 ```
 
-`export IDF_PRESET=esp32s3` saves typing `--preset` on every command. Flashing the wrong chip's build fails with `This chip is ESP32-S3, not ESP32`, and nothing is written.
+Without `--preset` (or `CHIP=`), `idf.py` and `make` build for the ESP32-S3. `export IDF_PRESET=esp32` saves typing `--preset` on every command for the WROOM-32. Flashing the wrong chip's build fails with `This chip is ESP32-S3, not ESP32`, and nothing is written.
 
 - **Pins:** the CAN and microSD pins default to the Copperhill board's (GPIO25/26, and the SPI header), and to the table below on an S3. For different wiring, change them with `make menuconfig CHIP=<chip>` (or `idf.py --preset <chip> menuconfig`) → emcool. Setting a pin to -1 turns that part off.
 - **Build options:** these live in `sdkconfig.defaults`, shared by both chips, with `sdkconfig.defaults.esp32` and `sdkconfig.defaults.esp32s3` on top. The pin defaults are in `main/Kconfig.projbuild`.
