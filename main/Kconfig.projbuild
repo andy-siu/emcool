@@ -2,52 +2,68 @@ menu "emcool"
 
     config EMCOOL_CAN_TX_GPIO
         int "CAN transceiver TXD GPIO (ESP32 -> transceiver)"
+        range -1 48 if IDF_TARGET_ESP32S3
         range -1 33
+        default 7 if IDF_TARGET_ESP32S3
         default 25
         help
             The GPIO wired to the CAN transceiver's TXD pin. 25 on the Copperhill/SK Pang
             ESP32 CAN-BUS board rev B (schematic ESP32_CAN_rev_B, net CAN_TD into the
-            MCP2562's pin 1). -1 keeps the CAN bus off. Listen-only mode never transmits,
-            but the pin is still routed so the controller holds TXD recessive.
+            MCP2562's pin 1). On an ESP32-S3 the default is 7: the Autosport Labs
+            ESP32-CAN-X2's CAN1 transceiver. -1 keeps the CAN bus off. Listen-only mode
+            never transmits, but the pin is still routed so the controller holds TXD
+            recessive.
 
     config EMCOOL_CAN_RX_GPIO
         int "CAN transceiver RXD GPIO (transceiver -> ESP32)"
+        range -1 48 if IDF_TARGET_ESP32S3
         range -1 39
+        default 6 if IDF_TARGET_ESP32S3
         default 26
         help
             The GPIO wired to the CAN transceiver's RXD pin. 26 on the ESP32 CAN-BUS board
-            rev B (net CAN_RD from the MCP2562's pin 4). -1 keeps the CAN bus off.
+            rev B (net CAN_RD from the MCP2562's pin 4). 6 on an ESP32-S3, the ESP32-CAN-X2's
+            CAN1 transceiver. -1 keeps the CAN bus off.
 
     menu "microSD card (ride log)"
 
         config EMCOOL_SD_SCK_GPIO
             int "SCK GPIO"
+            range -1 48 if IDF_TARGET_ESP32S3
             range -1 33
+            default 15 if IDF_TARGET_ESP32S3
             default 5
             help
-                The board's SPI header SCK (JP2-7). -1 leaves the ride log off.
+                The board's SPI header SCK (JP2-7); 15 on an ESP32-S3. -1 leaves the ride log off.
 
         config EMCOOL_SD_MOSI_GPIO
             int "MOSI GPIO"
+            range -1 48 if IDF_TARGET_ESP32S3
             range -1 33
+            default 5 if IDF_TARGET_ESP32S3
             default 18
             help
-                The board's SPI header MOSI (JP2-8).
+                The board's SPI header MOSI (JP2-8); 5 on an ESP32-S3.
 
         config EMCOOL_SD_MISO_GPIO
             int "MISO GPIO"
+            range -1 48 if IDF_TARGET_ESP32S3
             range -1 39
+            default 16 if IDF_TARGET_ESP32S3
             default 19
             help
-                The board's SPI header MISO (JP2-9). Not GPIO12: an SD card's pull-up on MISO
-                would hold that strapping pin high at reset and stop the module booting.
+                The board's SPI header MISO (JP2-9); 16 on an ESP32-S3. On the ESP32, not GPIO12:
+                an SD card's pull-up on MISO would hold that strapping pin high at reset and stop
+                the module booting.
 
         config EMCOOL_SD_CS_GPIO
             int "CS GPIO"
+            range -1 48 if IDF_TARGET_ESP32S3
             range -1 33
+            default 4 if IDF_TARGET_ESP32S3
             default 17
             help
-                Chip select (JP2-6).
+                Chip select (JP2-6); 4 on an ESP32-S3.
 
     endmenu
 

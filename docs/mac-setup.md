@@ -18,7 +18,7 @@ The firmware is built with ESP-IDF v6.1. The `Makefile` and the README expect it
 mkdir -p ~/esp && cd ~/esp
 git clone -b v6.1 --recursive https://github.com/espressif/esp-idf.git
 cd esp-idf
-./install.sh esp32
+./install.sh esp32,esp32s3
 ```
 
 Set up the environment in every terminal you build from:
@@ -40,13 +40,24 @@ Don't source `export.sh` in every new shell, because it's slow.
 From the repo, in a terminal where `export.sh` has been sourced:
 
 ```bash
-make            # build (or: idf.py build)
-make flash      # build if needed, then flash
-make monitor    # serial console; Ctrl-] quits
+make              # build (or: idf.py --preset esp32 build)
+make flash        # build if needed, then flash
+make monitor      # serial console; Ctrl-] quits
+make menuconfig   # change the build's options, such as the pins (the emcool menu)
+make defaults     # throw away the build's options; the next build starts from the defaults
 ```
 
-- **Driver:** macOS has a built-in driver for the board's CP2104 USB-C bridge, so you don't need the Silicon Labs driver.
-- **Port:** the board shows up as `/dev/cu.usbserial-*`, and `idf.py` usually finds it on its own. To pick it yourself, list the ports with `ls /dev/cu.*`, then pass it:
+`CHIP` picks the board, and defaults to `esp32` (the Copperhill ESP32-WROOM-32 board). For an ESP32-S3 board:
+
+```bash
+make flash CHIP=esp32s3      # or: idf.py --preset esp32s3 flash
+make monitor CHIP=esp32s3
+```
+
+Each chip builds into its own directory, `build/esp32/` or `build/esp32s3/`.
+
+- **Driver:** macOS has a built-in driver for the board's CP2104 USB-C bridge, so you don't need the Silicon Labs driver. An ESP32-S3 needs none either: its USB port is the chip's own.
+- **Port:** the Copperhill board shows up as `/dev/cu.usbserial-*` and an ESP32-S3 as `/dev/cu.usbmodem*`. `idf.py` usually finds the port on its own. To pick it yourself, list the ports with `ls /dev/cu.*`, then pass it:
 
   ```bash
   make flash PORT=/dev/cu.usbserial-0001
@@ -54,7 +65,8 @@ make monitor    # serial console; Ctrl-] quits
   ```
 
 - **No port showing up:** try a different cable. Many USB-C cables only charge and carry no data.
-- **Build options:** after changing `sdkconfig.defaults`, delete `sdkconfig` so the build regenerates it.
+- **Wrong chip:** `This chip is ESP32-S3, not ESP32` means the build is for the other board. Pass the matching `CHIP=`.
+- **Build options:** a build keeps the options it was first configured with in `build/<chip>/sdkconfig`. After changing `sdkconfig.defaults`, `sdkconfig.defaults.<chip>` or a default pin in `main/Kconfig.projbuild`, run `make defaults CHIP=<chip>` so the next build starts from them. That also drops anything set in menuconfig.
 
 ## 4. Laptop checks
 

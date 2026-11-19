@@ -13,6 +13,7 @@
 #include "esp_app_desc.h"
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
+#include "sdkconfig.h"
 
 namespace emcool {
 
@@ -34,6 +35,7 @@ class OtaSlot final : public update::Slot {
     return spare != nullptr ? spare->size : 0;
   }
   update::ImageInfo running() const override { return infoOf(*esp_app_get_description()); }
+  std::uint16_t chip() const override { return CONFIG_IDF_FIRMWARE_CHIP_ID; }
 
   bool begin(std::size_t bytes, std::string& why) override {
     partition_ = esp_ota_get_next_update_partition(nullptr);

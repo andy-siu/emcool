@@ -85,31 +85,79 @@ Other pins:
 
 Needs ESP-IDF v6.1. [`docs/mac-setup.md`](docs/mac-setup.md) has the full setup for a Mac.
 
+It builds for two chips. Pick one with `--preset`, or `CHIP=` with `make`. Each has its own build directory, so both can be built side by side:
+
+| Preset | Chip | Builds into |
+| --- | --- | --- |
+| `esp32` | ESP32-WROOM-32, the Copperhill board above | `build/esp32/` |
+| `esp32s3` | ESP32-S3 | `build/esp32s3/` |
+
 ```bash
 . ~/esp/esp-idf/export.sh
-idf.py build flash monitor
+idf.py --preset esp32 build flash monitor      # or: make flash CHIP=esp32
+idf.py --preset esp32s3 build flash monitor    # or: make flash CHIP=esp32s3
 ```
 
-- **Pins:** the CAN and microSD pins default to this board's (GPIO25/26, and the SPI header). For a different board, change them under `idf.py menuconfig` → emcool. Setting a pin to -1 turns that part off.
-- **Build options:** these live in `sdkconfig.defaults`. The generated `sdkconfig` isn't tracked, so after changing the defaults, delete `sdkconfig` and the build regenerates it.
+`export IDF_PRESET=esp32s3` saves typing `--preset` on every command. Flashing the wrong chip's build fails with `This chip is ESP32-S3, not ESP32`, and nothing is written.
+
+- **Pins:** the CAN and microSD pins default to the Copperhill board's (GPIO25/26, and the SPI header), and to the table below on an S3. For different wiring, change them with `make menuconfig CHIP=<chip>` (or `idf.py --preset <chip> menuconfig`) → emcool. Setting a pin to -1 turns that part off.
+- **Build options:** these live in `sdkconfig.defaults`, shared by both chips, with `sdkconfig.defaults.esp32` and `sdkconfig.defaults.esp32s3` on top. The pin defaults are in `main/Kconfig.projbuild`.
+- **A build keeps its options.** Each build writes them to `build/<chip>/sdkconfig` the first time (the file isn't tracked) and uses that file from then on. A changed default, such as a new default pin, doesn't reach a build that already exists. `make defaults CHIP=<chip>` deletes the file, and the next build starts again from the defaults. That also drops anything set in menuconfig.
 - **Optimised for size:** the firmware is built with `-Os`, not `-Og`, because Bluetooth and Wi-Fi together don't fit otherwise. It's 1.81 MB of the 1.875 MB app slot.
+
+### ESP32-S3
+
+**Board:** Autosport Labs ESP32-CAN-X2 ([wiki](https://wiki.autosportlabs.com/ESP32-CAN-X2)). It has an ESP32-S3-WROOM-1-N8R8 (8 MB flash, 8 MB PSRAM) and two CAN channels, each with its own transceiver on the board. emcool uses CAN1, the S3's own CAN controller. CAN2, an MCP2515 on SPI, isn't used.
+
+The S3 build has the same features as the ESP32 one. What differs:
+
+- **Console:** the serial console runs on the chip's own USB Serial/JTAG port, the board's USB-C. It shows up as `/dev/cu.usbmodem*`, and needs no driver.
+- **Bike wiring:** the bike's CAN H and CAN L go to the board's CAN1 connector, X1. The pins are numbered from the right, looking at the board from the top:
+
+  | X1 pin | Signal |
+  | --- | --- |
+  | 1 | +12V_AUX (6–12 V in) |
+  | 2 | CAN1 H |
+  | 3 | CAN1 L |
+  | 4 | GND |
+
+  The same CAN1 H and L are on header SV1, pins 1 and 2. Autosport Labs warns that the pigtail's wire colours may not match its documentation, so go by the pin position.
+
+- **Take the terminator out.** The board's CAN1 120 Ω terminator is on from the factory, and there's no jumper. Cut the copper trace between the TERM1 and TERM2 pads on the back of the board; solder them together again to put it back. As on the Copperhill board, the bike's bus is already terminated at both ends, and a third resistor drops it from 60 Ω to 40 Ω. To check, measure between CAN H and CAN L with the board unpowered and disconnected: about 120 Ω means the terminator is still in.
+- **The default pins:**
+
+  | Function | GPIO |
+  | --- | --- |
+  | CAN TXD (to CAN1's transceiver, on the board) | 7 |
+  | CAN RXD (from CAN1's transceiver, on the board) | 6 |
+  | microSD CS | 4 |
+  | microSD MOSI | 5 |
+  | microSD SCK | 15 |
+  | microSD MISO | 16 |
+
+  [`docs/sd-card-wiring.md`](docs/sd-card-wiring.md) has the card's full pinout for both chips. A board first built before these pins were the defaults still has the old ones: run `make defaults CHIP=esp32s3` and build again.
+
+- **Pins the board already uses:** GPIO6 and 7 for CAN1; GPIO10–13 (SPI) and GPIO3 (interrupt) for CAN2's MCP2515; GPIO2 for the blue user LED. Don't put anything else on them.
+- **Pins to avoid:** GPIO19 and GPIO20 are the USB port. GPIO0, 3, 45 and 46 are strapping pins. GPIO26–32 drive the flash, and the N8R8's octal PSRAM takes GPIO33–37.
+- **Flash:** the build assumes 4 MB, like the WROOM-32, so it uses the same partition table on a board with more.
+- **Not run on the bike yet.** On the S3 the console, the status report, `can-dump` and Bluetooth advertising have run on the bench. CAN, the card and Wi-Fi haven't run on real hardware.
 
 ### Updating without the cable
 
 After the first USB flash, new firmware can go on over the air, from the microSD card or over Wi-Fi. Both write the new image into the spare app slot while the bike keeps running, check it, and boot it at the next `restart`:
 
 ```
-emcool> update /emcool.bin      after copying build/emcool.bin onto the card
+emcool> update /emcool.bin      after copying build/<chip>/emcool.bin onto the card
 emcool> restart
 ```
 
 ```bash
-curl -u :'the admin password' -T build/emcool.bin http://emcool.local/update
+curl -u :'the admin password' -T build/esp32/emcool.bin http://emcool.local/update
 ```
 
 - **On trial:** a new image is kept once it has run 30 s. A crash, a watchdog reset, a power cut or a `restart` before then boots the old one again, and `update status` says so. So let it run 30 s before restarting it.
 - **Parked, with the bus free:** writing flash pauses the CAN bus's interrupt for tens of milliseconds at a time, which drops frames and could cut a service write short. So an update waits for what `restart` waits for: it's refused while a fresh reading says the bike is moving or in drive, and while service mode or the OBD poller's hold has the bus.
-- **Refused, with the slot untouched:** a file that isn't an ESP32 app, another project's firmware, the bootloader or a merged image. Anything cut short or corrupt is caught by the image's own hash before the boot slot changes.
+- **Refused, with the slot untouched:** a file that isn't an ESP32 app, the other chip's build, another project's firmware, the bootloader or a merged image. Anything cut short or corrupt is caught by the image's own hash before the boot slot changes.
 - **The first time needs the cable.** Trial boots are a bootloader setting (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`), and only `idf.py flash` writes the bootloader. A board flashed before this has no trial boot: an update still works, but nothing undoes a bad one.
 - **USB is always the way back.** `idf.py flash` writes slot 0 and points the boot at it, whatever the update did.
 

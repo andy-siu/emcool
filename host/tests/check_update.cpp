@@ -3,10 +3,11 @@
 // a bootloader, a file cut short, one that runs long — is refused with the slot never erased, or
 // abandoned so the running firmware stays chosen.
 //
-//   check_update [build/emcool.bin]
+//   check_update [build/esp32/emcool.bin]
 //
 // With no image (tools/check.sh doesn't build the firmware), it makes one with the same layout: the
-// header, a segment header, the app description, then filler.
+// header, a segment header, the app description, then filler. A real image may be any chip's build;
+// the fake slot runs on that chip.
 
 #include <cstdio>
 #include <fstream>
@@ -22,10 +23,15 @@ using emcool::update::Updater;
 
 namespace {
 
+// The chip the image under test was built for; the fake slot runs on it unless told otherwise.
+std::uint16_t imageChip = emcool::update::kChipEsp32;
+
 class FakeSlot final : public emcool::update::Slot {
  public:
+  explicit FakeSlot(std::uint16_t chip = imageChip) : chip_(chip) {}
   std::size_t capacity() const override { return 0x1E0000; }
   ImageInfo running() const override { return {"emcool", "old", "v6.1", "Nov 1 2026 10:00:00"}; }
+  std::uint16_t chip() const override { return chip_; }
   bool begin(std::size_t bytes, std::string&) override {
     begins++;
     open = true;
@@ -67,6 +73,9 @@ class FakeSlot final : public emcool::update::Slot {
   std::optional<std::size_t> failWriteAt;
   std::size_t expected = 0;
   std::vector<std::uint8_t> written;
+
+ private:
+  std::uint16_t chip_;
 };
 
 std::vector<std::uint8_t> readFile(const char* path) {
@@ -107,18 +116,19 @@ std::vector<std::uint8_t> madeUpImage() {
 
 int main(int argumentCount, char** arguments) {
   if (argumentCount > 2) {
-    std::fprintf(stderr, "usage: check_update [build/emcool.bin]\n");
+    std::fprintf(stderr, "usage: check_update [build/esp32/emcool.bin]\n");
     return 2;
   }
   const std::vector<std::uint8_t> image = argumentCount == 2 ? readFile(arguments[1]) : madeUpImage();
   EMCOOL_CHECK(image.size() > 100000, "the image: %zu bytes", image.size());
-  std::fprintf(stderr, "check_update: %s, %zu bytes\n", argumentCount == 2 ? arguments[1] : "a made-up image",
-               image.size());
+  imageChip = static_cast<std::uint16_t>(image[12] | image[13] << 8);
+  std::fprintf(stderr, "check_update: %s, %zu bytes, %s\n", argumentCount == 2 ? arguments[1] : "a made-up image",
+               image.size(), emcool::update::chipName(imageChip).c_str());
   std::string why;
 
   // --- the real image: its description, and a whole update in odd-sized pieces
   {
-    const emcool::update::HeaderCheck check = emcool::update::checkHeader(image);
+    const emcool::update::HeaderCheck check = emcool::update::checkHeader(image, imageChip);
     EMCOOL_CHECK(check.info && check.info->project == "emcool" && !check.info->version.empty() &&
                      check.info->idfVersion.starts_with("v"),
                  "header of the real image: %s", check.problem.c_str());
@@ -135,8 +145,9 @@ int main(int argumentCount, char** arguments) {
   }
 
   // --- refused before the slot is touched
-  const auto refused = [&](std::vector<std::uint8_t> bytes, const char* expect, const char* what) {
-    FakeSlot slot;
+  const auto refused = [&](std::vector<std::uint8_t> bytes, const char* expect, const char* what,
+                           std::uint16_t runningChip = imageChip) {
+    FakeSlot slot(runningChip);
     Updater updater(slot);
     if (!updater.start(bytes.size(), "a test", why)) {
       EMCOOL_CHECK(why.find(expect) != std::string::npos, "%s refused at start: %s", what, why.c_str());
@@ -154,7 +165,27 @@ int main(int argumentCount, char** arguments) {
   {
     std::vector<std::uint8_t> bytes = image;
     bytes[12] = 5;  // ESP32-C3
-    refused(bytes, "another chip", "another chip's firmware");
+    refused(bytes, "another chip (chip id 5)", "another chip's firmware");
+  }
+  {
+    // Each of emcool's own chips refuses the other's build.
+    std::vector<std::uint8_t> bytes = image;
+    bytes[12] = emcool::update::kChipEsp32;
+    bytes[13] = 0;
+    refused(bytes, "another chip (ESP32), but this is an ESP32-S3", "an ESP32 build on an ESP32-S3",
+            emcool::update::kChipEsp32S3);
+    bytes[12] = emcool::update::kChipEsp32S3;
+    refused(bytes, "another chip (ESP32-S3), but this is an ESP32", "an ESP32-S3 build on an ESP32",
+            emcool::update::kChipEsp32);
+  }
+  {
+    std::vector<std::uint8_t> bytes = image;
+    bytes[12] = emcool::update::kChipEsp32S3;
+    bytes[13] = 0;
+    FakeSlot slot(emcool::update::kChipEsp32S3);
+    Updater updater(slot);
+    EMCOOL_CHECK(updater.start(bytes.size(), "a test", why) && feedAll(updater, bytes, 4096) && slot.chosen,
+                 "an ESP32-S3 build on an ESP32-S3: %s", updater.problem().c_str());
   }
   {
     std::vector<std::uint8_t> bytes = image;

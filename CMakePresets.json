@@ -1,0 +1,25 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "esp32",
+            "displayName": "ESP32-WROOM-32",
+            "description": "The Copperhill ESP32 CAN-BUS board (ESP32-WROOM-32)",
+            "binaryDir": "build/esp32",
+            "cacheVariables": {
+                "IDF_TARGET": "esp32",
+                "SDKCONFIG": "./build/esp32/sdkconfig"
+            }
+        },
+        {
+            "name": "esp32s3",
+            "displayName": "ESP32-S3",
+            "description": "An ESP32-S3 board, console on the chip's own USB port",
+            "binaryDir": "build/esp32s3",
+            "cacheVariables": {
+                "IDF_TARGET": "esp32s3",
+                "SDKCONFIG": "./build/esp32s3/sdkconfig"
+            }
+        }
+    ]
+}

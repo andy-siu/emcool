@@ -149,13 +149,24 @@ node "${node_flags[@]}" "$root/tools/generate-golden-charge-auto-loop.mts" "$ref
   grep -vE '^[IW] card: ' "$build/check_card_shell.stderr" >&2
   exit 1
 }
-# The real firmware image when it has been built (idf.py build), else one laid out the same way.
-update_image=()
-[[ -f "$root/build/emcool.bin" ]] && update_image=("$root/build/emcool.bin")
-"$build/check_update" "${update_image[@]}" 2>"$build/check_update.stderr" || {
-  grep -vE '^[IW] update: ' "$build/check_update.stderr" >&2
-  exit 1
-}
+# Each chip's real firmware image that has been built (idf.py --preset <chip> build), else one laid
+# out the same way.
+update_images=()
+for chip in esp32 esp32s3; do
+  if [[ -f "$root/build/$chip/emcool.bin" ]]; then update_images+=("$root/build/$chip/emcool.bin"); fi
+done
+if ((${#update_images[@]} == 0)); then
+  "$build/check_update" 2>"$build/check_update.stderr" || {
+    grep -vE '^[IW] update: ' "$build/check_update.stderr" >&2
+    exit 1
+  }
+fi
+for update_image in ${update_images[@]+"${update_images[@]}"}; do
+  "$build/check_update" "$update_image" 2>"$build/check_update.stderr" || {
+    grep -vE '^[IW] update: ' "$build/check_update.stderr" >&2
+    exit 1
+  }
+done
 
 "$build/check_ride_log" 2>"$build/check_ride_log.stderr" || {
   cat "$build/check_ride_log.stderr" >&2
