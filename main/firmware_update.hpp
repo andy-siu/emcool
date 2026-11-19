@@ -6,6 +6,8 @@
 //   `update FILE`   on any console: an image already on the microSD card, `update /emcool.bin`.
 //   PUT /update     on the Wi-Fi page, behind ADMIN_PASSWORD (main/wifi_link.cpp):
 //                   curl -u :PASSWORD -T build/emcool.bin http://emcool/update
+//   /firmware/…     over Bluetooth, from the dashboard's Settings → emcool, a piece per request
+//                   (emcool/ble_server/firmware_endpoints.hpp)
 //
 // Either way the image is checked, written and checked again, and boots at the next `restart`. A
 // new image boots on trial: once it has run kTrialMs it is kept; a crash, a watchdog or a power cut
@@ -16,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "emcool/ble_server/firmware_endpoints.hpp"
 #include "emcool/files/card_shell.hpp"
 #include "emcool/update/firmware_update.hpp"
 
@@ -35,6 +38,17 @@ update::Updater& firmwareUpdater();
 void setUpdateBlockers(std::function<std::vector<std::string>()> blockers);
 // Why an update can't start now, or empty.
 std::string updateRefusal();
+
+// What runs now, whether it's on trial, what the next boot runs, and any rollback: `update status`'s
+// lines, and the dashboard's.
+std::string firmwareReport();
+
+// The dashboard's side of an update over Bluetooth: the same blockers, the same report.
+class BluetoothFirmwareHost final : public ble_server::FirmwareHost {
+ public:
+  std::string refusal() override { return updateRefusal(); }
+  std::string report() override { return firmwareReport(); }
+};
 
 // From app_main, first thing: if this boot is a new image on trial, says so, and keeps it once it
 // has run kTrialMs. With rollback off in the bootloader there is no trial, and it says nothing.

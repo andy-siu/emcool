@@ -23,7 +23,7 @@ import { BLE_MODE, nativeShell, tunnelRequest } from "./ble-link.js";
  * @typedef {object} EndpointRequestInit
  * @property {string} [method]
  * @property {HeadersInit} [headers]
- * @property {string} [body]
+ * @property {string | Uint8Array} [body] text, or a firmware image's bytes
  * @property {RequestCache} [cache] honoured over HTTP; the tunnel never caches anyway
  * @property {(receivedBytes: number, totalBytes: number | null) => void} [onProgress] BLE only
  */
@@ -38,7 +38,8 @@ export async function request(path, init = {}) {
     init = { ...init, headers: { "Content-Type": "application/json", ...init.headers } };
   }
   if (!BLE_MODE) {
-    const { onProgress: _unused, ...fetchInit } = init;
+    const { onProgress: _unused, body, ...rest } = init;
+    const fetchInit = body === undefined ? rest : { ...rest, body: typeof body === "string" ? body : new Uint8Array(body) };
     const response = await fetch(path, fetchInit);
     if (response.status === 403) {
       await requireCurrentPage(response.clone());

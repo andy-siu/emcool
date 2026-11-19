@@ -11,7 +11,7 @@ It is plain static files, served over HTTPS (Web Bluetooth needs a secure contex
 
 Bluetooth opens only from the exact origins in [`lib/hosted-origin.js`](lib/hosted-origin.js), and from `localhost` with `?transport=ble`. Anywhere else, `andy-siu.github.io` included, the page says *"Bluetooth needs its own address"*. The key is kept in the origin's `localStorage`, and a shared origin would let another site read it.
 
-There is no server component here, and the ESP32 serves nothing over HTTP: the bike link is Bluetooth only. The pages fetch the bike's endpoints (`/status`, `/settings`, `/vcu-read`, `/vcu-write`, `/charge-auto`, …) by tunnelling HTTP-shaped requests over the link, which the firmware answers. Endpoints emcool does not serve (`/update`, `/can-restart`, the hub scan) get a 404 or a refusal saying why.
+There is no server component here, and the ESP32 serves nothing over HTTP: the bike link is Bluetooth only. The pages fetch the bike's endpoints (`/status`, `/settings`, `/vcu-read`, `/vcu-write`, `/charge-auto`, `/firmware`, …) by tunnelling HTTP-shaped requests over the link, which the firmware answers. Endpoints emcool does not serve (`/update`, `/can-restart`, the hub scan) get a 404 or a refusal saying why.
 
 ## Connecting
 
@@ -27,7 +27,7 @@ This is protocol 2; the handshake and framing are in `lib/ble-wire.js`, `lib/ble
 ## Names the firmware must agree with
 
 - **Wire protocol, in lockstep with the firmware:**
-  - the request header **`X-Emcool`**, with its values `service-mode`, `service-write`, `charge-auto`, `expected-faults`, `fan`, `settings` and `console`;
+  - the request header **`X-Emcool`**, with its values `service-mode`, `service-write`, `charge-auto`, `expected-faults`, `fan`, `settings`, `console` and `firmware`;
   - the handshake HMAC salts **`emcool/hello`** and **`emcool/session`**, in `lib/ble-wire.js`.
 - **Client-only names:** the `emcool.*` localStorage keys (`emcool.ble-secret`, `emcool.lightHealthyMax`, …) and the download names (`emcool.log`, `emcool-bluetooth-key.txt`). They touch nothing on the bike.
 

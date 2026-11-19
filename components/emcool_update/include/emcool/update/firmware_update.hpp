@@ -97,6 +97,8 @@ class Updater {
   std::size_t received() const { return received_; }
   std::size_t total() const { return total_; }
   const std::string& source() const { return source_; }
+  // The chip the running firmware is for: an image for another is refused.
+  std::uint16_t chip() const { return slot_.chip(); }
 
  private:
   bool fail(std::string why);

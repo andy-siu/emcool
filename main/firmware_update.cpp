@@ -146,6 +146,8 @@ int status(const std::function<void(std::string&)>& flush) {
 
 }  // namespace
 
+std::string firmwareReport() { return slotReport(); }
+
 void setUpdateBlockers(std::function<std::vector<std::string>()> function) { blockers() = std::move(function); }
 
 std::string updateRefusal() {

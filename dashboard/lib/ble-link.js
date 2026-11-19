@@ -185,7 +185,11 @@ async function requestThroughLink(state, path, init) {
     session,
     MessageKind.REQUEST,
     { id, method: init.method ?? "GET", path, headers },
-    init.body === undefined ? undefined : new TextEncoder().encode(init.body)
+    init.body === undefined
+      ? undefined
+      : typeof init.body === "string"
+        ? new TextEncoder().encode(init.body)
+        : new Uint8Array(init.body)
   );
   return answer;
 }

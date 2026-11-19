@@ -114,6 +114,7 @@ void BleServer::receiveHello(std::span<const std::uint8_t> envelope, std::int64_
     stream_.cancelSnapshot();
     requestCount_ = 0;
     if (responseStage_ != ResponseStage::kNone) requests_.abandon();
+    requests_.sessionEnded();
     responseStage_ = ResponseStage::kNone;
     assembler_.reset();
     if (slot != nullptr) {
@@ -222,6 +223,7 @@ std::size_t BleServer::queuedBytes() const {
 void BleServer::endSession(const char* reason) {
   const bool hadSession = session_.authenticated() || streaming_;
   if (responseStage_ != ResponseStage::kNone) requests_.abandon();
+  if (hadSession) requests_.sessionEnded();
   slotCount_ = 0;
   splitter_.reset();
   attempt_.reset();
@@ -286,7 +288,10 @@ void BleServer::queueRequest(std::string_view header, std::span<const std::uint8
   copyTruncated(path != nullptr && path->type == ble::JsonType::kString ? path->text : "", request.path.data(),
                 request.path.size());
   request.emcoolHeader[0] = '\0';
-  request.bodyTooLarge = body.size() > kMaxRequestBodyBytes;
+  // A piece of a firmware image carries more than any other request.
+  request.bodyTooLarge = body.size() > (FirmwareEndpoints::isChunk(request.path.data())
+                                            ? FirmwareEndpoints::kChunkBytes
+                                            : kMaxRequestBodyBytes);
   request.body.assign(request.bodyTooLarge ? std::string_view() : std::string_view(reinterpret_cast<const char*>(body.data()), body.size()));
   if (const ble::JsonMember* headers = reader.find("headers"); headers != nullptr && headers->type == ble::JsonType::kObject) {
     ble::JsonObjectReader headerReader;

@@ -117,7 +117,7 @@ const MAX_INBOUND_MESSAGE_BYTES = 256 * 1024;
 
 /** @typedef {{ key: CryptoKey, nextOutboundCounter: number, lastInboundCounter: number, rx: BleCharacteristic }} Session */
 
-/** @typedef {{ method?: string, headers?: HeadersInit, body?: string, onProgress?: (received: number, total: number | null) => void }} TunnelRequestInit */
+/** @typedef {{ method?: string, headers?: HeadersInit, body?: string | Uint8Array, onProgress?: (received: number, total: number | null) => void }} TunnelRequestInit */
 
 /** @typedef {{ onOpen: () => void, onMessage: (message: import("./ble-wire.js").DashboardMessage) => void, onClose: () => void }} StreamListener */
 

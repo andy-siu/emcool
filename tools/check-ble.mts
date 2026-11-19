@@ -92,13 +92,13 @@ class Bike {
   #packets: Packet[] = [];
   #waiting: (() => void) | null = null;
 
-  constructor(secret = SECRET) {
+  constructor(secret = SECRET, environment: Record<string, string> = {}) {
     this.#process = spawn(hostBinary, [
       secret,
       goldenPath,
       Buffer.from(storedReply).toString("hex"),
       ...(ridesSource ? [ridesDirectory] : []),
-    ]);
+    ], { env: { ...process.env, ...environment } });
     this.#process.stderr.on("data", (chunk: Buffer) => process.stderr.write(chunk));
     this.#process.stdout.on("data", (chunk: Buffer) => {
       this.#buffer = Buffer.concat([this.#buffer, chunk]);
@@ -832,6 +832,155 @@ check(Math.max(...smallPhone.frameSizes) <= 18, `a ${Math.max(...smallPhone.fram
     `a typed key got ${JSON.stringify(typedReplies.map(reply => reply.header))}`
   );
   await typedBike.quit();
+}
+
+// 8. Firmware over the link (Settings → emcool → Firmware): the dashboard's own firmware-image.js
+// sends a real build's emcool.bin (EMCOOL_UPDATE_IMAGE, else build/esp32/emcool.bin, else one laid
+// out the same way) a piece per request into the host's in-memory slot, which must end up holding
+// exactly that image and chosen. Anything else is refused, and a phone that goes away, a bike that
+// starts moving, a piece out of place or a corrupt image leaves the slot unchosen.
+{
+  const firmwareImage = await import(pathToFileURL(join(emcoolRoot, "dashboard/lib/firmware-image.js")).href);
+  const madeUpImage = (bytes = 300_000) => {
+    const image = new Uint8Array(bytes).fill(0x5a);
+    image.fill(0, 0, 32 + 256);
+    image[0] = 0xe9;
+    image[1] = 6;
+    image[23] = 1;
+    new DataView(image.buffer).setUint32(32, 0xabcd5432, true);
+    const put = (at: number, text: string) => image.set(new TextEncoder().encode(text), 32 + at);
+    put(16, "test-build");
+    put(48, "emcool");
+    put(80, "14:37:18");
+    put(96, "Nov 13 2026");
+    put(112, "v6.1");
+    return image;
+  };
+  const imagePath = process.env.EMCOOL_UPDATE_IMAGE || join(emcoolRoot, "build/esp32/emcool.bin");
+  let realImage: Uint8Array | null = null;
+  try {
+    realImage = new Uint8Array(await readFile(imagePath));
+  } catch {
+    realImage = null;
+  }
+  const image = realImage ?? madeUpImage();
+  const chip = image[12] | (image[13] << 8);
+  const firmwareBike = new Bike(SECRET, { EMCOOL_SLOT_CHIP: String(chip) });
+  await firmwareBike.connect(185);
+  await firmwareBike.notifications(true);
+  let firmwarePhone = new Phone(firmwareBike, SECRET);
+  await firmwarePhone.hello();
+  await firmwarePhone.collect(0);
+  let nextId = 2000;
+  // One request at a time through the stand-in radio, as Bike's commands must be.
+  let queue: Promise<unknown> = Promise.resolve();
+  const exchangeBytes = (path: string, method: string, headers: Record<string, string>, body?: Uint8Array) => {
+    const run = queue.then(async () => {
+      const id = nextId++;
+      await firmwarePhone.send(MessageKind.REQUEST, { id, method, path, headers }, body);
+      const answer = await gather(firmwarePhone, id, {
+        status: -1, headers: {}, parts: [], bytes: Buffer.alloc(0), error: undefined, ended: false,
+        streamDuring: 0, longestStreamGap: 0, sinceStream: 0,
+      });
+      check(answer.ended, `${method} ${path} never ended`);
+      return answer;
+    });
+    queue = run.catch(() => {});
+    return run;
+  };
+  const firmwareHeaders = { "X-Emcool": "firmware", "Content-Type": "application/octet-stream" };
+  const post = async (path: string, body?: Uint8Array) => {
+    const answer = await exchangeBytes(path, "POST", firmwareHeaders, body);
+    return { status: answer.status, reply: JSON.parse(answer.bytes.toString("utf-8")) };
+  };
+  const slot = async () => {
+    const packets = await firmwareBike.command("U");
+    return { ...JSON.parse(packets[0].payload.toString("utf-8")), bytes: packets[1].payload as Buffer };
+  };
+  const status = async () => JSON.parse((await exchangeBytes("/firmware", "GET", {})).bytes.toString("utf-8"));
+
+  const before = await status();
+  check(before.ok && before.state === "idle" && before.chunkBytes === 2048 && before.chip === chip,
+    `GET /firmware: ${JSON.stringify(before)}`);
+  check(firmwareImage.checkImage(image, chip).info !== null,
+    `the dashboard refused the image: ${firmwareImage.checkImage(image, chip).problem}`);
+  const otherChip = chip === 0 ? 9 : 0;
+  check(firmwareImage.checkImage(image, otherChip).problem.includes("but the bike is an"),
+    "the dashboard took another chip's image");
+
+  const unheaded = await exchangeBytes(`/firmware/begin?bytes=${image.length}`, "POST", {});
+  check(unheaded.status === 403 && JSON.parse(unheaded.bytes.toString()).csrfRefusal === true,
+    `POST /firmware/begin without the header: ${unheaded.status}`);
+  await firmwareBike.command("B", Uint8Array.of(1));
+  const whileMoving = await post(`/firmware/begin?bytes=${image.length}`);
+  check(whileMoving.status === 409 && whileMoving.reply.message.includes("moving"),
+    `begin while moving: ${whileMoving.status} ${whileMoving.reply.message}`);
+  await firmwareBike.command("B", Uint8Array.of(0));
+  const tooBig = await post(`/firmware/begin?bytes=${0x1e0001}`);
+  check(tooBig.status === 409 && tooBig.reply.message.includes("won't fit"), `begin too big: ${tooBig.reply.message}`);
+
+  // The whole image, as the dashboard sends it.
+  let lastProgress = 0;
+  const sent = await firmwareImage.sendImage(image, before.chunkBytes, post, (done: number) => (lastProgress = done));
+  const written = await slot();
+  check(sent.ok && sent.message.startsWith("Written and checked"), `sendImage: ${JSON.stringify(sent)}`);
+  check(lastProgress === image.length, `progress ended at ${lastProgress} of ${image.length}`);
+  check(written.chosen && !written.open && Buffer.compare(written.bytes, Buffer.from(image)) === 0,
+    `the slot holds ${written.bytes.length} bytes, chosen ${written.chosen}; the image is ${image.length}`);
+  check((await status()).state === "done", "GET /firmware after the update");
+
+  const small = madeUpImage(20_000);
+  small[12] = chip;
+  // A piece out of place is refused with the offset the bike wants; nothing is written there.
+  check((await post(`/firmware/begin?bytes=${small.length}`)).reply.ok, "begin for the out-of-place piece");
+  const skipped = await post("/firmware/chunk?offset=2048", small.subarray(2048, 4096));
+  check(skipped.status === 409 && skipped.reply.expected === 0, `a piece out of place: ${JSON.stringify(skipped.reply)}`);
+  // A piece larger than kChunkBytes is the server's own 413, never cut short and written.
+  const oversized = await exchangeBytes("/firmware/chunk?offset=0", "POST", firmwareHeaders, small.subarray(0, 2049));
+  check(oversized.status === 413, `a 2049-byte piece: ${oversized.status}`);
+  check((await post("/firmware/cancel")).reply.ok, "cancel");
+  check((await status()).state === "failed", "GET /firmware after cancel");
+
+  // Another chip's build, and a corrupt image: refused, and the slot isn't chosen.
+  const foreign = small.slice();
+  foreign[12] = otherChip;
+  const refusedChip = await firmwareImage.sendImage(foreign, 2048, post, () => {});
+  check(!refusedChip.ok && refusedChip.message.includes("another chip"), `another chip's image: ${refusedChip.message}`);
+  const corrupt = small.slice();
+  corrupt[corrupt.length - 1] = 0xee;
+  const refusedCorrupt = await firmwareImage.sendImage(corrupt, 2048, post, () => {});
+  check(!refusedCorrupt.ok && refusedCorrupt.message.includes("corrupt") && !(await slot()).chosen,
+    `a corrupt image: ${refusedCorrupt.message}`);
+
+  // The bike starts moving partway: the update stops, the slot is abandoned.
+  check((await post(`/firmware/begin?bytes=${small.length}`)).reply.ok, "begin before moving");
+  check((await post("/firmware/chunk?offset=0", small.subarray(0, 2048))).reply.ok, "the first piece");
+  await firmwareBike.command("B", Uint8Array.of(1));
+  const moved = await post("/firmware/chunk?offset=2048", small.subarray(2048, 4096));
+  check(moved.status === 409 && moved.reply.message.includes("moving"), `a piece after the bike moved: ${moved.reply.message}`);
+  check(!(await slot()).open, "the slot was left open after the bike moved");
+  await firmwareBike.command("B", Uint8Array.of(0));
+
+  // The phone goes away partway: the update stops, and the next phone sees why.
+  check((await post(`/firmware/begin?bytes=${small.length}`)).reply.ok, "begin before the disconnect");
+  check((await post("/firmware/chunk?offset=0", small.subarray(0, 2048))).reply.ok, "a piece before the disconnect");
+  const abandonsBefore = (await slot()).abandons;
+  await firmwareBike.command("D");
+  const afterDisconnect = await slot();
+  check(!afterDisconnect.open && afterDisconnect.abandons === abandonsBefore + 1 && !afterDisconnect.chosen,
+    `after a disconnect mid-update: ${JSON.stringify({ ...afterDisconnect, bytes: afterDisconnect.bytes.length })}`);
+  await firmwareBike.connect(185);
+  await firmwareBike.notifications(true);
+  firmwarePhone = new Phone(firmwareBike, SECRET);
+  await firmwarePhone.hello();
+  await firmwarePhone.collect(0);
+  const afterReconnect = await status();
+  check(afterReconnect.state === "failed" && afterReconnect.problem.includes("went away"),
+    `GET /firmware after reconnecting: ${JSON.stringify(afterReconnect)}`);
+  const late = await post("/firmware/chunk?offset=2048", small.subarray(2048, 4096));
+  check(late.status === 409, `a piece after the disconnect: ${late.status}`);
+  await firmwareBike.quit();
+  console.log(`check-ble: firmware over the link: ${realImage ? imagePath : "a made-up image"}, ${image.length} bytes`);
 }
 
 const final = await bike.json("Z");

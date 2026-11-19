@@ -40,7 +40,10 @@
 #     framing, the handshake), and the C++ server, driven by the reference's own phone-side
 #     ble-wire.js, handshakes, streams the live state exactly, and answers requests with
 #     the reference's bodies; /dl sends the ride log the corpus run left on disk, which the laptop
-#     reads and imports exactly as it does the card's files, while the live stream keeps coming
+#     reads and imports exactly as it does the card's files, while the live stream keeps coming; and
+#     the dashboard's firmware-image.js sends a real build's emcool.bin through /firmware/… into
+#     the slot byte for byte, while a piece out of place, a moving bike, a phone that goes, another
+#     chip's build and a corrupt image all leave the slot unchosen
 #
 # Needs a checkout of the TypeScript reference implementation (COOL_EVA_DIR, default ../cool-eva),
 # Node 22.13+ (for its built-in SQLite), CMake and Ninja.
@@ -184,15 +187,17 @@ node "${node_flags[@]}" "$root/tools/check-ride-log.mts" "$build/ride-log-corpus
   cat "$build/check_ble_wire.stderr" >&2
   exit 1
 }
-node "${node_flags[@]}" "$root/tools/check-ble.mts" "$build/ble_server_host" "$golden" "$reference" \
+# Firmware over the link sends the first real build found (else a made-up image); the other chip's
+# build, if there is one, goes again below.
+EMCOOL_UPDATE_IMAGE="${update_images[0]:-}" node "${node_flags[@]}" "$root/tools/check-ble.mts" "$build/ble_server_host" "$golden" "$reference" \
   "$build/ride-log-corpus/RIDES" 2>"$build/check_ble.stderr" || {
-  grep -vE '^[IW] (gps|attitude|ble-server|ride-log): ' "$build/check_ble.stderr" >&2
+  grep -vE '^[IW] (gps|attitude|ble-server|ride-log|update|firmware): ' "$build/check_ble.stderr" >&2
   exit 1
 }
 # And with no card configured, /dl says the ride log is off.
-node "${node_flags[@]}" "$root/tools/check-ble.mts" "$build/ble_server_host" "$golden" "$reference" \
+EMCOOL_UPDATE_IMAGE="${update_images[1]:-${update_images[0]:-}}" node "${node_flags[@]}" "$root/tools/check-ble.mts" "$build/ble_server_host" "$golden" "$reference" \
   2>"$build/check_ble_no_card.stderr" || {
-  grep -vE '^[IW] (gps|attitude|ble-server|ride-log): ' "$build/check_ble_no_card.stderr" >&2
+  grep -vE '^[IW] (gps|attitude|ble-server|ride-log|update|firmware): ' "$build/check_ble_no_card.stderr" >&2
   exit 1
 }
 

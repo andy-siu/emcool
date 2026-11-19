@@ -15,6 +15,7 @@
 //                        its Bluetooth key (docs/ble.md)
 //   /console, /console/status  the serial console's commands and status report, for Settings →
 //                        Bike console (console_endpoints.hpp). The one way here to change a setting
+//   /firmware, /firmware/…  firmware updates, a piece per request (firmware_endpoints.hpp)
 // Everything else is a 404 saying the endpoint isn't on emcool yet. None of these touches the
 // bus: they serve what is already known, so refreshing a page can't make the bike answer
 // anything.
@@ -35,6 +36,7 @@
 #include <string_view>
 
 #include "emcool/ble_server/console_endpoints.hpp"
+#include "emcool/ble_server/firmware_endpoints.hpp"
 #include "emcool/obd/stored_codes.hpp"
 #include "emcool/ride_log/download.hpp"
 #include "emcool/signals/signal_store.hpp"
@@ -73,6 +75,8 @@ class RequestHandler {
   virtual HttpResponse timedOut() { return {504, "text/plain; charset=utf-8", 0}; }
   // The phone went away (or a new session began) with the response unfinished, waiting or partly sent.
   virtual void abandon() {}
+  // The session ended (the phone went away, or another one authenticated), whatever was in flight.
+  virtual void sessionEnded() {}
   // Up to `maxBytes` of the body from `offset`; valid until the next call.
   virtual std::span<const char> body(std::size_t offset, std::size_t maxBytes) = 0;
 };
@@ -134,7 +138,7 @@ class DashboardEndpoints final : public RequestHandler {
   DashboardEndpoints(const signals::SignalStore& store, std::mutex& storeMutex, StorageReport& storage,
                      TroubleCodeSource& troubleCodes, ServiceDesk* service = nullptr,
                      ride_log::LogDownload* download = nullptr, std::string settingsBody = {},
-                     ConsoleEndpoints* console = nullptr)
+                     ConsoleEndpoints* console = nullptr, FirmwareEndpoints* firmware = nullptr)
       : store_(store),
         storeMutex_(storeMutex),
         storage_(storage),
@@ -142,12 +146,14 @@ class DashboardEndpoints final : public RequestHandler {
         service_(service),
         download_(download),
         settingsBody_(std::move(settingsBody)),
-        console_(console) {}
+        console_(console),
+        firmware_(firmware) {}
 
   std::optional<HttpResponse> begin(const HttpRequest& request, std::int64_t nowMonotonicMs) override;
   std::optional<HttpResponse> poll(std::int64_t nowMonotonicMs) override;
   HttpResponse timedOut() override;
   void abandon() override;
+  void sessionEnded() override;
   std::span<const char> body(std::size_t offset, std::size_t maxBytes) override;
 
  private:
@@ -172,6 +178,7 @@ class DashboardEndpoints final : public RequestHandler {
   ride_log::LogDownload* download_;
   const std::string settingsBody_;
   ConsoleEndpoints* console_;
+  FirmwareEndpoints* firmware_;
   Waiting waiting_ = Waiting::kNothing;
   std::string downloadName_;
   // A body read a part at a time: the parts, and where the one in hand sits in the body.

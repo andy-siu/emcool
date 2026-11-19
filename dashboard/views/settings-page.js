@@ -17,7 +17,8 @@ import { SettingsRecovery } from "./settings-recovery.js";
 import { SettingsRestart } from "./settings-restart.js";
 import { DashboardBluetooth } from "./settings-bluetooth.js";
 import { MotorcycleConnection } from "./settings-hub.js";
-import { CanRestartButton, UpdateButton } from "./pi-actions.js";
+import { CanRestartButton } from "./pi-actions.js";
+import { FirmwareUpdate } from "./firmware-update.js";
 import { ScreenGeometry } from "./screen-geometry.js";
 import { BikeConsole } from "./bike-console.js";
 
@@ -183,12 +184,8 @@ function SettingsContent(section) {
     case "software":
       return div(
         h2("emcool"),
-        SettingsCard(
-          "Version",
-          "",
-          () => div({ class: "settings-note" }, settings.val?.version ?? "Unconfirmed"),
-          UpdateButton()
-        ),
+        SettingsCard("Version", "", () => div({ class: "settings-note" }, settings.val?.version ?? "Unconfirmed")),
+        FirmwareUpdate(),
         SettingsCard("Screen geometry", "", ScreenGeometry())
       );
     case "advanced":

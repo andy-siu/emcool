@@ -47,7 +47,7 @@ class BleServer {
   static constexpr std::size_t kMaxQueuedRequests = 8;
   // The most of a request's body kept, held only while the request waits: a console command with a
   // 128-character password fits with every character escaped twice. A longer body is answered 413,
-  // never cut short and acted on.
+  // never cut short and acted on. A /firmware/chunk may carry FirmwareEndpoints::kChunkBytes.
   static constexpr std::size_t kMaxRequestBodyBytes = 1024;
   // Response bodies go in pieces of at most this much, each its own message, which must fit
   // ble::kMaxMessageBytes with its header. The phone joins them, whatever their size.

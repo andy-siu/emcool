@@ -8,7 +8,9 @@
 //        T ms(u32) budget(u32)   advance the clock in 10 ms steps, ticking the server and
 //                    notifying at most `budget` frames per step (0xffffffff: all of them)
 //        L           dump live state           Z  dump counters          Q  quit
-//   out  I info JSON   F a notification frame   J a JSON dump   K done with the command
+//        U           dump the firmware slot: what /firmware/… wrote, and whether it was chosen
+//        B on(u8)    the bike starts (1) or stops (0) moving: what blocks an update
+//   out  I info JSON   F a notification frame   J a JSON dump   S the slot's bytes   K done with the command
 //
 //   ble_server_host <secret> <golden decode corpus> [<mode 03 reply hex> [<RIDES dir>]]
 //
@@ -34,12 +36,14 @@
 #include "emcool/ble/crypto.hpp"
 #include "emcool/ble_server/console_endpoints.hpp"
 #include "emcool/ble_server/endpoints.hpp"
+#include "emcool/ble_server/firmware_endpoints.hpp"
 #include "emcool/ble_server/server.hpp"
 #include "emcool/can/frame_decoder.hpp"
 #include "emcool/obd/stored_codes.hpp"
 #include "emcool/ride_log/download.hpp"
 #include "emcool/settings/dashboard_reply.hpp"
 #include "emcool/signals/signal_store.hpp"
+#include "emcool/update/firmware_update.hpp"
 
 namespace {
 
@@ -136,6 +140,59 @@ class StubConsoleHost final : public emcool::ble_server::ConsoleHost {
   void restartSoon() override {}
 };
 
+// The spare app slot, in memory: what was written, and whether finish() chose it. Any chip: it takes
+// the chip of whatever image starts arriving, so the check can send either build.
+class MemorySlot final : public emcool::update::Slot {
+ public:
+  std::size_t capacity() const override { return 0x1E0000; }
+  emcool::update::ImageInfo running() const override { return {"emcool", "v-test", "v6.1", "Nov 1 2026 10:00:00"}; }
+  std::uint16_t chip() const override { return chip_; }
+  bool begin(std::size_t, std::string&) override {
+    written.clear();
+    chosen = false;
+    open = true;
+    return true;
+  }
+  bool write(std::span<const std::uint8_t> data, std::string& why) override {
+    if (!open) {
+      why = "not open";
+      return false;
+    }
+    written.insert(written.end(), data.begin(), data.end());
+    return true;
+  }
+  bool finish(std::string& why) override {
+    open = false;
+    // As esp_ota_end: a flipped byte anywhere fails the image's hash.
+    if (!written.empty() && written.back() == 0xEE) {
+      why = "the image is corrupt (its checksum or hash doesn't match)";
+      return false;
+    }
+    chosen = true;
+    return true;
+  }
+  void abandon() override {
+    open = false;
+    abandons++;
+  }
+  void setChip(std::uint16_t chip) { chip_ = chip; }
+
+  std::vector<std::uint8_t> written;
+  bool chosen = false;
+  bool open = false;
+  int abandons = 0;
+
+ private:
+  std::uint16_t chip_ = emcool::update::kChipEsp32;
+};
+
+class StubFirmwareHost final : public emcool::ble_server::FirmwareHost {
+ public:
+  std::string refusal() override { return moving ? "the bike is moving (12 km/h)" : ""; }
+  std::string report() override { return "running: emcool v-test (ota_0)\n"; }
+  bool moving = false;
+};
+
 class FixedTroubleCodes final : public emcool::ble_server::TroubleCodeSource {
  public:
   emcool::obd::StoredCodes troubleCodes() override { return codes; }
@@ -196,12 +253,17 @@ int main(int argumentCount, char** arguments) {
   emcool::settings::RuntimeSettings running(emcool::settings::Settings::load(settingsStorage));
   StubConsoleHost consoleHost;
   emcool::ble_server::ConsoleEndpoints console(settingsStorage, running, consoleHost);
+  MemorySlot slot;
+  if (const char* chip = std::getenv("EMCOOL_SLOT_CHIP")) slot.setChip(static_cast<std::uint16_t>(std::atoi(chip)));
+  emcool::update::Updater updater(slot);
+  StubFirmwareHost firmwareHost;
+  emcool::ble_server::FirmwareEndpoints firmware(updater, firmwareHost);
   emcool::ble_server::DashboardEndpoints endpoints(
       store, storeMutex, storage, troubleCodes, &desk, download.get(),
       emcool::settings::dashboardSettingsReply(
           settings, {"v-test", "0011223344556677", "00000000-0000-0000-0000-a1b2c3d4e5f6", download != nullptr,
                      "0123abcd-0123-4567-89ab-0123456789ab"}),
-      &console);
+      &console, &firmware);
   emcool::ble_server::BleServer server(arguments[1], store, storeMutex, endpoints);
   emcool::can::FrameDecoder decoder;
   std::int64_t monotonicMs = 1'000'000;
@@ -303,6 +365,15 @@ int main(int argumentCount, char** arguments) {
           counters.snapshots, static_cast<unsigned long long>(counters.framesSent), server.queuedBytes(),
           static_cast<long long>(monotonicMs), server.authenticated() ? "true" : "false");
       writePacket('J', json, static_cast<std::size_t>(length));
+    } else if (type == 'U') {
+      char json[160];
+      const int length = std::snprintf(json, sizeof json, "{\"bytes\":%zu,\"chosen\":%s,\"open\":%s,\"abandons\":%d}",
+                                       slot.written.size(), slot.chosen ? "true" : "false", slot.open ? "true" : "false",
+                                       slot.abandons);
+      writePacket('J', json, static_cast<std::size_t>(length));
+      writePacket('S', slot.written.data(), slot.written.size());
+    } else if (type == 'B') {
+      firmwareHost.moving = payload[0] != 0;
     } else if (type == 'Q') {
       writePacket('K', nullptr, 0);
       std::fflush(stdout);
