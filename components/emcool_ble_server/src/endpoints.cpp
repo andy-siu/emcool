@@ -84,6 +84,10 @@ std::optional<HttpResponse> DashboardEndpoints::begin(const HttpRequest& request
     }
     return fromText(answer->status, answer->contentType, answer->body);
   }
+  if (firmware_ != nullptr && FirmwareEndpoints::handles(route)) {
+    const FirmwareAnswer answer = firmware_->answer(method, route, query, request.emcoolHeader, request.body);
+    return fromText(answer.status, kJson, answer.body);
+  }
   if (route == "/settings" && !settingsBody_.empty()) {
     source_ = Source::kStatic;
     static_ = settingsBody_;
@@ -361,6 +365,10 @@ void DashboardEndpoints::abandon() {
   if (waiting_ == Waiting::kConsole) console_->abandon();
   endDownload();
   waiting_ = Waiting::kNothing;
+}
+
+void DashboardEndpoints::sessionEnded() {
+  if (firmware_ != nullptr) firmware_->sessionEnded();
 }
 
 HttpResponse DashboardEndpoints::fromText(int status, const char* contentType, std::string_view text) {

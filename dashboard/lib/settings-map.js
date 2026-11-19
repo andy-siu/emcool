@@ -7,7 +7,7 @@ export const SETTINGS_MAP = [
   { key: "charging", title: "Charging", detail: "Allow automatic current reduction" },
   { key: "connections", title: "Connections", detail: "Wi-Fi · Dashboard Bluetooth · Motorcycle · CAN" },
   { key: "recording", title: "Ride recording", detail: "Recording status · Public key · Backup help" },
-  { key: "software", title: "emcool", detail: "Version · Update" },
+  { key: "software", title: "emcool", detail: "Version · Firmware update" },
   { key: "advanced", title: "Advanced", detail: "Data location · Recording and service directories" },
 ];
 

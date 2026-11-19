@@ -97,6 +97,18 @@ The key lives in NVS, not in the firmware image or the build directory. The cons
     - **Refusals:** a missing header gets the 403 shape that tells the page to reload. An unknown command and anything but one line of at most 512 characters and eight words get a 400.
     - **`restart`:** answered 409 when the bike isn't parked or the bus is in use. If a new `BLE_SECRET` is saved, it also needs `"bluetoothKey"` in the body to match that key. The bike restarts 1.5 s after the reply.
   - **Request bodies:** the server now keeps a REQUEST's body, up to 1 KB, and hands it to the endpoint. A larger body gets the server's own 413, and is never cut short and acted on.
+- **`/firmware`: Settings → emcool → Firmware.** New firmware over the link (`firmware_endpoints.hpp`), into the same updater as the console's `update` and Wi-Fi's `PUT /update`, so it is checked the same way.
+  - **`GET /firmware`:** `update status`'s lines as `report`, then the update's `state` (`idle`, `writing`, `done`, `failed`), its `source`, `received` and `total`, the last `problem`, the piece size (`chunkBytes`, 2048) and the bike's `chip`.
+  - **`POST /firmware/begin?bytes=N`**, then **`/firmware/chunk?offset=K`** with up to 2048 bytes of the image as the body, one request per piece, then **`/firmware/finish`**. Or **`/firmware/cancel`**. Each POST needs `X-Emcool: firmware`, and answers JSON with `ok` and `message`.
+  - **Rules:**
+    - **Waits for a parked bike:** `begin` is refused (409) while the bike is moving or the bus is in use, the same as `restart`. Every piece checks again, so a bike that starts moving stops the update.
+    - **Pieces in order:** a piece whose `offset` isn't what the bike has so far is refused with `expected`, so a lost or repeated piece never lands in the wrong place.
+    - **Size cap:** a piece over 2048 bytes gets the server's own 413. This is the one request whose body may exceed 1 KB.
+    - **Disconnect:** the phone going away stops the update, as does another phone authenticating. The running firmware is unchanged either way.
+  - **What the phone sends:** the dashboard checks the file first (`dashboard/lib/firmware-image.js`: an app image for this chip, named emcool, that fits the slot) and keeps two pieces in flight.
+  - **How long:** about 940 pieces for a 1.9 MB image. Real throughput on this board hasn't been measured.
+  - **After `finish`:** the new firmware runs after a `restart` (the panel's Restart sends the console's), on trial for 30 s, as [README](../README.md#updating-without-the-cable) explains.
+  - ⚠️ **Only the Bluetooth key protects it.** The image isn't signed, so anyone holding the key can install firmware.
 - **Everything else** answers 404, with a body saying the endpoint isn't on emcool yet. That covers fan control, `/update`, `/can-restart`, `/recording/flush` and `/waypoint`. The dashboard shows the error where it would show the result.
 
 ## How the server is built
@@ -153,6 +165,7 @@ With Bluetooth on, the static-data region is too small for them. The boot log pr
     - a part deleted after planning goes as zeros, with every later offset unmoved
     - an unmount mid-download stops it
     - measuring the end of a part's records past a run of zeroed sectors
+  - **`/firmware`:** the dashboard's own `firmware-image.js` sends each real build's `emcool.bin` (whichever have been built, else a made-up image) through the endpoints into an in-memory slot, which ends up holding exactly that image, chosen. Also checked: the header, a moving bike at `begin` and mid-way, an image too big, a piece out of place (refused with `expected`), a 2049-byte piece (413), cancel, another chip's build, a corrupt image, and a disconnect mid-update (the slot abandoned, and the next phone's `GET /firmware` says why). Removing the disconnect safeguard makes it fail.
   - **Tampering and replay:** a tampered envelope and a replayed one are both dropped, and the session carries on.
   - **Unsubscribe and disconnect:** unsubscribe stops the stream, and a disconnect ends the session.
 - **The test can fail.** With the outbound direction byte wrong, the phone can't open anything and the check fails.
@@ -170,7 +183,8 @@ With Bluetooth on, the static-data region is too small for them. The boot log pr
 **Not verified yet** (nothing has run on the ESP32):
 
 - NimBLE itself: advertising, GATT, MTU exchange and notifications.
-- Real throughput, and the heap left over. That includes how long a 16 MB `/dl` really takes.
+- Real throughput, and the heap left over. That includes how long a 16 MB `/dl` and a 1.9 MB firmware update really take.
+- A firmware update over the link onto real flash, `esp_ota_*` and the trial boot that follows.
 - `/dl` reading the card while the ride-log task writes it, on the real FatFs and SPI bus.
 - The iOS app or a browser against the real radio.
 - The PSA crypto backend and ROM inflate, which are only compiled. The boot self-test covers the crypto the first time it runs.

@@ -144,7 +144,11 @@ The S3 build has the same features as the ESP32 one. What differs:
 
 ### Updating without the cable
 
-After the first USB flash, new firmware can go on over the air, from the microSD card or over Wi-Fi. Both write the new image into the spare app slot while the bike keeps running, check it, and boot it at the next `restart`:
+After the first USB flash, new firmware can go on over the air: from the dashboard over Bluetooth, from the microSD card, or over Wi-Fi. All three write the new image into the spare app slot while the bike keeps running, check it, and boot it at the next `restart`.
+
+**From the dashboard:** open **Settings → emcool → Firmware**, choose `build/<chip>/emcool.bin` (on a phone, AirDrop or save it to Files first), tap **Send to bike** twice, then **Restart** once it says *Written and checked*. It takes a few minutes; keep the phone near the bike. See [`docs/ble.md`](docs/ble.md) for how it goes over the link.
+
+**From the card or Wi-Fi:**
 
 ```
 emcool> update /emcool.bin      after copying build/<chip>/emcool.bin onto the card
@@ -161,7 +165,7 @@ curl -u :'the admin password' -T build/esp32/emcool.bin http://emcool.local/upda
 - **The first time needs the cable.** Trial boots are a bootloader setting (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`), and only `idf.py flash` writes the bootloader. A board flashed before this has no trial boot: an update still works, but nothing undoes a bad one.
 - **USB is always the way back.** `idf.py flash` writes slot 0 and points the boot at it, whatever the update did.
 
-Each slot holds a whole image, so the app has to stay under 1.875 MB.
+Each slot holds a whole image, so the app has to stay under 1.875 MB. ⚠️ It is close: the ESP32 build leaves about 47 KB, and the S3 about 62 KB.
 
 ## Settings
 

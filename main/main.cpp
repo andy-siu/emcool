@@ -129,6 +129,7 @@ struct BluetoothParts {
   const emcool::ride_log::SessionId& session;
   emcool::BleLinkCounters& counters;
   emcool::ble_server::ConsoleEndpoints& console;
+  emcool::ble_server::FirmwareEndpoints& firmware;
   bool afterBoot = false;
 };
 bool startBluetooth(const BluetoothParts& parts, const std::string& key);
@@ -230,9 +231,13 @@ extern "C" void app_main() {
                                                  emcool::ble_server::ConsoleEndpoints::kMaxOutputBytes);
   static emcool::ble_server::ConsoleEndpoints consoleEndpoints(settingsStorage, runtimeSettings, consoleHost,
                                                                download != nullptr ? &bikeConsoleCard : nullptr);
+  // Settings → emcool → Firmware: an update over the Bluetooth link, waiting for what a restart waits for.
+  static emcool::BluetoothFirmwareHost firmwareHost;
+  static emcool::ble_server::FirmwareEndpoints firmwareEndpoints(emcool::firmwareUpdater(), firmwareHost);
   // NimBLE keeps PHY calibration in NVS; without it the radio can't start.
   static BluetoothParts bluetoothParts{settings, store,           storeMutex,      storageReport,  *diagnostics,
-                                       download, session,         bleLinkCounters, consoleEndpoints};
+                                       download, session,         bleLinkCounters, consoleEndpoints,
+                                       firmwareEndpoints};
   const bool keyAtBoot = emcool::ble::BleSession::secretIsUsable(settings.bleSecret);
   if (!keyAtBoot) {
     emcool::logWarning(kTag, "Bluetooth is off: no Bluetooth key. On the serial console: set BLE_SECRET <key>, and "
@@ -392,7 +397,7 @@ bool startBluetooth(const BluetoothParts& parts, const std::string& key) {
       {esp_app_get_description()->version, parts.session.hex.data(), instanceId, parts.download != nullptr, codeId});
   auto* endpoints = allocate<emcool::ble_server::DashboardEndpoints>(
       "the dashboard endpoints", parts.store, parts.storeMutex, parts.storage, parts.diagnostics, &parts.diagnostics,
-      parts.download, std::move(settingsReply), &parts.console);
+      parts.download, std::move(settingsReply), &parts.console, &parts.firmware);
   auto* server = endpoints == nullptr ? nullptr
                                       : allocate<emcool::ble_server::BleServer>("the Bluetooth server", key,
                                                                                  parts.store, parts.storeMutex,
