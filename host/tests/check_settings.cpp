@@ -354,6 +354,20 @@ int main() {
     out = send(negotiated, 0, close);
     EMCOOL_CHECK(console.authenticated() && !close && contains(out, "logged in") && contains(out, "emcool> "),
                  "the right password, through telnet negotiation, was refused:\n%s", out.c_str());
+    // Every request is answered, or a telnet client stays in character mode and shows Return as ^M:
+    // DO SGA refused (WONT), WILL TTYPE refused (DONT), DO ECHO agreed to silently while the password is
+    // typed, and the client's DONT ECHO after the login's WONT ECHO not answered again.
+    EMCOOL_CHECK(contains(out, std::string("\xff\xfe\x18", 3)), "WILL TTYPE got no DONT:\n%s", out.c_str());
+    {
+      RemoteConsole fresh("pw", [](int, char**, std::string&) {});
+      fresh.connected(0);
+      out = fresh.receive(std::span<const char>("\xff\xfd\x03\xff\xfd\x01", 6), 0, close);
+      EMCOOL_CHECK(out == std::string("\xff\xfc\x03", 3), "DO SGA, DO ECHO answered wrong");
+      out = fresh.receive(std::span<const char>("pw\r", 3), 0, close);
+      EMCOOL_CHECK(fresh.authenticated() && contains(out, std::string("\xff\xfc\x01", 3)), "no WONT ECHO at login");
+      out = fresh.receive(std::span<const char>("\xff\xfe\x01", 3), 0, close);
+      EMCOOL_CHECK(out.empty(), "DONT ECHO after WONT ECHO was answered again");
+    }
     out = send("\nset WIFI_SSID \"garage wifi\"\nshow\n", 0, close);
     const std::vector<std::string> expectedSet = {"set", "WIFI_SSID", "garage wifi"};
     EMCOOL_CHECK(ran.size() == 2 && ran[0] == expectedSet &&
