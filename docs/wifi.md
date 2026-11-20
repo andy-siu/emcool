@@ -114,7 +114,7 @@ The bike checks the image as it arrives, writes it into the spare app slot, chec
 
 ## What it costs
 
-- **Flash:** Wi-Fi took the firmware from 1.46 MB to 1.74 MB, even after building for size; with the card commands and updates it's 1.81 MB of its 1.875 MB slot. Both slots are in use now (updates write the spare one), so they can't be merged to make room. More room would come from a bigger flash chip, or from shrinking the 128 KB core-dump partition.
+- **Flash:** Wi-Fi took the firmware from 1.46 MB to 1.74 MB, even after building for size; with the card commands and updates it's 1.81 MB. On the S3's 8 MB flash each app slot is 3.875 MB, so there's room; it was the 4 MB table's 1.875 MB slots that made it tight.
 - **The firmware is now built for size (`-Os`), not for debugging (`-Og`).** Both stacks don't fit otherwise: the fast instruction RAM overflowed by 2 KB, and the image outgrew its slot. One cost: a crash's backtrace and variables are a little harder to read, since the compiler inlines and reorders more.
 - **Wi-Fi features left out** (`sdkconfig.defaults`): being an access point, enterprise (802.1X) logins, OWE, and a receive-path speed-up that lives in instruction RAM. Joining a home network or a phone hotspot with WPA2 or WPA3 needs none of them.
 - **The Wi-Fi stack is linked in either way.** Turning Wi-Fi off doesn't make the firmware smaller; it just never starts the radio.

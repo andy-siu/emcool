@@ -103,7 +103,7 @@ Without `--preset` (or `CHIP=`), `idf.py` and `make` build for the ESP32-S3. `ex
 - **Pins:** the CAN and microSD pins default to the Copperhill board's (GPIO25/26, and the SPI header), and to the table below on an S3. For different wiring, change them with `make menuconfig CHIP=<chip>` (or `idf.py --preset <chip> menuconfig`) → emcool. Setting a pin to -1 turns that part off.
 - **Build options:** these live in `sdkconfig.defaults`, shared by both chips, with `sdkconfig.defaults.esp32` and `sdkconfig.defaults.esp32s3` on top. The pin defaults are in `main/Kconfig.projbuild`.
 - **A build keeps its options.** Each build writes them to `build/<chip>/sdkconfig` the first time (the file isn't tracked) and uses that file from then on. A changed default, such as a new default pin, doesn't reach a build that already exists. `make defaults CHIP=<chip>` deletes the file, and the next build starts again from the defaults. That also drops anything set in menuconfig.
-- **Optimised for size:** the firmware is built with `-Os`, not `-Og`, because Bluetooth and Wi-Fi together don't fit otherwise. It's 1.81 MB of the 1.875 MB app slot.
+- **Optimised for size:** the firmware is built with `-Os`, not `-Og`, because Bluetooth and Wi-Fi together don't fit otherwise. It's 1.81 MB of the 3.875 MB app slot.
 
 ### ESP32-S3
 
@@ -139,7 +139,7 @@ The S3 build has the same features as the ESP32 one. What differs:
 
 - **Pins the board already uses:** GPIO6 and 7 for CAN1; GPIO10–13 (SPI) and GPIO3 (interrupt) for CAN2's MCP2515; GPIO2 for the blue user LED. Don't put anything else on them.
 - **Pins to avoid:** GPIO19 and GPIO20 are the USB port. GPIO0, 3, 45 and 46 are strapping pins. GPIO26–32 drive the flash, and the N8R8's octal PSRAM takes GPIO33–37.
-- **Flash:** the build assumes 4 MB, like the WROOM-32, so it uses the same partition table on a board with more.
+- **Flash:** the build assumes the N8R8's 8 MB (`partitions.csv`): two 3.875 MB app slots and the core dump. A board flashed with the old 4 MB table keeps its 1.875 MB slots, even through over-the-air updates, until it's flashed once over USB (`make flash`). Its settings survive that: NVS hasn't moved.
 - **Not run on the bike yet.** On the S3 the console, the status report, `can-dump` and Bluetooth advertising have run on the bench. CAN, the card and Wi-Fi haven't run on real hardware.
 
 ### Updating without the cable
@@ -167,7 +167,7 @@ curl -u :'the admin password' -T build/esp32/emcool.bin http://emcool.local/upda
 - **The first time needs the cable.** Trial boots are a bootloader setting (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`), and only `idf.py flash` writes the bootloader. A board flashed before this has no trial boot: an update still works, but nothing undoes a bad one.
 - **USB is always the way back.** `idf.py flash` writes slot 0 and points the boot at it, whatever the update did.
 
-Each slot holds a whole image, so the app has to stay under 1.875 MB. ⚠️ It is close: the ESP32 build leaves about 47 KB, and the S3 about 62 KB.
+Each slot holds a whole image, so the app has to stay under 3.875 MB; the S3 build is 1.81 MB. An update can't change the partition table, so a board still on the old 4 MB table (1.875 MB slots) refuses an image bigger than that until it's flashed over USB.
 
 ## Settings
 

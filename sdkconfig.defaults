@@ -1,7 +1,8 @@
 # Shared by every chip. The chip itself comes from CMakePresets.json (or `idf.py set-target`), and
 # ESP-IDF then layers sdkconfig.defaults.esp32 or sdkconfig.defaults.esp32s3 on top of this file.
 
-CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+# The ESP32-CAN-X2's module has 8 MB; partitions.csv lays it out.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # Over-the-air updates boot on trial: a new image that doesn't confirm itself (main/firmware_update.cpp)
@@ -30,7 +31,7 @@ CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
 
 # Wi-Fi as a station only, beside Bluetooth (WIFI_SSID and ADMIN_PASSWORD turn it on; it is linked in
 # either way). Both stacks don't fit at -Og: the fast instruction RAM overflows and the image outgrows
-# its 1.875 MB slot. So: build for size, and leave out what joining a home network or phone hotspot
+# its app slot (1.875 MB, before the flash went to 8 MB). So: build for size, and leave out what joining a home network or phone hotspot
 # doesn't need (being an access point, enterprise logins, OWE, and the receive path's IRAM copy).
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n

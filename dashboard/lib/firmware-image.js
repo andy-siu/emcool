@@ -11,7 +11,7 @@ const APP_DESC_MAGIC = 0xabcd5432;
 const DESCRIPTION = 24 + 8;
 export const HEADER_BYTES = DESCRIPTION + 128;
 /** The app slot's size (partitions.csv's ota_0 and ota_1). */
-export const SLOT_BYTES = 0x1e0000;
+export const SLOT_BYTES = 0x3e0000;
 
 /** @param {number} chip */
 export function chipName(chip) {

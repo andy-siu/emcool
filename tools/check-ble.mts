@@ -916,7 +916,7 @@ check(Math.max(...smallPhone.frameSizes) <= 18, `a ${Math.max(...smallPhone.fram
   check(whileMoving.status === 409 && whileMoving.reply.message.includes("moving"),
     `begin while moving: ${whileMoving.status} ${whileMoving.reply.message}`);
   await firmwareBike.command("B", Uint8Array.of(0));
-  const tooBig = await post(`/firmware/begin?bytes=${0x1e0001}`);
+  const tooBig = await post(`/firmware/begin?bytes=${0x3e0001}`);
   check(tooBig.status === 409 && tooBig.reply.message.includes("won't fit"), `begin too big: ${tooBig.reply.message}`);
 
   // The whole image, as the dashboard sends it.

@@ -29,7 +29,7 @@ std::uint16_t imageChip = emcool::update::kChipEsp32;
 class FakeSlot final : public emcool::update::Slot {
  public:
   explicit FakeSlot(std::uint16_t chip = imageChip) : chip_(chip) {}
-  std::size_t capacity() const override { return 0x1E0000; }
+  std::size_t capacity() const override { return 0x3E0000; }
   ImageInfo running() const override { return {"emcool", "old", "v6.1", "Nov 1 2026 10:00:00"}; }
   std::uint16_t chip() const override { return chip_; }
   bool begin(std::size_t bytes, std::string&) override {
