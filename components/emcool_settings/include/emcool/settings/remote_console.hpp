@@ -1,14 +1,16 @@
 #pragma once
 
-// The console over Wi-Fi (port 23): one client at a time, behind ADMIN_PASSWORD, then the same
-// commands as the USB console. This is the part with no sockets in it — the bytes in, the bytes out,
-// the login and its lockout — so the host checks run it; main/wifi_link.cpp feeds it a TCP socket.
+// The telnet console over Wi-Fi (port 23): one client at a time, behind TELNET_PASSWORD, then the
+// USB console's commands that only look (readOnlyAllows). This is the part with no sockets in it —
+// the bytes in, the bytes out, the login and its lockout — so the host checks run it;
+// main/wifi_link.cpp feeds it a TCP socket.
 //
 // Plain TCP, so `nc <bike> 23` works (macOS has no telnet). Telnet clients' option negotiation
 // (IAC …) is answered: every option refused but ECHO, which hides the password, so a telnet client
 // edits whole lines itself. Lines end at CR or LF; a CR LF pair is one line. Backspace edits the line.
 // The password is the only thing it protects with: it crosses the network in plain text, as does
-// everything after it, and `set ADMIN_PASSWORD` over this console sends the new one in plain text too.
+// everything after it. So the console changes nothing: no setting, no file, no restart, no update,
+// nothing on the CAN bus. The SSH console (port 22, ADMIN_PASSWORD) does all of those.
 
 #include <cstddef>
 #include <cstdint>
@@ -67,6 +69,14 @@ class RemoteConsole {
 // The words of a line, as the USB console splits them: spaces separate, double quotes group, and a
 // backslash escapes the next character.
 std::vector<std::string> splitWords(std::string_view line);
+
+// Whether the read-only telnet console runs this command line: help, show, status (to print one
+// now, not to change it), ifconfig, update status, and the card's dir, ls, cd, pwd, type and cat.
+// Anything that saves, deletes, restarts, installs or transmits is refused.
+bool readOnlyAllows(int argumentCount, const char* const* arguments);
+// Whether the full consoles know the command at all, so a refusal can say "not here" rather than
+// "no such command".
+bool isFullConsoleCommand(std::string_view command);
 
 // Equal in time that doesn't depend on where they differ.
 bool constantTimeEquals(std::string_view left, std::string_view right);

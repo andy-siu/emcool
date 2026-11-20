@@ -27,7 +27,7 @@ Keep a copy of the key: a password manager, or the note you'll paste it from. On
 - **The key:** 8-64 printable ASCII characters with at least one letter and one digit, and no spaces, quotes or backslashes, or 64 hex characters. `openssl rand -hex 32` makes a random one, and so does the Bike console's *New key*. A 64-hex key pasted in upper case is lowered, as the dashboard does; a typed key keeps its case, so `Bike2024` and `bike2024` are different keys. Anything else is refused, and the dashboard checks the same rule.
 - ⚠️ **A short typed key is weak.** Protocol 2 has no lockout after a wrong key, and anyone who records one connection's HELLO can test guesses against it offline, as fast as their computer allows. An 8-character key can fall in hours to days. Use a random 64-hex key, all the more with `SERVICE_WRITE_ENABLED` on.
 - **Once per boot:** the first `set BLE_SECRET` with Bluetooth off starts it. Once Bluetooth is on, a new key is saved for the next `restart`, and phones holding the running key stay connected until then; `show` marks it as waiting. If the start fails (the log says why), the key is still saved and `restart` tries again.
-- **Over Wi-Fi:** `set BLE_SECRET` works on the telnet console too, but the key then crosses the network in plain text. Prefer the USB console.
+- **Over Wi-Fi:** `set BLE_SECRET` works on the SSH console too, which is encrypted. The telnet console is read-only and refuses it.
 - **An old phrase:** a key saved before this firmware with a space, or with no letter or no digit, no longer validates. The boot log warns, and Bluetooth stays off until you set a new one.
 
 With no key, the bike doesn't advertise, and the boot log says `Bluetooth is off: no Bluetooth key`.
@@ -97,7 +97,7 @@ The key lives in NVS, not in the firmware image or the build directory. The cons
     - **Refusals:** a missing header gets the 403 shape that tells the page to reload. An unknown command and anything but one line of at most 512 characters and eight words get a 400.
     - **`restart`:** answered 409 when the bike isn't parked or the bus is in use. If a new `BLE_SECRET` is saved, it also needs `"bluetoothKey"` in the body to match that key. The bike restarts 1.5 s after the reply.
   - **Request bodies:** the server now keeps a REQUEST's body, up to 1 KB, and hands it to the endpoint. A larger body gets the server's own 413, and is never cut short and acted on.
-- **`/firmware`: Settings → emcool → Firmware.** New firmware over the link (`firmware_endpoints.hpp`), into the same updater as the console's `update` and Wi-Fi's `PUT /update`, so it is checked the same way.
+- **`/firmware`: Settings → emcool → Firmware.** New firmware over the link (`firmware_endpoints.hpp`), into the same updater as the USB and SSH consoles' `update`, so it is checked the same way.
   - **`GET /firmware`:** `update status`'s lines as `report`, then the update's `state` (`idle`, `writing`, `done`, `failed`), its `source`, `received` and `total`, the last `problem`, the piece size (`chunkBytes`, 2048) and the bike's `chip`.
   - **`POST /firmware/begin?bytes=N`**, then **`/firmware/chunk?offset=K`** with up to 2048 bytes of the image as the body, one request per piece, then **`/firmware/finish`**. Or **`/firmware/cancel`**. Each POST needs `X-Emcool: firmware`, and answers JSON with `ok` and `message`.
   - **Rules:**

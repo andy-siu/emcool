@@ -28,6 +28,9 @@ struct WifiCounters {
   std::atomic<bool> consoleClient{false};
   std::atomic<std::uint32_t> consoleLogins{0};
   std::atomic<std::uint32_t> consoleRefusals{0};
+  std::atomic<bool> sshClient{false};
+  std::atomic<std::uint32_t> sshLogins{0};
+  std::atomic<std::uint32_t> sshRefusals{0};
   std::atomic<std::uint32_t> pagesServed{0};
   std::atomic<std::uint32_t> pagesRefused{0};
   std::atomic<std::uint64_t> bytesDownloaded{0};

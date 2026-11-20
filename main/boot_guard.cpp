@@ -110,11 +110,14 @@ void bootFinished() {
   }
 }
 
+// Internal RAM is what runs out (task stacks, DMA, Wi-Fi's and Bluetooth's buffers); PSRAM, when
+// there is any, is counted apart, or its 8 MB would hide that.
 void noteHeap(const char* step) {
-  logInfo(kTag, "heap after %s: %u free, largest block %u, lowest so far %u", step,
-          static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
-          static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
-          static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)));
+  logInfo(kTag, "heap after %s: internal %u free, largest block %u, lowest so far %u; PSRAM %u free", step,
+          static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+          static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+          static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+          static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
 }
 
 }  // namespace emcool

@@ -70,6 +70,9 @@ target_link_libraries(check_console PRIVATE emcool_ble_server emcool_files emcoo
 add_executable(check_card_shell tests/check_card_shell.cpp)
 target_link_libraries(check_card_shell PRIVATE emcool_files)
 
+add_executable(sftp_server_host tests/sftp_server_host.cpp)
+target_link_libraries(sftp_server_host PRIVATE emcool_files)
+
 add_executable(check_update tests/check_update.cpp)
 target_link_libraries(check_update PRIVATE emcool_update)
 

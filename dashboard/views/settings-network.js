@@ -1,13 +1,14 @@
 // @ts-check
-// Settings → Network connections: the Wi-Fi network the bike joins (WIFI_SSID, WIFI_PASSWORD) and
-// the admin password (ADMIN_PASSWORD) that the telnet console and the ride-log page ask for.
+// Settings → Network connections: the Wi-Fi network the bike joins (WIFI_SSID, WIFI_PASSWORD), the
+// SSH console's password (ADMIN_PASSWORD), and the telnet password (TELNET_PASSWORD) that the
+// read-only telnet console and the ride-log page ask for.
 //
 // It saves with the console's own `set` and `unset`, through the Bike console's runLine(), so the
 // bike checks every value exactly as at the emcool> prompt (docs/wifi.md). The one rule added here:
-// Wi-Fi runs only with both WIFI_SSID and ADMIN_PASSWORD set (Settings::wifiEnabled()), so this page
-// won't save a network until an admin password is saved or typed beside it. The admin password is
-// saved first and the network last, so a save that stops halfway never leaves a network saved
-// without its admin password.
+// Wi-Fi runs only with WIFI_SSID and at least one of the passwords set (Settings::wifiEnabled()), so
+// this page won't save a network until one is saved or typed beside it. The passwords are saved first
+// and the network last, so a save that stops halfway never leaves a network saved without one. The
+// two must differ (the bike refuses a match): the telnet one crosses the network in plain text.
 import van from "../vendor/van-1.6.1.js";
 import { SettingsCard } from "./settings-fields.js";
 import { ConsoleRestart, busy, linkReady, list, listError, quoted, results, runLine, watchConsoleList } from "./bike-console.js";
@@ -19,6 +20,7 @@ const ssidEdited = van.state(false);
 const wifiPassword = van.state("");
 const openNetwork = van.state(false);
 const adminPassword = van.state("");
+const telnetPassword = van.state("");
 const showPasswords = van.state(false);
 const ifconfig = van.state("");
 
@@ -47,23 +49,36 @@ function blocker() {
   const nameBytes = byteLength(name);
   const savedSsid = setting("WIFI_SSID")?.saved ?? "";
   const adminSaved = setting("ADMIN_PASSWORD")?.set === true;
+  const telnetSaved = setting("TELNET_PASSWORD")?.set === true;
   const admin = adminPassword.val;
+  const telnet = telnetPassword.val;
   const password = wifiPassword.val;
   if (nameBytes > 32) return `The network name is ${nameBytes} bytes; it can be at most 32.`;
   const adminBytes = byteLength(admin);
   if (admin && (adminBytes < 8 || adminBytes > 128)) {
-    return `The admin password must be 8-128 characters; this is ${adminBytes}.`;
+    return `The SSH password must be 8-128 characters; this is ${adminBytes}.`;
+  }
+  const telnetBytes = byteLength(telnet);
+  if (telnet && (telnetBytes < 8 || telnetBytes > 128)) {
+    return `The telnet password must be 8-128 characters; this is ${telnetBytes}.`;
+  }
+  if (admin && telnet && admin === telnet) {
+    return "The SSH and telnet passwords must differ: the telnet one crosses the network in plain text.";
   }
   const passwordBytes = byteLength(password);
   if (!openNetwork.val && password && (passwordBytes < 8 || passwordBytes > 63)) {
     return `The Wi-Fi password must be 8-63 characters; this is ${passwordBytes}.`;
   }
   if (ssidEdited.val && !name && savedSsid) return "To turn Wi-Fi off, tap Turn Wi-Fi off.";
-  if (name && !adminSaved && !admin) {
-    return "Enter an admin password. Wi-Fi stays off without one, because it guards the telnet console and the ride-log page.";
+  if (name && !adminSaved && !admin && !telnetSaved && !telnet) {
+    return "Enter an SSH password or a telnet password. Wi-Fi stays off without one, because they guard what it serves.";
   }
   const changes =
-    (ssidEdited.val && name && name !== savedSsid) || admin || password || (openNetwork.val && setting("WIFI_PASSWORD")?.set);
+    (ssidEdited.val && name && name !== savedSsid) ||
+    admin ||
+    telnet ||
+    password ||
+    (openNetwork.val && setting("WIFI_PASSWORD")?.set);
   if (!changes) return "Nothing to save yet.";
   return "";
 }
@@ -78,12 +93,18 @@ async function save() {
   const name = ssidValue();
   const savedSsid = setting("WIFI_SSID")?.saved ?? "";
   const admin = adminPassword.rawVal;
+  const telnet = telnetPassword.rawVal;
   const password = wifiPassword.rawVal;
   const outputs = [];
   if (admin) {
     if (!(await step(`set ADMIN_PASSWORD ${quoted(admin)}`))) return;
     outputs.push(results.rawVal[RESULT]);
     adminPassword.val = "";
+  }
+  if (telnet) {
+    if (!(await step(`set TELNET_PASSWORD ${quoted(telnet)}`))) return;
+    outputs.push(results.rawVal[RESULT]);
+    telnetPassword.val = "";
   }
   if (openNetwork.rawVal) {
     if (setting("WIFI_PASSWORD")?.set) {
@@ -131,14 +152,17 @@ function Summary() {
     if (!list.val) return div();
     const name = setting("WIFI_SSID");
     const admin = setting("ADMIN_PASSWORD");
-    const savedOn = !!name?.set && !!admin?.set;
-    const runningOn = !!name?.active && !!admin?.active && admin.active !== "not set";
+    const telnet = setting("TELNET_PASSWORD");
+    const isSet = entry => !!entry?.active && entry.active !== "not set";
+    const savedOn = !!name?.set && (!!admin?.set || !!telnet?.set);
+    const runningOn = isSet(name) && (isSet(admin) || isSet(telnet));
     return div(
       { class: "settings-note settings-state" },
       div(`Wi-Fi: ${runningOn ? "on" : "off"} now${savedOn === runningOn ? "" : `; ${savedOn ? "on" : "off"} after Restart`}.`),
       div(`Network: ${name?.set ? savedLine("WIFI_SSID") : "not set"}.`),
       div(`Wi-Fi password: ${savedLine("WIFI_PASSWORD")}.`),
-      div(`Admin password: ${savedLine("ADMIN_PASSWORD")}.`)
+      div(`SSH password: ${savedLine("ADMIN_PASSWORD")}.`),
+      div(`Telnet password: ${savedLine("TELNET_PASSWORD")}.`)
     );
   };
 }
@@ -171,7 +195,7 @@ export function NetworkConnections() {
   return div(
     SettingsCard(
       "Wi-Fi",
-      "The bike joins this network (garage Wi-Fi or a phone hotspot) and serves the telnet console on port 23 and the ride-log page on port 80, both behind the admin password. It needs a network name and an admin password; the change takes effect after Restart. ⚠️ Both passwords and everything after them cross the network in plain text, so use a network you control.",
+      "The bike joins this network (garage Wi-Fi or a phone hotspot) and serves the SSH console on port 22 (ssh admin@<bike>, behind the SSH password), which runs every command, and the ride-log page on port 80 behind the telnet password. The read-only telnet console on port 23 is off unless TELNET_CONSOLE is 1. It needs a network name and at least one password; the change takes effect after Restart. ⚠️ The telnet password and the ride log cross the network in plain text; SSH is encrypted.",
       () =>
         div(
           { class: "settings-note", role: "status" },
@@ -221,11 +245,19 @@ export function NetworkConnections() {
         " Open network (no Wi-Fi password)"
       ),
       Field(
-        "Admin password, 8-128 characters. Required to turn Wi-Fi on. Use one you use nowhere else, not the Bluetooth key.",
+        "SSH password (ADMIN_PASSWORD), 8-128 characters. The SSH console runs everything: settings, restart, firmware, the CAN commands. Use one you use nowhere else.",
         PasswordField(
-          "Admin password",
+          "SSH password",
           adminPassword,
-          () => (setting("ADMIN_PASSWORD")?.set ? "saved; type a new one to replace it" : "required to turn Wi-Fi on")
+          () => (setting("ADMIN_PASSWORD")?.set ? "saved; type a new one to replace it" : "not set: SSH is off")
+        )
+      ),
+      Field(
+        "Telnet password (TELNET_PASSWORD), 8-128 characters. For the ride-log page and the read-only telnet console; it crosses the network in plain text, so never the SSH password.",
+        PasswordField(
+          "Telnet password",
+          telnetPassword,
+          () => (setting("TELNET_PASSWORD")?.set ? "saved; type a new one to replace it" : "not set: the ride-log page is off")
         )
       ),
       label(
@@ -273,7 +305,7 @@ export function NetworkConnections() {
     ),
     SettingsCard(
       "Network status",
-      "The ifconfig report: whether the bike has joined, its address, and where to find the console and the ride-log page.",
+      "The ifconfig report: whether the bike has joined, its address, the SSH host key's fingerprint, and where to find the consoles and the ride-log page.",
       div(
         { class: "settings-actions" },
         button(

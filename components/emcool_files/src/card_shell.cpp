@@ -163,7 +163,74 @@ std::string errorText(int error) {
   }
 }
 
+// A name as FatFs takes it: trailing spaces and dots dropped. Empty when nothing is left.
+std::string asFatTakesIt(std::string_view part) {
+  while (!part.empty() && (part.back() == ' ' || part.back() == '.')) part.remove_suffix(1);
+  return std::string(part);
+}
+
+// Shaped like a FAT 8.3 short name with a numeric tail (VCU-PA~1, RIDES~1.X): FatFs finds a file by
+// its short name too, so one of these at the top could be another name for RIDES or vcu-params.
+bool looksLikeShortName(std::string_view name) {
+  const std::size_t tilde = name.find('~');
+  if (tilde == std::string_view::npos || tilde == 0 || tilde + 1 >= name.size()) return false;
+  const std::size_t dot = name.find('.', tilde);
+  const std::string_view tail = name.substr(tilde + 1, (dot == std::string_view::npos ? name.size() : dot) - tilde - 1);
+  return allDigits(tail);
+}
+
+std::string shownPath(const std::vector<std::string>& path) {
+  if (path.empty()) return "/";
+  std::string text;
+  for (const std::string& part : path) text += "/" + part;
+  return text;
+}
+
 }  // namespace
+
+std::string cardErrorText(int error) { return errorText(error); }
+
+std::optional<std::string> cardChangeRefusal(const std::vector<std::string>& given, bool creating,
+                                             const CardFacts& facts) {
+  std::vector<std::string> path;
+  path.reserve(given.size());
+  for (const std::string& part : given) {
+    if (std::any_of(part.begin(), part.end(), [](char c) { return static_cast<unsigned char>(c) < ' '; })) {
+      return "a name can't hold a control character";
+    }
+    std::string name = asFatTakesIt(part);
+    if (name.empty()) return shownPath(given) + ": not a name the card accepts";
+    path.push_back(std::move(name));
+  }
+  if (path.empty()) {
+    return creating ? std::optional<std::string>("/ is the card's top folder")
+                    : std::optional<std::string>("the card's top folder can't be removed");
+  }
+  if (looksLikeShortName(path[0])) {
+    return path[0] + " looks like a FAT short name, which could stand for RIDES or vcu-params; give the long name";
+  }
+  const bool rides = equalsIgnoringCase(path[0], kRides);
+  if (rides && path.size() == 1) {
+    return creating ? std::optional<std::string>("RIDES is the ride log's folder")
+                    : std::optional<std::string>("RIDES is the ride log's folder; remove what's in it instead");
+  }
+  if (rides && facts.rideLogStarting) return "the ride log is starting; try again in a moment";
+  if (rides && facts.recordingBoot && allDigits(path[1]) &&
+      static_cast<std::uint32_t>(std::strtoul(path[1].c_str(), nullptr, 10)) == *facts.recordingBoot) {
+    return shownPath({path[0], path[1]}) + " is the ride being recorded now";
+  }
+  if (rides && looksLikeShortName(path[1])) {
+    return path[1] + " looks like a FAT short name, which could stand for the ride being recorded; give the long name";
+  }
+  if (rides && creating) {
+    return "nothing new goes in RIDES: the ride log numbers what's there and deletes its oldest when the card fills";
+  }
+  if (equalsIgnoringCase(path[0], kServiceFolder)) {
+    return std::string(kServiceFolder) +
+           " is service mode's folder, which can have a file open at any moment; list, print or copy from it instead";
+  }
+  return std::nullopt;
+}
 
 bool CardShellGate::take(const std::string& console, std::string& holder) {
   const std::lock_guard<std::mutex> lock(mutex_);
@@ -372,29 +439,7 @@ std::optional<std::string> CardShell::refusal(const Path& path, Change change) {
 }
 
 std::optional<std::string> CardShell::refusal(const Path& path, Change change, const CardFacts& facts) {
-  if (path.empty()) {
-    return change == Change::kRemove ? std::optional<std::string>("the card's top folder can't be removed")
-                                     : std::optional<std::string>("/ is the card's top folder");
-  }
-  const bool rides = equalsIgnoringCase(path[0], kRides);
-  if (rides && path.size() == 1) {
-    return change == Change::kRemove
-               ? std::optional<std::string>("RIDES is the ride log's folder; remove what's in it instead")
-               : std::optional<std::string>("RIDES is the ride log's folder");
-  }
-  if (rides && facts.rideLogStarting) return "the ride log is starting; try again in a moment";
-  if (rides && facts.recordingBoot && allDigits(path[1]) &&
-      static_cast<std::uint32_t>(std::strtoul(path[1].c_str(), nullptr, 10)) == *facts.recordingBoot) {
-    return shown(Path(path.begin(), path.begin() + 2)) + " is the ride being recorded now";
-  }
-  if (rides && change == Change::kCreate) {
-    return "nothing new goes in RIDES: the ride log numbers what's there and deletes its oldest when the card fills";
-  }
-  if (equalsIgnoringCase(path[0], kServiceFolder)) {
-    return std::string(kServiceFolder) +
-           " is service mode's folder, which can have a file open at any moment; list, print or copy from it instead";
-  }
-  return std::nullopt;
+  return cardChangeRefusal(path, change == Change::kCreate, facts);
 }
 
 void CardShell::markChanged(const Path& path) {

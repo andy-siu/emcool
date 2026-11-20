@@ -94,8 +94,8 @@ std::string StatusReport::describe(std::int64_t nowMs) {
           now.busErrors - windowStart_.busErrors, status.state, status.rxErrorCount,
           static_cast<double>(now.values - windowStart_.values) / seconds, unknownKeys,
           static_cast<unsigned long long>(now.overflowedFrames - windowStart_.overflowedFrames),
-          static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
-          static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)));
+          static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+          static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
 
   const ride_log::RideLogCounters& rideLog = sources_.rideLog.counters();
   const ride_log::LogWriterCounters& writer = sources_.writer.counters();
@@ -140,11 +140,17 @@ std::string StatusReport::describe(std::int64_t nowMs) {
                     static_cast<unsigned>((address >> 8) & 0xff), static_cast<unsigned>((address >> 16) & 0xff),
                     static_cast<unsigned>(address >> 24));
     }
+    const settings::Settings& boot = sources_.settings.boot();
     appendLine(out,
-            "wifi: %s | console %s, %u logins, %u refused | page %u served, %u refused, %.1f MB downloaded | %u "
-            "reconnects",
+            "wifi: %s | ssh %s, %u logins, %u refused | telnet %s, %u logins, %u refused | page %u served, %u "
+            "refused, %.1f MB downloaded | %u reconnects",
             where,
-            !sources_.settings.boot().telnetConsole                ? "off"
+            !boot.sshEnabled()                               ? "off"
+            : wifi.sshClient.load(std::memory_order_relaxed) ? "in use"
+                                                             : "free",
+            static_cast<unsigned>(wifi.sshLogins.load(std::memory_order_relaxed)),
+            static_cast<unsigned>(wifi.sshRefusals.load(std::memory_order_relaxed)),
+            !boot.telnetEnabled()                                ? "off"
             : wifi.consoleClient.load(std::memory_order_relaxed) ? "in use"
                                                                  : "free",
             static_cast<unsigned>(wifi.consoleLogins.load(std::memory_order_relaxed)),

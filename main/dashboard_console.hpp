@@ -33,6 +33,11 @@ class DashboardConsoleHost final : public ble_server::ConsoleHost {
   DiagnosticsTask& diagnostics_;
 };
 
+// What stops a restart now (a moving bike, the bus in use), for the SSH console's `restart`; empty
+// before startup has wired the dashboard's host in, when nothing is running to wait for.
+std::vector<std::string> restartBlockersNow();
+void setRestartBlockers(DashboardConsoleHost* host);
+
 // Restarts after `delayMs`, from a task of its own, so the reply to whoever asked has time to go.
 void restartAfter(int delayMs);
 

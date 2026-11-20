@@ -11,6 +11,7 @@ namespace {
 
 constexpr const char* kTag = "ride-log";
 constexpr std::int64_t kMountRetryMs = 30000;
+constexpr std::int64_t kSlowStepMs = 2000;
 constexpr std::uint32_t kTaskStackBytes = 8192;
 constexpr UBaseType_t kTaskPriority = 4;
 // Core 0, away from the decode task; the SPI transfers are DMA, so this mostly waits.
@@ -83,7 +84,21 @@ void rideLogTask(void* argument) {
       backgroundWorkPending = true;
       continue;
     }
+    const std::int64_t stepStartMs = monotonicMs();
     backgroundWorkPending = context.writer.prepareAhead();
+    // A step is normally 0.3-0.5 s. ESP-IDF's SD-over-SPI driver spin-waits while the card is busy
+    // and never yields, so a card that stalls for seconds keeps core 0 to itself, and past 5 s the
+    // task watchdog warns about IDLE0. This line says it was the card.
+    const std::int64_t stepMs = monotonicMs() - stepStartMs;
+    if (stepMs > kSlowStepMs) {
+      logWarning(kTag, "the card took %lld ms over a 64 KB zero-fill step (normally under 0.6 s); a slow or worn card",
+                 static_cast<long long>(stepMs));
+    }
+    // A zero-fill step is 64 KB of card writes, and the next starts at once while there's more to
+    // fill. Without a pause, a slow card keeps this task (priority 4, core 0) running long enough
+    // to starve everything below it, the idle task included, and the task watchdog fires. One tick
+    // costs the fill nothing that matters, and segments still wake it straight away.
+    if (backgroundWorkPending) vTaskDelay(1);
   }
 }
 

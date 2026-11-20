@@ -48,6 +48,16 @@ std::vector<std::string> DashboardConsoleHost::restartBlockers() {
 
 void DashboardConsoleHost::restartSoon() { restartAfter(1500); }
 
+namespace {
+DashboardConsoleHost* blockerHost = nullptr;
+}  // namespace
+
+void setRestartBlockers(DashboardConsoleHost* host) { blockerHost = host; }
+
+std::vector<std::string> restartBlockersNow() {
+  return blockerHost != nullptr ? blockerHost->restartBlockers() : std::vector<std::string>();
+}
+
 void restartAfter(int delayMs) {
   static int delay = 0;
   delay = delayMs;

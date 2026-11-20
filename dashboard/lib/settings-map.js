@@ -6,7 +6,7 @@ export const SETTINGS_MAP = [
   { key: "bike", title: "Bike setup", detail: "Coolant probes · Radiator fan · Custom BMS" },
   { key: "charging", title: "Charging", detail: "Allow automatic current reduction" },
   { key: "connections", title: "Connections", detail: "Dashboard Bluetooth · Motorcycle · CAN" },
-  { key: "network", title: "Network connections", detail: "Wi-Fi network · Wi-Fi password · Admin password" },
+  { key: "network", title: "Network connections", detail: "Wi-Fi network · Wi-Fi password · SSH password · Telnet password" },
   { key: "recording", title: "Ride recording", detail: "Recording status · Public key · Backup help" },
   { key: "software", title: "emcool", detail: "Version · Firmware update" },
   { key: "advanced", title: "Advanced", detail: "Data location · Recording and service directories" },

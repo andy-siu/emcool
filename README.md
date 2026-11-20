@@ -17,7 +17,7 @@ Telemetry for an Energica electric motorcycle, on an ESP32-S3 plugged into its C
 - With **`SERVICE_MODE_ENABLED`** too, reads the VCU's calibration parameters, the lifetime battery statistics and the stored freeze frames, while the bike is parked.
 - With **`SERVICE_WRITE_ENABLED`** as well, writes allowlisted VCU parameters, sets the service point, syncs the bike's clock, clears trouble codes, commands or stops the charge current, sets the charge limit and resets the VCU. This is the one switch that lets a web page change the bike, so it's off by default.
 - With **`CHARGE_AUTO_ENABLED`** on top, runs the automatic charge-current controller. During a DC fast charge it eases the current to hold the pack near 54 °C, on a 60 s timer.
-- With **`WIFI_SSID`** and **`ADMIN_PASSWORD`**, joins that Wi-Fi network. It serves the telnet console on port 23 (unless `TELNET_CONSOLE` is `0`) and the ride log as a web page on port 80.
+- With **`WIFI_SSID`**, joins that Wi-Fi network. It serves the SSH console on port 22 behind **`ADMIN_PASSWORD`**, with every command the USB console has, and the ride log as a web page on port 80 behind **`TELNET_PASSWORD`**. A read-only telnet console on port 23 is off unless `TELNET_CONSOLE` is `1`.
 
 **Not built:** fan control, the coolant-temperature probes, and a direct link to the Connectivity Hub.
 
@@ -83,7 +83,7 @@ After the first USB flash, new firmware can go on over the air: from the dashboa
 
 **From the card, on its own:** copy `build/esp32s3/emcool.bin` onto the card's top folder as `emcool.bin` and put the card back in. Within about 10 s of the card being mounted (and once the bike has been up 30 s), emcool installs it, removes it from the card, and restarts into it as soon as the bike is parked with the bus free. The log says each step. A file it won't install (another chip's build, a corrupt copy) stays on the card and is logged; so does the build that was rolled back last time, so a bad build isn't installed again on every boot. If the file is the firmware already running, it's just removed.
 
-**From a console or Wi-Fi:**
+**From the USB or SSH console:**
 
 ```
 emcool> update /emcool.bin      after copying build/esp32s3/emcool.bin onto the card
@@ -91,7 +91,8 @@ emcool> restart
 ```
 
 ```bash
-curl -u :'the admin password' -T build/esp32s3/emcool.bin http://emcool.local/update
+ssh admin@emcool.local update /emcool.bin
+ssh admin@emcool.local restart
 ```
 
 - **On trial:** a new image is kept once it has run 30 s. A crash, a watchdog reset, a power cut or a `restart` before then boots the old one again, and `update status` says so. So let it run 30 s before restarting it.
@@ -122,10 +123,11 @@ emcool> restart
 | `SERVICE_MODE_ENABLED` | `0` | `1` to let the dashboard read the VCU's calibration parameters, only while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `SERVICE_WRITE_ENABLED` | `0` | `1` to let the dashboard **write** to the VCU (`/vcu-write`). The one switch that lets a web page change the bike. Needs `OBD_ENABLED` and `SERVICE_MODE_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `CHARGE_AUTO_ENABLED` | `0` | `1` for the automatic charge-current controller. It commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`docs/service-mode.md`](docs/service-mode.md). |
-| `WIFI_SSID` | not set | The Wi-Fi network to join, 2.4 GHz. With `ADMIN_PASSWORD` set too, the bike serves the console on port 23 and the ride log on port 80. See [Wi-Fi](#wi-fi). |
+| `WIFI_SSID` | not set | The Wi-Fi network to join, 2.4 GHz. With `ADMIN_PASSWORD` or `TELNET_PASSWORD` set too, the bike serves SSH on port 22 and the ride log on port 80. See [Wi-Fi](#wi-fi). |
 | `WIFI_PASSWORD` | not set | That network's password, 8–63 characters. Unset for an open network. |
-| `ADMIN_PASSWORD` | not set | What the telnet console and the ride-log page ask for, 8–128 characters. Unset keeps Wi-Fi off. |
-| `TELNET_CONSOLE` | `1` | Whether the bike serves the telnet console on port 23 while Wi-Fi is on. `0` closes the port and keeps the ride-log page. |
+| `ADMIN_PASSWORD` | not set | The SSH console's password, 8–128 characters. Unset keeps SSH off. |
+| `TELNET_PASSWORD` | not set | What the ride-log page and the read-only telnet console ask for, 8–128 characters; plain text on the network. Must differ from `ADMIN_PASSWORD`. |
+| `TELNET_CONSOLE` | `0` | `1` serves the read-only telnet console on port 23 while Wi-Fi is on. |
 | `STATUS_REPORT` | `1` | Whether the console prints the periodic status report. Applies at once. |
 | `STATUS_INTERVAL_S` | `10` | Seconds between status reports, 5–3600. Applies at once. |
 
@@ -220,12 +222,13 @@ The import needs only Node 22.13 or newer, which has SQLite built in. It reports
 
 ## Wi-Fi
 
-With `WIFI_SSID` and `ADMIN_PASSWORD` set, the bike joins that network, such as your garage Wi-Fi or a phone hotspot (2.4 GHz only). It serves two things, both behind the admin password:
+With `WIFI_SSID` and a password set, the bike joins that network, such as your garage Wi-Fi or a phone hotspot (2.4 GHz only). It serves:
 
-- **The console** on port 23: `nc <bike> 23`, with the same commands as the USB console. The log follows it.
-- **The ride log** at `http://<bike>/`: every boot and part, to download in any browser, or with `curl -u x:'password' -OJ 'http://<bike>/dl?mb=256'`.
+- **The SSH console** on port 22: `ssh admin@<bike>`, behind `ADMIN_PASSWORD`, with every command the USB console has — settings, `restart`, `update`, the card, and the CAN commands. The log follows it. `ssh admin@<bike> COMMAND` runs one.
+- **The ride log** at `http://<bike>/`, behind `TELNET_PASSWORD`: every boot and part, to download in any browser, or with `curl -u x:'password' -OJ 'http://<bike>/dl?mb=256'`.
+- **A read-only telnet console** on port 23, behind `TELNET_PASSWORD`, only with `TELNET_CONSOLE 1`.
 
-`ifconfig` on any console, the boot log and the status line all give the address. ⚠️ It's all plain text on the network, the password included, so use it on a network you control. [`docs/wifi.md`](docs/wifi.md) has the details, the costs and what's verified.
+`ifconfig` on any console, the boot log and the status line all give the address, and `ifconfig` the SSH host key's fingerprint to check the first time. ⚠️ The telnet password and the ride log are plain text on the network, so they unlock nothing that changes the bike; SSH is encrypted. [`docs/wifi.md`](docs/wifi.md) has the details, the costs and what's verified.
 
 ## Phone dashboard (Bluetooth)
 
@@ -266,8 +269,9 @@ Most of emcool's logic is checked against a **reference implementation**: an ear
 - **The settings and consoles behave:**
   - validation and secrets never being printed
   - restart notices and the status report's schedule
-  - Wi-Fi staying off without an admin password
-  - the telnet console's login, lockout, telnet handling and line editing
+  - Wi-Fi staying off without a password, and the two passwords refusing to match
+  - the telnet console's login, lockout, telnet handling and read-only command list
+  - the SSH console's login limits and line editing
   - HTTP password decoding
 - **The signal store and the clock gate behave.** That covers the deadband, non-finite readings and unknown keys. The clock gate must give the reference's verdict on 88,000 randomized offers, including cold boots at 1970, drift, outliers and week-number rollovers.
 - **The ride log round-trips.** All the decoded frames go through the whole C++ pipeline onto disk, and are read back exactly. Simulated power cuts and card damage lose only the records they touch. The result imports into `rides.db`. It runs again on a full card, simulated and then as a real FAT image on macOS, and exactly the newest readings must survive.
@@ -295,7 +299,7 @@ Most of emcool's logic is checked against a **reference implementation**: an ear
 | `components/emcool_vcu` | Service mode: the KWP2000 client, sweeps and probes, the service gate, the 29 parameter tables (generated), the snapshots on the card, the write engine and the automatic charge-current controller. Transport-free. |
 | `components/emcool_async` | An event loop with Node's ordering rules, and C++20 coroutines on it. |
 | `components/emcool_text` | Allocation-free text and JSON building, a window at a time for bodies bigger than any buffer. |
-| `components/emcool_settings` | The per-bike settings, the console commands, and the telnet console's login and line handling. |
+| `components/emcool_settings` | The per-bike settings, the console commands, the telnet console's login and read-only list, and the SSH console's login limits and line editing. |
 | `components/emcool_log` | Logging through ESP_LOG on the device and stderr on the laptop. |
 | `main` | Firmware: CAN receive and transmit, the decode, diagnostics, ride-log and Bluetooth tasks, the microSD mount, NimBLE, Wi-Fi and its servers, NVS settings and the serial console, the clock step and the status report. |
 | `dashboard` | The phone dashboard: a static web app published to GitHub Pages. |
@@ -307,7 +311,7 @@ Most of emcool's logic is checked against a **reference implementation**: an ear
 
 - **The ride log is plain text on a FAT32 microSD card**. Position, heading and altitude are never written to it; the list is in `components/emcool_signals/include/emcool/signals/ride_log_policy.hpp`.
 - **The phone dashboard is Bluetooth only.** It is maintained in `dashboard/` and loaded from https://emcool.athegen.com, an origin of its own (the Bluetooth key lives in its `localStorage`). `tools/check-ble.mts` drives the firmware's Bluetooth server with the dashboard's own `lib/ble-wire.js`, so the two are proven to agree.
-- **Wi-Fi is for the laptop, and off by default.** It serves the console and the ride log, never the dashboard. It's a station only, never an access point, and it's plain text behind one admin password. See [`docs/wifi.md`](docs/wifi.md).
+- **Wi-Fi is for the laptop, and off by default.** It serves the SSH console and the ride log, never the dashboard. It's a station only, never an access point. SSH is encrypted; the ride log and the read-only telnet console are plain text behind a separate password. See [`docs/wifi.md`](docs/wifi.md).
 - **Nothing goes on the bus unless a setting asks for it.** Every transmitting feature defaults to off. With all of them off, the CAN controller is listen-only.
 
 ## License

@@ -70,16 +70,22 @@ struct Settings {
   bool serviceWriteEnabled = false;
   // The automatic charge-current controller. Needs SERVICE_WRITE_ENABLED, since it commands writes.
   bool chargeAutoEnabled = false;
-  // Wi-Fi joins wifiSsid, and only with an admin password for what it serves (wifiEnabled()).
+  // Wi-Fi joins wifiSsid, and only with a password for something it serves (wifiEnabled()).
   std::string wifiSsid;
   std::string wifiPassword;
+  // The read-only telnet console and the ride-log page: it crosses the network in plain text.
+  std::string telnetPassword;
+  // The SSH console, which runs everything.
   std::string adminPassword;
-  // The console on port 23, while Wi-Fi is on. Off leaves only the ride-log page.
-  bool telnetConsole = true;
+  // The read-only console on port 23, while Wi-Fi is on and TELNET_PASSWORD is set.
+  bool telnetConsole = false;
   bool statusReport = true;
   std::uint32_t statusIntervalSeconds = 10;
 
-  bool wifiEnabled() const { return !wifiSsid.empty() && !adminPassword.empty(); }
+  bool wifiEnabled() const { return !wifiSsid.empty() && (sshEnabled() || !telnetPassword.empty()); }
+  bool sshEnabled() const { return !adminPassword.empty(); }
+  // Port 23: asked for, and with a password to ask.
+  bool telnetEnabled() const { return telnetConsole && !telnetPassword.empty(); }
 
   // A stored value that no longer validates is ignored (with a warning) and the default used.
   static Settings load(SettingsStorage& storage);

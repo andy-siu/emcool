@@ -39,20 +39,28 @@ constexpr SettingSpec kSpecs[] = {
     {"CHARGE_AUTO_ENABLED", "charge_auto", SettingType::kFlag, "0", 0, 0, false,
      "1 to let the automatic charge-current controller command the bike's charge current on a timer. "
      "Needs SERVICE_WRITE_ENABLED — it commands writes. The most autonomous feature here."},
-    // Wi-Fi: off until WIFI_SSID and ADMIN_PASSWORD are both set. The bike joins that network and serves the
-    // console on port 23 (unless TELNET_CONSOLE is 0) and the ride log on port 80, both behind ADMIN_PASSWORD.
+    // Wi-Fi: off until WIFI_SSID and a password are set. The bike joins that network and serves the SSH
+    // console on port 22 behind ADMIN_PASSWORD, and the read-only telnet console on port 23 (when
+    // TELNET_CONSOLE is 1) and the ride-log page on port 80 behind TELNET_PASSWORD.
     {"WIFI_SSID", "wifi_ssid", SettingType::kText, "", 0, 32, false,
      "The Wi-Fi network to join (garage Wi-Fi or a phone hotspot), 1-32 characters; unset keeps Wi-Fi off. The bike "
-     "then serves this console on port 23 (`nc <bike> 23`) and the ride log on http://<bike>/, both behind "
-     "ADMIN_PASSWORD."},
+     "then serves the SSH console on port 22 (`ssh admin@<bike>`, behind ADMIN_PASSWORD), and the ride log on "
+     "http://<bike>/ and the read-only telnet console on port 23, behind TELNET_PASSWORD."},
     {"WIFI_PASSWORD", "wifi_password", SettingType::kSecret, "", 0, 63, false,
      "That network's password: 8-63 characters for WPA2/WPA3, or unset for an open network."},
-    {"ADMIN_PASSWORD", "admin_password", SettingType::kSecret, "", 8, 128, false,
-     "The password the console on port 23 and the ride-log page ask for, 8-128 characters. Unset keeps Wi-Fi off. "
-     "It crosses the network in plain text, so use one used nowhere else."},
-    {"TELNET_CONSOLE", "telnet_console", SettingType::kFlag, "1", 0, 0, false,
-     "1 to serve the telnet console on port 23 while Wi-Fi is on; 0 closes the port and leaves the ride-log page "
-     "on port 80. The USB console and the dashboard's Bike console are not affected."},
+    // Stored under the key ADMIN_PASSWORD had before it guarded SSH, so a bike that had one keeps it
+    // here, as its telnet password, and SSH stays off until a new ADMIN_PASSWORD is chosen.
+    {"TELNET_PASSWORD", "admin_password", SettingType::kSecret, "", 8, 128, false,
+     "The password the read-only telnet console (port 23) and the ride-log page (port 80) ask for, 8-128 "
+     "characters. Unset closes both. It crosses the network in plain text, so it unlocks nothing that changes "
+     "the bike: use one used nowhere else, and never ADMIN_PASSWORD."},
+    {"ADMIN_PASSWORD", "ssh_admin_pw", SettingType::kSecret, "", 8, 128, false,
+     "The SSH console's password (port 22), 8-128 characters. The SSH console runs every command: settings, "
+     "restart, firmware updates, the card, and the manual CAN commands. Unset keeps SSH off. It never crosses "
+     "the network in the clear; set it here or over SSH, never pick one used for TELNET_PASSWORD."},
+    {"TELNET_CONSOLE", "telnet_console", SettingType::kFlag, "0", 0, 0, false,
+     "1 to serve the read-only telnet console on port 23 while Wi-Fi is on, behind TELNET_PASSWORD. Off by "
+     "default. It can look (show, status, ifconfig, the card's dir and type) but changes nothing."},
     {"STATUS_REPORT", "status_report", SettingType::kFlag, "1", 0, 0, true,
      "Whether the serial console prints the periodic status report. `status on|off` is the shorthand."},
     {"STATUS_INTERVAL_S", "status_every_s", SettingType::kInteger, "10", 5, 3600, true,
@@ -158,6 +166,16 @@ int save(SettingsStorage& storage, RuntimeSettings& running, const SettingSpec& 
     return 1;
   }
   const std::string normalized = normalizeValue(spec, value);
+  // The telnet password crosses the network in plain text; the SSH one must not be learnable from it.
+  if (spec.name == "ADMIN_PASSWORD" || spec.name == "TELNET_PASSWORD") {
+    const SettingSpec& other = *findSetting(spec.name == "ADMIN_PASSWORD" ? "TELNET_PASSWORD" : "ADMIN_PASSWORD");
+    bool stored = false;
+    if (savedValue(storage, other, stored) == normalized) {
+      appendLine(output, std::string(spec.name) + ": must differ from " + std::string(other.name) +
+                             " (the telnet password crosses the network in plain text)");
+      return 1;
+    }
+  }
   if (!storage.write(spec.storageKey, normalized)) {
     appendLine(output, std::string(spec.name) + ": could not save it to NVS");
     return 1;
@@ -330,6 +348,7 @@ Settings Settings::load(SettingsStorage& storage) {
   settings.chargeAutoEnabled = value("CHARGE_AUTO_ENABLED") == "1";
   settings.wifiSsid = value("WIFI_SSID");
   settings.wifiPassword = value("WIFI_PASSWORD");
+  settings.telnetPassword = value("TELNET_PASSWORD");
   settings.adminPassword = value("ADMIN_PASSWORD");
   settings.telnetConsole = value("TELNET_CONSOLE") == "1";
   settings.statusReport = value("STATUS_REPORT") == "1";
@@ -380,6 +399,7 @@ std::string RuntimeSettings::valueOf(const SettingSpec& spec) const {
   if (spec.name == "CHARGE_AUTO_ENABLED") return boot_.chargeAutoEnabled ? "1" : "0";
   if (spec.name == "WIFI_SSID") return boot_.wifiSsid;
   if (spec.name == "WIFI_PASSWORD") return boot_.wifiPassword;
+  if (spec.name == "TELNET_PASSWORD") return boot_.telnetPassword;
   if (spec.name == "ADMIN_PASSWORD") return boot_.adminPassword;
   if (spec.name == "TELNET_CONSOLE") return boot_.telnetConsole ? "1" : "0";
   if (spec.name == "STATUS_REPORT") return statusReport() ? "1" : "0";

@@ -1,7 +1,7 @@
 #pragma once
 
 // Firmware updates over the Bluetooth link: the dashboard's Settings → emcool → Firmware. The image
-// goes in pieces, one request each, into the same Updater the card's `update` and Wi-Fi's PUT /update
+// goes in pieces, one request each, into the same Updater the consoles' `update`
 // use (emcool/update/firmware_update.hpp), so it is checked the same way: the header before anything
 // is erased, the whole image's hash before the boot slot changes.
 //

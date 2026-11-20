@@ -299,7 +299,7 @@ int runUpdateCommand(int argumentCount, const char* const* arguments, files::Car
     return 1;
   }
   if (card == nullptr) {
-    out = "no card: copy build/emcool.bin onto the microSD card, or send it over Wi-Fi (PUT /update)\n";
+    out = "no card: the ride log isn't running, so there's no card to install from; use the dashboard's Firmware panel over Bluetooth, or the cable\n";
     flush(out);
     return 1;
   }

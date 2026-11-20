@@ -85,7 +85,7 @@ Memory: the OBD side is about 2 KB, mostly the ISO-TP reassembly buffer. It's al
 
 ## Manual CAN from the USB console
 
-Three commands on the USB serial console (`idf.py monitor`, or `make monitor`) let you drive the bus by hand. They are **registered on the USB console only** — the telnet console (port 23) and the dashboard's Bike console reject them, so nothing reachable over the network can put a frame on the bike's bus.
+These commands let you drive the bus by hand, from the USB serial console (`idf.py monitor`, or `make monitor`) or the SSH console (`ssh admin@<bike>`, behind `ADMIN_PASSWORD`; see [`wifi.md`](wifi.md#the-ssh-console)). The read-only telnet console (port 23) and the dashboard's Bike console refuse them, so nothing behind a plain-text password or a phone can put a frame on the bike's bus. Over SSH, any key stops `can-dump` and `can-send -r`, and so does closing the connection.
 
 | Command | What it does |
 | --- | --- |

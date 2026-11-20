@@ -1,8 +1,5 @@
 #include "can_console.hpp"
 
-#include <fcntl.h>
-#include <unistd.h>
-
 #include <algorithm>
 #include <atomic>
 #include <mutex>
@@ -15,6 +12,7 @@
 #include <vector>
 
 #include "can_bus.hpp"
+#include "console_io.hpp"
 #include "emcool/can/console.hpp"
 #include "emcool/can/psu.hpp"
 #include "emcool/log.hpp"
@@ -40,40 +38,10 @@ constexpr std::int64_t kMaxRepeatUs = 60ll * 60 * 1000 * 1000;
 // Refusals in a row (every transmit slot still waiting, or bus-off) that end a repeating send.
 constexpr std::uint32_t kMaxRefusedInARow = 3;
 
-// Puts stdin in non-blocking mode for as long as it lives, so a loop can poll for a keypress.
-// What is already waiting when it starts is thrown away: Enter sends CR LF, and the console ends
-// the command line at the CR, so the LF behind it would otherwise stop the command at once.
-class KeyWatch {
- public:
-  KeyWatch() : fd_(fileno(stdin)), savedFlags_(fcntl(fd_, F_GETFL, 0)) {
-    if (savedFlags_ != -1) fcntl(fd_, F_SETFL, savedFlags_ | O_NONBLOCK);
-    // The LF can trail the CR by a character time or a USB packet; give it a moment to land.
-    vTaskDelay(pdMS_TO_TICKS(30));
-    pressed();
-  }
-  ~KeyWatch() {
-    if (savedFlags_ != -1) fcntl(fd_, F_SETFL, savedFlags_);
-  }
-  KeyWatch(const KeyWatch&) = delete;
-  KeyWatch& operator=(const KeyWatch&) = delete;
-
-  // True if anything was typed since the last call; swallows it.
-  bool pressed() {
-    char typed = 0;
-    bool any = false;
-    while (read(fd_, &typed, 1) > 0) any = true;
-    return any;
-  }
-
- private:
-  int fd_;
-  int savedFlags_;
-};
-
-int sendRepeatedly(CanBus& bus, const can::CanSendCommand& command, std::span<const std::uint8_t> payload,
+int sendRepeatedly(ConsoleIo& io, CanBus& bus, const can::CanSendCommand& command, std::span<const std::uint8_t> payload,
                    const std::string& shown) {
-  std::printf("sending %s every %u ms — press Enter to stop\n", shown.c_str(), static_cast<unsigned>(command.repeatMs));
-  std::fflush(stdout);
+  io.print("sending %s every %u ms — press Enter to stop\n", shown.c_str(), static_cast<unsigned>(command.repeatMs));
+  io.flush();
 
   const CanBusCounters& counters = bus.counters();
   const std::uint32_t sentBefore = counters.sent.load(std::memory_order_relaxed);
@@ -106,13 +74,13 @@ int sendRepeatedly(CanBus& bus, const can::CanSendCommand& command, std::span<co
   };
   const auto printHeard = [&](const char* indent) {
     if (heard.empty()) {
-      std::printf("%sheard nothing back\n", indent);
+      io.print("%sheard nothing back\n", indent);
       return;
     }
     for (const Heard& h : heard) {
       const std::string line = can::formatCanFrame(
           h.latest.id, std::span<const std::uint8_t>(h.latest.data, h.latest.length), h.latest.extended);
-      std::printf("%sheard x%u, latest %s\n", indent, static_cast<unsigned>(h.count), line.c_str());
+      io.print("%sheard x%u, latest %s\n", indent, static_cast<unsigned>(h.count), line.c_str());
     }
   };
 
@@ -121,7 +89,7 @@ int sendRepeatedly(CanBus& bus, const can::CanSendCommand& command, std::span<co
   std::uint32_t refusedInARow = 0;
   std::string why = "stopped";
   std::optional<std::string> lastProblem;
-  KeyWatch keys;
+  KeyWatch keys(io);
   TickType_t wake = xTaskGetTickCount();
   std::int64_t nextProgressUs = startedUs + 5ll * 1000 * 1000;
   while (true) {
@@ -144,10 +112,10 @@ int sendRepeatedly(CanBus& bus, const can::CanSendCommand& command, std::span<co
     }
     if (nowUs >= nextProgressUs) {
       nextProgressUs += 5ll * 1000 * 1000;
-      std::printf("  %u queued, %u acknowledged so far\n", static_cast<unsigned>(queued),
+      io.print("  %u queued, %u acknowledged so far\n", static_cast<unsigned>(queued),
                   static_cast<unsigned>(counters.sent.load(std::memory_order_relaxed) - sentBefore));
       printHeard("    ");
-      std::fflush(stdout);
+      io.flush();
     }
     if (keys.pressed()) break;
     vTaskDelayUntil(&wake, period);
@@ -159,12 +127,12 @@ int sendRepeatedly(CanBus& bus, const can::CanSendCommand& command, std::span<co
   // Acknowledged/failed count every frame the bus sent meanwhile, the poller's too if it is on.
   const unsigned acknowledged = counters.sent.load(std::memory_order_relaxed) - sentBefore;
   const unsigned failed = counters.sendFailed.load(std::memory_order_relaxed) - failedBefore;
-  std::printf("%s: %u queued, %u refused, %u acknowledged, %u failed%s\n", why.c_str(), static_cast<unsigned>(queued),
+  io.print("%s: %u queued, %u refused, %u acknowledged, %u failed%s\n", why.c_str(), static_cast<unsigned>(queued),
               static_cast<unsigned>(refused), acknowledged, failed,
               acknowledged == 0 && queued > 0 ? " — nothing acknowledged: is anything else awake on the bus?" : "");
   printHeard("");
   if (refused > 0 && lastProblem && refusedInARow < kMaxRefusedInARow) {
-    std::printf("last refusal: %s\n", lastProblem->c_str());
+    io.print("last refusal: %s\n", lastProblem->c_str());
   }
   logInfo(kTag, "repeating can-send of %s every %u ms ended: %u queued, %u refused", shown.c_str(),
           static_cast<unsigned>(command.repeatMs), static_cast<unsigned>(queued), static_cast<unsigned>(refused));
@@ -223,39 +191,39 @@ void backgroundRepeatTask(void*) {
   vTaskDelete(nullptr);
 }
 
-bool startBackground(const can::CanSendCommand& command, const char* busyHint);
+bool startBackground(ConsoleIo& io, const can::CanSendCommand& command, const char* busyHint);
 bool stopBackground();
 
-void reportBackground() {
+void reportBackground(ConsoleIo& io) {
   const std::lock_guard<std::mutex> lock(background.mutex);
   if (background.task == nullptr) {
     if (background.shown.empty()) {
-      std::fputs("nothing is repeating\n", stdout);
+      io.write("nothing is repeating\n");
     } else {
-      std::printf("nothing is repeating; the last, %s every %u ms, %s after %u queued, %u refused\n",
+      io.print("nothing is repeating; the last, %s every %u ms, %s after %u queued, %u refused\n",
                   background.shown.c_str(), static_cast<unsigned>(background.command.repeatMs),
                   background.ended.c_str(), static_cast<unsigned>(background.queued.load()),
                   static_cast<unsigned>(background.refused.load()));
     }
     return;
   }
-  std::printf("repeating %s every %u ms for %llu s: %u queued, %u refused\n", background.shown.c_str(),
+  io.print("repeating %s every %u ms for %llu s: %u queued, %u refused\n", background.shown.c_str(),
               static_cast<unsigned>(background.command.repeatMs),
               static_cast<unsigned long long>((esp_timer_get_time() - background.startedUs) / 1000000),
               static_cast<unsigned>(background.queued.load()), static_cast<unsigned>(background.refused.load()));
 }
 
-int canRepeat(int argumentCount, char** arguments) {
+int canRepeat(ConsoleIo& io, int argumentCount, char** arguments) {
   if (argumentCount == 1) {
-    reportBackground();
+    reportBackground(io);
     return 0;
   }
   if (argumentCount == 2 && std::string_view(arguments[1]) == "stop") {
     if (!stopBackground()) {
-      std::fputs("nothing is repeating\n", stdout);
+      io.write("nothing is repeating\n");
       return 0;
     }
-    reportBackground();
+    reportBackground(io);
     return 0;
   }
   // The rest reads as can-send -r would: can-repeat <ms> <id> [byte ...].
@@ -264,26 +232,26 @@ int canRepeat(int argumentCount, char** arguments) {
   can::CanSendCommand command;
   if (const std::optional<std::string> error =
           can::parseCanSend(static_cast<int>(asSend.size()), asSend.data(), command)) {
-    std::fputs("usage: can-repeat <ms> <id> [byte ...] | can-repeat stop | can-repeat\n", stdout);
-    std::printf("%s\n", error->c_str());
+    io.write("usage: can-repeat <ms> <id> [byte ...] | can-repeat stop | can-repeat\n");
+    io.print("%s\n", error->c_str());
     return 1;
   }
   CanBus* bus = consoleBus();
   if (bus == nullptr) {
-    std::fputs(kNoBus, stdout);
+    io.write(kNoBus);
     return 1;
   }
   if (!bus->transmitting()) {
-    std::fputs("not started: the bus is listen-only\n", stdout);
+    io.write("not started: the bus is listen-only\n");
     return 1;
   }
-  if (!startBackground(command, "`can-repeat stop` (or `psu off`)")) return 1;
+  if (!startBackground(io, command, "`can-repeat stop` (or `psu off`)")) return 1;
   const std::string shown = can::formatCanFrame(
       command.frame.id, std::span<const std::uint8_t>(command.frame.data.data(), command.frame.length),
       command.frame.extended);
-  logInfo(kTag, "background repeat of %s every %u ms started from the USB console", shown.c_str(),
-          static_cast<unsigned>(command.repeatMs));
-  std::printf("repeating %s every %u ms in the background; `can-repeat stop` ends it\n", shown.c_str(),
+  logInfo(kTag, "background repeat of %s every %u ms started from the %s", shown.c_str(),
+          static_cast<unsigned>(command.repeatMs), io.name());
+  io.print("repeating %s every %u ms in the background; `can-repeat stop` ends it\n", shown.c_str(),
               static_cast<unsigned>(command.repeatMs));
   return 0;
 }
@@ -312,10 +280,10 @@ bool isPsuHold(const can::CanSendCommand& command) {
 
 // Starts `command` in the background slot; the caller has checked the bus. False (and says why) if
 // the slot is taken or the task can't start.
-bool startBackground(const can::CanSendCommand& command, const char* busyHint) {
+bool startBackground(ConsoleIo& io, const can::CanSendCommand& command, const char* busyHint) {
   const std::lock_guard<std::mutex> lock(background.mutex);
   if (background.task != nullptr) {
-    std::printf("already repeating %s; %s first\n", background.shown.c_str(), busyHint);
+    io.print("already repeating %s; %s first\n", background.shown.c_str(), busyHint);
     return false;
   }
   background.command = command;
@@ -329,7 +297,7 @@ bool startBackground(const can::CanSendCommand& command, const char* busyHint) {
   background.ended.clear();
   if (xTaskCreate(backgroundRepeatTask, "can-repeat", 3072, nullptr, 5, &background.task) != pdPASS) {
     background.task = nullptr;
-    std::fputs("no memory for the repeat task\n", stdout);
+    io.write("no memory for the repeat task\n");
     return false;
   }
   return true;
@@ -361,13 +329,13 @@ bool psuHoldRunning(std::uint64_t& forSeconds) {
   return true;
 }
 
-void printPsuStatus() {
+void printPsuStatus(ConsoleIo& io) {
   std::uint64_t heldFor = 0;
   if (psuHoldRunning(heldFor)) {
-    std::printf("hold: on for %llu s, sending 500 01 00 00 00 00 00 00 00 every %u ms\n",
+    io.print("hold: on for %llu s, sending 500 01 00 00 00 00 00 00 00 every %u ms\n",
                 static_cast<unsigned long long>(heldFor), static_cast<unsigned>(can::kPsuHoldIntervalMs));
   } else {
-    std::fputs("hold: off\n", stdout);
+    io.write("hold: off\n");
   }
   const PsuSnapshot snapshot = psuSnapshot();
   const std::int64_t nowUs = esp_timer_get_time();
@@ -377,74 +345,74 @@ void printPsuStatus() {
   const bool statusFresh = snapshot.statusAtUs != 0 && nowUs - snapshot.statusAtUs < kFreshUs;
   if (!monitorFresh && !statusFresh) {
     if (snapshot.monitorAtUs == 0 && snapshot.statusAtUs == 0) {
-      std::fputs("psu: not heard since boot (asleep, or not on this bus)\n", stdout);
+      io.write("psu: not heard since boot (asleep, or not on this bus)\n");
     } else {
       const std::int64_t lastUs = std::max(snapshot.monitorAtUs, snapshot.statusAtUs);
-      std::printf("psu: quiet for %.1f s (asleep: the rail is off)\n", static_cast<double>(nowUs - lastUs) / 1e6);
+      io.print("psu: quiet for %.1f s (asleep: the rail is off)\n", static_cast<double>(nowUs - lastUs) / 1e6);
     }
     return;
   }
   if (statusFresh && snapshot.statusLength >= 1) {
     const std::string raw =
         can::formatCanFrame(can::kPsuStatusId, std::span<const std::uint8_t>(snapshot.status.data(), snapshot.statusLength));
-    std::printf("psu: state %02X (%s)   [%s]\n", snapshot.status[0], can::describePsuState(snapshot.status[0]),
+    io.print("psu: state %02X (%s)   [%s]\n", snapshot.status[0], can::describePsuState(snapshot.status[0]),
                 raw.c_str());
   }
   if (monitorFresh) {
     if (const std::optional<can::PsuMonitor> monitor = can::decodePsuMonitor(
             std::span<const std::uint8_t>(snapshot.monitor.data(), snapshot.monitorLength))) {
-      std::printf("rail: main %.2f V (%s), standby %.2f V, load %.2f A\n", monitor->mainMv / 1000.0,
+      io.print("rail: main %.2f V (%s), standby %.2f V, load %.2f A\n", monitor->mainMv / 1000.0,
                   monitor->mainMv >= can::kPsuRailOnMv ? "on" : "off", monitor->standbyMv / 1000.0,
                   monitor->loadMa / 1000.0);
     }
   }
 }
 
-int psu(int argumentCount, char** arguments) {
+int psu(ConsoleIo& io, int argumentCount, char** arguments) {
   const std::string_view choice = argumentCount >= 2 ? std::string_view(arguments[1]) : std::string_view("status");
   if (argumentCount > 2 || (choice != "on" && choice != "off" && choice != "status")) {
-    std::fputs("usage: psu [on | off | status]\n", stdout);
+    io.write("usage: psu [on | off | status]\n");
     return 1;
   }
   if (choice == "status") {
-    printPsuStatus();
+    printPsuStatus(io);
     return 0;
   }
   if (choice == "off") {
     {
       const std::lock_guard<std::mutex> lock(background.mutex);
       if (background.task != nullptr && !isPsuHold(background.command)) {
-        std::printf("not holding the PSU: the background slot is repeating %s (`can-repeat stop` ends that)\n",
+        io.print("not holding the PSU: the background slot is repeating %s (`can-repeat stop` ends that)\n",
                     background.shown.c_str());
         return 1;
       }
     }
     if (!stopBackground()) {
-      std::fputs("the hold was already off\n", stdout);
+      io.write("the hold was already off\n");
       return 0;
     }
-    logInfo(kTag, "PSU hold stopped from the USB console");
-    std::fputs("hold stopped; the PSU drops its main rail in about a second\n", stdout);
+    logInfo(kTag, "PSU hold stopped from the %s", io.name());
+    io.write("hold stopped; the PSU drops its main rail in about a second\n");
     return 0;
   }
   // on
   CanBus* bus = consoleBus();
   if (bus == nullptr) {
-    std::fputs(kNoBus, stdout);
+    io.write(kNoBus);
     return 1;
   }
   if (!bus->transmitting()) {
-    std::fputs("not started: the bus is listen-only (set OBD_ENABLED 1 and restart)\n", stdout);
+    io.write("not started: the bus is listen-only (set OBD_ENABLED 1 and restart)\n");
     return 1;
   }
   std::uint64_t heldFor = 0;
   if (psuHoldRunning(heldFor)) {
-    std::printf("already holding the PSU on (%llu s)\n", static_cast<unsigned long long>(heldFor));
+    io.print("already holding the PSU on (%llu s)\n", static_cast<unsigned long long>(heldFor));
     return 0;
   }
-  if (!startBackground(psuHoldCommand(), "`can-repeat stop`")) return 1;
-  logInfo(kTag, "PSU hold started from the USB console");
-  std::printf("holding the PSU on: 500 01 00 00 00 00 00 00 00 every %u ms (stops itself after 60 min)\n",
+  if (!startBackground(io, psuHoldCommand(), "`can-repeat stop`")) return 1;
+  logInfo(kTag, "PSU hold started from the %s", io.name());
+  io.print("holding the PSU on: 500 01 00 00 00 00 00 00 00 every %u ms (stops itself after 60 min)\n",
               static_cast<unsigned>(can::kPsuHoldIntervalMs));
   // Wait for the PSU to answer, up to 2 s, so the reply says whether the rail came up.
   const std::int64_t startedUs = esp_timer_get_time();
@@ -453,36 +421,36 @@ int psu(int argumentCount, char** arguments) {
     const PsuSnapshot snapshot = psuSnapshot();
     if (snapshot.statusAtUs > startedUs && snapshot.statusLength >= 1 && snapshot.status[0] == 0x03) break;
   }
-  printPsuStatus();
+  printPsuStatus(io);
   return 0;
 }
 
-int canSend(int argumentCount, char** arguments) {
+int canSend(ConsoleIo& io, int argumentCount, char** arguments) {
   can::CanSendCommand command;
   if (const std::optional<std::string> error = can::parseCanSend(argumentCount, arguments, command)) {
-    std::printf("%s\n", error->c_str());
+    io.print("%s\n", error->c_str());
     return 1;
   }
   CanBus* bus = consoleBus();
   if (bus == nullptr) {
-    std::fputs(kNoBus, stdout);
+    io.write(kNoBus);
     return 1;
   }
   const can::ConsoleFrame& frame = command.frame;
   const std::span<const std::uint8_t> payload(frame.data.data(), frame.length);
   const std::string shown = can::formatCanFrame(frame.id, payload, frame.extended);
   if (!bus->transmitting()) {
-    std::printf("%s not sent: the bus is listen-only\n", shown.c_str());
+    io.print("%s not sent: the bus is listen-only\n", shown.c_str());
     return 1;
   }
-  if (command.repeatMs > 0) return sendRepeatedly(*bus, command, payload, shown);
+  if (command.repeatMs > 0) return sendRepeatedly(io, *bus, command, payload, shown);
   if (const std::optional<std::string> problem = bus->sendRaw(frame.id, payload, frame.extended)) {
-    std::printf("%s not sent: %s\n", shown.c_str(), problem->c_str());
+    io.print("%s not sent: %s\n", shown.c_str(), problem->c_str());
     return 1;
   }
   // Queued, not yet acknowledged: the TWAI driver retries until something ACKs it. The status
   // report's sent / never-acknowledged counts say how it went.
-  std::printf("%s queued\n", shown.c_str());
+  io.print("%s queued\n", shown.c_str());
   return 0;
 }
 
@@ -503,7 +471,7 @@ struct SeenId {
 constexpr std::int64_t kChangePrintIntervalUs = 500 * 1000;
 constexpr std::size_t kMaxSeenIds = 128;
 
-int canDump(int argumentCount, char** arguments) {
+int canDump(ConsoleIo& io, int argumentCount, char** arguments) {
   bool changesOnly = false;
   std::vector<const char*> rest = {arguments[0]};
   for (int at = 1; at < argumentCount; at++) {
@@ -516,29 +484,29 @@ int canDump(int argumentCount, char** arguments) {
   std::optional<can::CanId> filter;
   if (const std::optional<std::string> error =
           can::parseCanDumpFilter(static_cast<int>(rest.size()), rest.data(), filter)) {
-    std::printf("%s\n", error->c_str());
+    io.print("%s\n", error->c_str());
     return 1;
   }
   CanBus* bus = consoleBus();
   if (bus == nullptr) {
-    std::fputs(kNoBus, stdout);
+    io.write(kNoBus);
     return 1;
   }
   std::vector<SeenId> seen;
   if (changesOnly) seen.reserve(kMaxSeenIds);
   if (!bus->startDump()) {
-    std::fputs("no memory for the dump\n", stdout);
+    io.write("no memory for the dump\n");
     return 1;
   }
   const char* mode = changesOnly ? " (new ids and changed payloads only, each id at most every 500 ms)" : "";
   if (filter) {
-    std::printf(filter->extended ? "dumping id %08X%s — press Enter to stop\n" : "dumping id %03X%s — press Enter to stop\n",
+    io.print(filter->extended ? "dumping id %08X%s — press Enter to stop\n" : "dumping id %03X%s — press Enter to stop\n",
                 static_cast<unsigned>(filter->id), mode);
   } else {
-    std::printf("dumping every frame%s — press Enter to stop\n", mode);
+    io.print("dumping every frame%s — press Enter to stop\n", mode);
   }
-  std::fputs("time is seconds since the dump started\n", stdout);
-  std::fflush(stdout);
+  io.write("time is seconds since the dump started\n");
+  io.flush();
 
   // Remote frames never reach the dump (the receive path drops them), so count them instead, or a
   // bus carrying only those would look silent.
@@ -551,12 +519,12 @@ int canDump(int argumentCount, char** arguments) {
     const std::string line =
         can::formatCanFrame(frame.id, std::span<const std::uint8_t>(frame.data, frame.length), frame.extended);
     const std::int64_t at = frame.arrivedUs - startedUs;
-    std::printf("%4lld.%03lld %s%s\n", static_cast<long long>(at / 1000000), static_cast<long long>((at / 1000) % 1000),
+    io.print("%4lld.%03lld %s%s\n", static_cast<long long>(at / 1000000), static_cast<long long>((at / 1000) % 1000),
                 line.c_str(), tag);
   };
 
   // Watch stdin without blocking, so the dump can be stopped by a keypress while it waits on frames.
-  KeyWatch keys;
+  KeyWatch keys(io);
   std::int64_t nextKeyCheckUs = 0;
   while (true) {
     ReceivedFrame frame;
@@ -600,7 +568,7 @@ int canDump(int argumentCount, char** arguments) {
     const std::int64_t nowUs = esp_timer_get_time();
     if (nowUs >= nextKeyCheckUs) {
       nextKeyCheckUs = nowUs + 50 * 1000;
-      std::fflush(stdout);
+      io.flush();
       if (keys.pressed()) break;
     }
   }
@@ -609,46 +577,46 @@ int canDump(int argumentCount, char** arguments) {
   const std::int64_t endedUs = esp_timer_get_time();
   if (changesOnly) {
     std::sort(seen.begin(), seen.end(), [](const SeenId& a, const SeenId& b) { return a.firstUs < b.firstUs; });
-    std::printf("summary: %u ids over %.1f s, by first appearance (first at, id, frames, rate, last payload)\n",
+    io.print("summary: %u ids over %.1f s, by first appearance (first at, id, frames, rate, last payload)\n",
                 static_cast<unsigned>(seen.size()), static_cast<double>(endedUs - startedUs) / 1e6);
     for (const SeenId& entry : seen) {
       const double span = static_cast<double>(endedUs - entry.firstUs) / 1e6;
       const std::string line =
           can::formatCanFrame(entry.id, std::span<const std::uint8_t>(entry.data, entry.length), entry.extended);
-      std::printf("  %8.3f  %s  x%u  %.0f/s\n", static_cast<double>(entry.firstUs - startedUs) / 1e6, line.c_str(),
+      io.print("  %8.3f  %s  x%u  %.0f/s\n", static_cast<double>(entry.firstUs - startedUs) / 1e6, line.c_str(),
                   static_cast<unsigned>(entry.count), span > 0 ? entry.count / span : 0.0);
     }
-    if (untracked > 0) std::printf("  and %u frames of ids past the first %u\n", static_cast<unsigned>(untracked),
+    if (untracked > 0) io.print("  and %u frames of ids past the first %u\n", static_cast<unsigned>(untracked),
                                    static_cast<unsigned>(kMaxSeenIds));
   }
   const unsigned remote = counters.ignoredRemote.load(std::memory_order_relaxed) - remoteBefore;
-  if (remote > 0) std::printf("not shown: %u remote frames (only data frames are printed)\n", remote);
+  if (remote > 0) io.print("not shown: %u remote frames (only data frames are printed)\n", remote);
   const std::uint32_t dropped = bus->dumpDropped();
   if (dropped > 0) {
-    std::printf("stopped; %u frames were dropped (printing couldn't keep up with the bus)\n",
+    io.print("stopped; %u frames were dropped (printing couldn't keep up with the bus)\n",
                 static_cast<unsigned>(dropped));
   } else {
-    std::fputs("stopped\n", stdout);
+    io.write("stopped\n");
   }
   return 0;
 }
 
-int poller(int argumentCount, char** arguments) {
+int poller(ConsoleIo& io, int argumentCount, char** arguments) {
   if (consoleDiagnosticsTask == nullptr) {
-    std::fputs("diagnostics aren't running (the boot log says why)\n", stdout);
+    io.write("diagnostics aren't running (the boot log says why)\n");
     return 1;
   }
   if (argumentCount == 1) {
     const std::optional<bool> running = consoleDiagnosticsTask->pollerRunning();
     if (!running) {
-      std::fputs(kNoPoller, stdout);
+      io.write(kNoPoller);
     } else {
-      std::printf("the OBD poller is %s\n", *running ? "running" : "stopped");
+      io.print("the OBD poller is %s\n", *running ? "running" : "stopped");
     }
     return 0;
   }
   if (argumentCount != 2) {
-    std::fputs("usage: poller [on | off]\n", stdout);
+    io.write("usage: poller [on | off]\n");
     return 1;
   }
   const std::string_view choice = arguments[1];
@@ -658,15 +626,15 @@ int poller(int argumentCount, char** arguments) {
   } else if (choice == "off" || choice == "stop" || choice == "0") {
     run = false;
   } else {
-    std::fputs("usage: poller [on | off]\n", stdout);
+    io.write("usage: poller [on | off]\n");
     return 1;
   }
   if (!consoleDiagnosticsTask->setPollerRunning(run)) {
-    std::fputs(kNoPoller, stdout);
+    io.write(kNoPoller);
     return 1;
   }
-  logInfo(kTag, "the OBD poller was %s from the USB console", run ? "started" : "stopped");
-  std::printf("the OBD poller is now %s\n", run ? "running" : "stopped");
+  logInfo(kTag, "the OBD poller was %s from the %s", run ? "started" : "stopped", io.name());
+  io.print("the OBD poller is now %s\n", run ? "running" : "stopped");
   return 0;
 }
 
@@ -674,42 +642,85 @@ int poller(int argumentCount, char** arguments) {
 
 void setConsoleDiagnostics(DiagnosticsTask* diagnostics) { consoleDiagnosticsTask = diagnostics; }
 
-bool registerCanConsoleCommands() {
-  const esp_console_cmd_t commands[] = {
-      {.command = "can-send",
-       .help = "Put one CAN frame on the bus: can-send <id> [byte ...], hex, up to 8 data bytes "
-               "(e.g. can-send 7DF 02 01 0C). An id of 4-8 digits is extended (29-bit), e.g. 18DAA0F1. -r <ms> resends it every <ms> milliseconds until a key is "
-               "pressed (e.g. can-send -r 150 500 01 00 00 00 00 00 00 00). Needs OBD_ENABLED; the USB "
-               "console only.",
-       .hint = "[-r <ms>] <id> [byte ...]", .func = canSend, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
-      {.command = "can-repeat",
-       .help = "Resend one CAN frame in the background, leaving the console free: can-repeat <ms> <id> [byte ...] "
-               "(e.g. can-repeat 150 500 01 00 00 00 00 00 00 00). `can-repeat stop` ends it, `can-repeat` alone "
-               "reports it. One at a time; stops itself after 60 minutes or 3 refusals in a row. Needs OBD_ENABLED; "
-               "the USB console only.",
-       .hint = "<ms> <id> [byte ...] | stop", .func = canRepeat, .argtable = nullptr, .func_w_context = nullptr,
-       .context = nullptr},
-      {.command = "psu",
-       .help = "Hold the PSU's 12 V main rail on from here, as the VCU does: `psu on` sends its enable request "
-               "(500 01 00 00 00 00 00 00 00) every 150 ms in the background, `psu off` stops it (the rail drops "
-               "about a second later), `psu status` (or `psu`) shows the hold and the PSU's own state and rail "
-               "voltages. Stops itself after 60 minutes. Needs OBD_ENABLED; the USB console only.",
-       .hint = "[on | off | status]", .func = psu, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
-      {.command = "can-dump",
-       .help = "Print CAN frames, 29-bit ones too, as they arrive until a key is pressed, each with its time; "
-               "can-dump <id> shows only that id. -c prints only new ids and changed payloads, and a summary "
-               "of every id at the end. "
-               "The USB console only.",
-       .hint = "[-c] [id]", .func = canDump, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
-      {.command = "poller",
-       .help = "Stop or restart the OBD poller: `poller off` frees the bus for can-send, `poller on` resumes it; "
-               "`poller` alone says which it is. Needs OBD_ENABLED.",
-       .hint = "[on | off]", .func = poller, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
+namespace {
+
+struct CanCommand {
+  const char* name;
+  const char* hint;
+  const char* help;
+  int (*run)(ConsoleIo& io, int argumentCount, char** arguments);
+};
+
+constexpr CanCommand kCanCommands[] = {
+    {"can-send", "[-r <ms>] <id> [byte ...]",
+     "Put one CAN frame on the bus: can-send <id> [byte ...], hex, up to 8 data bytes (e.g. can-send 7DF 02 01 "
+     "0C). An id of 4-8 digits is extended (29-bit), e.g. 18DAA0F1. -r <ms> resends it every <ms> milliseconds "
+     "until a key is pressed (e.g. can-send -r 150 500 01 00 00 00 00 00 00 00). Needs OBD_ENABLED; the USB and SSH "
+     "consoles only.",
+     canSend},
+    {"can-repeat", "<ms> <id> [byte ...] | stop",
+     "Resend one CAN frame in the background, leaving the console free: can-repeat <ms> <id> [byte ...] (e.g. "
+     "can-repeat 150 500 01 00 00 00 00 00 00 00). `can-repeat stop` ends it, `can-repeat` alone reports it. One at "
+     "a time; stops itself after 60 minutes or 3 refusals in a row. Needs OBD_ENABLED; the USB and SSH consoles only.",
+     canRepeat},
+    {"psu", "[on | off | status]",
+     "Hold the PSU's 12 V main rail on from here, as the VCU does: `psu on` sends its enable request (500 01 00 00 "
+     "00 00 00 00) every 150 ms in the background, `psu off` stops it (the rail drops about a second later), `psu "
+     "status` (or `psu`) shows the hold and the PSU's own state and rail voltages. Stops itself after 60 minutes. "
+     "Needs OBD_ENABLED; the USB and SSH consoles only.",
+     psu},
+    {"can-dump", "[-c] [id]",
+     "Print CAN frames, 29-bit ones too, as they arrive until a key is pressed, each with its time; can-dump <id> "
+     "shows only that id. -c prints only new ids and changed payloads, and a summary of every id at the end. The "
+     "USB and SSH consoles only.",
+     canDump},
+    {"poller", "[on | off]",
+     "Stop or restart the OBD poller: `poller off` frees the bus for can-send, `poller on` resumes it; `poller` "
+     "alone says which it is. Needs OBD_ENABLED; the USB and SSH consoles only.",
+     poller},
+};
+
+const CanCommand* findCanCommand(std::string_view name) {
+  for (const CanCommand& command : kCanCommands) {
+    if (name == command.name) return &command;
+  }
+  return nullptr;
+}
+
+int runOnUsb(void* context, int argumentCount, char** arguments) {
+  return static_cast<const CanCommand*>(context)->run(usbConsoleIo(), argumentCount, arguments);
+}
+
+}  // namespace
+
+bool isCanCommand(std::string_view name) { return findCanCommand(name) != nullptr; }
+
+int runCanCommand(ConsoleIo& io, int argumentCount, char** arguments) {
+  const CanCommand* command = argumentCount > 0 ? findCanCommand(arguments[0]) : nullptr;
+  if (command == nullptr) return 1;
+  return command->run(io, argumentCount, arguments);
+}
+
+std::span<const text::HelpLine> canCommandHelp() {
+  static constexpr text::HelpLine kHelp[] = {
+      {"", "The CAN bus (OBD_ENABLED for anything that sends):"},
+      {"can-send ID [BYTE...]", "put one frame on the bus; -r MS resends it until a key"},
+      {"can-repeat MS ID [BYTE...]", "resend a frame in the background; `stop` ends it"},
+      {"can-dump [-c] [ID]", "print frames as they arrive, until a key"},
+      {"poller [on | off]", "stop or restart the OBD poller"},
+      {"psu [on | off | status]", "hold the PSU's 12 V rail on, as the VCU does"},
   };
-  for (const esp_console_cmd_t& command : commands) {
-    const esp_err_t result = esp_console_cmd_register(&command);
+  return kHelp;
+}
+
+bool registerCanConsoleCommands() {
+  for (const CanCommand& command : kCanCommands) {
+    const esp_console_cmd_t entry = {.command = command.name, .help = command.help, .hint = command.hint,
+                                     .func = nullptr, .argtable = nullptr, .func_w_context = runOnUsb,
+                                     .context = const_cast<CanCommand*>(&command)};
+    const esp_err_t result = esp_console_cmd_register(&entry);
     if (result != ESP_OK) {
-      logError(kTag, "registering `%s` failed: %s", command.command, esp_err_to_name(result));
+      logError(kTag, "registering `%s` failed: %s", command.name, esp_err_to_name(result));
       return false;
     }
   }

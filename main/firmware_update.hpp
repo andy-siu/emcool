@@ -5,9 +5,9 @@
 //
 //   /emcool.bin     on the microSD card's top folder: installed on its own, removed, and restarted
 //                   into (startCardUpdateWatch)
-//   `update FILE`   on any console: an image already on the microSD card, `update /emcool.bin`.
-//   PUT /update     on the Wi-Fi page, behind ADMIN_PASSWORD (main/wifi_link.cpp):
-//                   curl -u :PASSWORD -T build/emcool.bin http://emcool/update
+//   `update FILE`   on the USB and SSH consoles (never the read-only telnet console): an image
+//                   already on the microSD card, `update /emcool.bin`, or `ssh admin@emcool update
+//                   /emcool.bin` from the laptop.
 //   /firmware/…     over Bluetooth, from the dashboard's Settings → emcool, a piece per request
 //                   (emcool/ble_server/firmware_endpoints.hpp)
 //
