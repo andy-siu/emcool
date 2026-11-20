@@ -25,21 +25,22 @@ constexpr std::size_t kCopyBytes = 4096;
 // How much of `type` decides a file is text: a NUL in it means it isn't.
 constexpr std::size_t kTextProbeBytes = 512;
 
+// The console's `help` lists only commands with help text, so `dir` carries one short entry for them all.
 const std::vector<CardCommand> kCommands = {
-    {"dir", "[PATH]", "List a folder on the card: each entry's size and date, folders marked <DIR>, then the free space. "
-                      "`dir *.LOG` lists what matches. `ls` is the same."},
-    {"ls", "[PATH]", "The same as dir."},
-    {"cd", "[FOLDER]", "Change this console's folder on the card: `cd RIDES`, `cd ..`, `cd /`. Alone, back to the top."},
-    {"pwd", nullptr, "Print this console's folder on the card."},
-    {"type", "FILE", "Print the start of a text file on the card. `cat` is the same."},
-    {"cat", "FILE", "The same as type."},
-    {"mkdir", "FOLDER", "Make a folder on the card."},
-    {"rmdir", "FOLDER", "Remove an empty folder from the card."},
-    {"rm", "[-r] PATH...", "Delete files from the card: `rm OLD.TXT`, `rm RIDES/00003/*`. `rm -r FOLDER` deletes a folder "
-                           "and everything in it. The ride being recorded is never deleted."},
-    {"cp", "FROM... TO", "Copy files on the card: `cp A.TXT B.TXT`, or several into a folder: `cp RIDES/00003/* SAVED`. "
-                         "Never overwrites, and never into RIDES."},
-    {"mv", "FROM... TO", "Move or rename files or folders on the card. Never overwrites, and never into RIDES."},
+    {"dir", "[PATH]",
+     "The SD card, as on a PC: dir/ls [PATH], cd [FOLDER], pwd, type/cat FILE, mkdir FOLDER, rmdir FOLDER, "
+     "rm [-r] PATH..., cp FROM... TO, mv FROM... TO. dir, rm, cp and mv take * and ? in the last name. cp and mv "
+     "never overwrite or write into RIDES; the ride being recorded is never deleted."},
+    {"ls", "[PATH]", nullptr},
+    {"cd", "[FOLDER]", nullptr},
+    {"pwd", nullptr, nullptr},
+    {"type", "FILE", nullptr},
+    {"cat", "FILE", nullptr},
+    {"mkdir", "FOLDER", nullptr},
+    {"rmdir", "FOLDER", nullptr},
+    {"rm", "[-r] PATH...", nullptr},
+    {"cp", "FROM... TO", nullptr},
+    {"mv", "FROM... TO", nullptr},
 };
 
 bool equalsIgnoringCase(std::string_view left, std::string_view right) {
