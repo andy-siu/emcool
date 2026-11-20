@@ -5,7 +5,8 @@
 // the login and its lockout — so the host checks run it; main/wifi_link.cpp feeds it a TCP socket.
 //
 // Plain TCP, so `nc <bike> 23` works (macOS has no telnet). Telnet clients' option negotiation
-// (IAC …) is stepped over. Lines end at CR or LF; a CR LF pair is one line. Backspace edits the line.
+// (IAC …) is answered: every option refused but ECHO, which hides the password, so a telnet client
+// edits whole lines itself. Lines end at CR or LF; a CR LF pair is one line. Backspace edits the line.
 // The password is the only thing it protects with: it crosses the network in plain text, as does
 // everything after it, and `set ADMIN_PASSWORD` over this console sends the new one in plain text too.
 
@@ -44,6 +45,7 @@ class RemoteConsole {
   std::string line(std::string_view text, std::int64_t nowMs, bool& close);
   std::string login(std::string_view attempt, std::int64_t nowMs, bool& close);
   std::string prompt() const;
+  std::string negotiate(unsigned char command, unsigned char option);
 
   std::string password_;
   RunCommand run_;
@@ -55,6 +57,8 @@ class RemoteConsole {
   bool lastWasCr_ = false;
   enum class Telnet : std::uint8_t { kData, kCommand, kOption, kSubnegotiation, kSubnegotiationIac };
   Telnet telnet_ = Telnet::kData;
+  unsigned char telnetCommand_ = 0;
+  bool echoing_ = false;  // we said WILL ECHO and haven't taken it back
   // Across connections.
   int failuresInARow_ = 0;
   std::int64_t lockedUntilMs_ = 0;

@@ -12,6 +12,7 @@ constexpr unsigned char kSb = 250;
 constexpr unsigned char kSe = 240;
 constexpr unsigned char kWill = 251;
 constexpr unsigned char kWont = 252;
+constexpr unsigned char kDo = 253;
 constexpr unsigned char kDont = 254;
 constexpr unsigned char kEcho = 1;
 constexpr std::size_t kMaxArguments = 8;
@@ -115,6 +116,7 @@ std::string RemoteConsole::connected(std::int64_t) {
   overlong_ = false;
   lastWasCr_ = false;
   telnet_ = Telnet::kData;
+  echoing_ = true;
   // Asks a telnet client not to echo the password (WILL ECHO); nc shows the bytes and ignores them.
   return std::string("emcool console over Wi-Fi. Everything here crosses the network in plain text.\r\npassword: ") +
          static_cast<char>(kIac) + static_cast<char>(kWill) + static_cast<char>(kEcho);
@@ -127,8 +129,8 @@ std::string RemoteConsole::receive(std::span<const char> bytes, std::int64_t now
   close = false;
   for (const char signedByte : bytes) {
     const auto byte = static_cast<unsigned char>(signedByte);
-    // Telnet negotiation, stepped over: IAC WILL/WONT/DO/DONT <option>, IAC SB … IAC SE, and
-    // IAC <command>. IAC IAC is a literal 255, which no command needs, so it is dropped too.
+    // Telnet negotiation: IAC WILL/WONT/DO/DONT <option> is answered (negotiate), IAC SB … IAC SE
+    // and IAC <command> stepped over. IAC IAC is a literal 255, which no command needs, so it is dropped too.
     switch (telnet_) {
       case Telnet::kData:
         if (byte == kIac) {
@@ -137,10 +139,12 @@ std::string RemoteConsole::receive(std::span<const char> bytes, std::int64_t now
         }
         break;
       case Telnet::kCommand:
+        telnetCommand_ = byte;
         telnet_ = byte == kSb ? Telnet::kSubnegotiation : byte >= kWill && byte <= kDont ? Telnet::kOption : Telnet::kData;
         continue;
       case Telnet::kOption:
         telnet_ = Telnet::kData;
+        out += negotiate(telnetCommand_, byte);
         continue;
       case Telnet::kSubnegotiation:
         if (byte == kIac) telnet_ = Telnet::kSubnegotiationIac;
@@ -181,6 +185,26 @@ std::string RemoteConsole::receive(std::span<const char> bytes, std::int64_t now
   return out;
 }
 
+// Every option is refused except ECHO, which this side offers while the password is typed. A client
+// left without an answer stays where its own requests put it: a telnet client that asked DO SGA and
+// heard nothing runs character at a time, and its terminal shows Return as ^M. Refused, it edits
+// whole lines itself. A reply goes out only when the request would change an option's state, so the
+// client's acknowledgements of our WILL/WONT ECHO get none and the two sides never loop.
+std::string RemoteConsole::negotiate(unsigned char command, unsigned char option) {
+  const auto reply = [](unsigned char answer, unsigned char about) {
+    return std::string() + static_cast<char>(kIac) + static_cast<char>(answer) + static_cast<char>(about);
+  };
+  if (command == kWill) return reply(kDont, option);  // nothing of the client's is wanted
+  if (command == kWont) return {};                     // already off
+  if (option == kEcho) {
+    if (command == kDo) return echoing_ ? std::string() : reply(kWont, kEcho);
+    if (!echoing_) return {};  // DONT ECHO: the acknowledgement of our WONT
+    echoing_ = false;
+    return reply(kWont, kEcho);
+  }
+  return command == kDo ? reply(kWont, option) : std::string();
+}
+
 std::string RemoteConsole::line(std::string_view text, std::int64_t nowMs, bool& close) {
   if (!authenticated_) return login(text, nowMs, close);
   std::vector<std::string> words = splitWords(text);
@@ -209,6 +233,7 @@ std::string RemoteConsole::login(std::string_view attempt, std::int64_t nowMs, b
   if (constantTimeEquals(attempt, password_)) {
     authenticated_ = true;
     failuresInARow_ = 0;
+    echoing_ = false;
     // WONT ECHO: the client echoes again from here.
     return std::string() + static_cast<char>(kIac) + static_cast<char>(kWont) + static_cast<char>(kEcho) +
            "\r\nlogged in. `help` lists the commands, `exit` leaves. The log follows this console.\r\n" + prompt();
