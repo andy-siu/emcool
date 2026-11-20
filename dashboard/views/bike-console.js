@@ -60,7 +60,7 @@ const TRANSMITTING = new Set([
 ]);
 // Turning one of these on lets a page holding the Bluetooth key change the bike; it asks twice.
 const WRITES = new Set(["SERVICE_WRITE_ENABLED", "CHARGE_AUTO_ENABLED"]);
-const OUTPUT_STYLE =
+export const OUTPUT_STYLE =
   "font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; color: var(--fg);";
 
 export const linkReady = () => connection.val === "live" && BLE_MODE;

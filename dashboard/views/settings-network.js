@@ -9,9 +9,11 @@
 // this page won't save a network until one is saved or typed beside it. The passwords are saved first
 // and the network last, so a save that stops halfway never leaves a network saved without one. The
 // two must differ (the bike refuses a match): the telnet one crosses the network in plain text.
+// The summary and the ifconfig card are Menu → Network info's (./network-info.js), shown here too.
 import van from "../vendor/van-1.6.1.js";
 import { SettingsCard } from "./settings-fields.js";
-import { ConsoleRestart, busy, linkReady, list, listError, quoted, results, runLine, watchConsoleList } from "./bike-console.js";
+import { ConsoleRestart, OUTPUT_STYLE, busy, linkReady, list, listError, quoted, results, runLine, watchConsoleList } from "./bike-console.js";
+import { NetworkStatus, NetworkSummary, WifiSwitch } from "./network-info.js";
 
 const { button, div, input, label, pre } = van.tags;
 
@@ -22,11 +24,8 @@ const openNetwork = van.state(false);
 const adminPassword = van.state("");
 const telnetPassword = van.state("");
 const showPasswords = van.state(false);
-const ifconfig = van.state("");
 
 const RESULT = "network";
-const OUTPUT_STYLE =
-  "font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; color: var(--fg);";
 
 /** UTF-8 bytes, which is what the bike counts. @param {string} text */
 const byteLength = text => new TextEncoder().encode(text).length;
@@ -69,7 +68,7 @@ function blocker() {
   if (!openNetwork.val && password && (passwordBytes < 8 || passwordBytes > 63)) {
     return `The Wi-Fi password must be 8-63 characters; this is ${passwordBytes}.`;
   }
-  if (ssidEdited.val && !name && savedSsid) return "To turn Wi-Fi off, tap Turn Wi-Fi off.";
+  if (ssidEdited.val && !name && savedSsid) return "To forget the network, tap Forget the network; to turn Wi-Fi off and keep it, Turn Wi-Fi off below.";
   if (name && !adminSaved && !admin && !telnetSaved && !telnet) {
     return "Enter an SSH password or a telnet password. Wi-Fi stays off without one, because they guard what it serves.";
   }
@@ -135,38 +134,6 @@ async function turnOff() {
   }
 }
 
-async function readIfconfig() {
-  const reply = await runLine("network-ifconfig", "ifconfig");
-  if (reply?.ok) ifconfig.val = reply.output;
-}
-
-/** @param {string} name */
-function savedLine(name) {
-  const entry = setting(name);
-  if (!entry) return "";
-  return entry.pending ? `${entry.saved} (running now: ${entry.active}, until Restart)` : entry.saved;
-}
-
-function Summary() {
-  return () => {
-    if (!list.val) return div();
-    const name = setting("WIFI_SSID");
-    const admin = setting("ADMIN_PASSWORD");
-    const telnet = setting("TELNET_PASSWORD");
-    const isSet = entry => !!entry?.active && entry.active !== "not set";
-    const savedOn = !!name?.set && (!!admin?.set || !!telnet?.set);
-    const runningOn = isSet(name) && (isSet(admin) || isSet(telnet));
-    return div(
-      { class: "settings-note settings-state" },
-      div(`Wi-Fi: ${runningOn ? "on" : "off"} now${savedOn === runningOn ? "" : `; ${savedOn ? "on" : "off"} after Restart`}.`),
-      div(`Network: ${name?.set ? savedLine("WIFI_SSID") : "not set"}.`),
-      div(`Wi-Fi password: ${savedLine("WIFI_PASSWORD")}.`),
-      div(`SSH password: ${savedLine("ADMIN_PASSWORD")}.`),
-      div(`Telnet password: ${savedLine("TELNET_PASSWORD")}.`)
-    );
-  };
-}
-
 /** @param {string} ariaLabel @param {import("../vendor/van-1.6.1.js").State<string>} value @param {() => string} placeholder @param {() => boolean} [disabled] */
 function PasswordField(ariaLabel, value, placeholder, disabled = () => false) {
   return input({
@@ -201,7 +168,7 @@ export function NetworkConnections() {
           { class: "settings-note", role: "status" },
           linkReady() ? listError.val : "Connect over Bluetooth to change the network settings."
         ),
-      Summary()
+      NetworkSummary()
     ),
     SettingsCard(
       "Change the network",
@@ -297,33 +264,14 @@ export function NetworkConnections() {
                     void turnOff();
                   },
                 },
-                "Turn Wi-Fi off"
+                "Forget the network"
               )
             : div({ hidden: true })
       ),
       () => (results.val[RESULT] ? pre({ style: OUTPUT_STYLE }, results.val[RESULT]) : div())
     ),
-    SettingsCard(
-      "Network status",
-      "The ifconfig report: whether the bike has joined, its address, the SSH host key's fingerprint, and where to find the consoles and the ride-log page.",
-      div(
-        { class: "settings-actions" },
-        button(
-          {
-            class: "settings-button",
-            disabled: () => !!busy.val || !linkReady() || !list.val,
-            onclick: () => {
-              void readIfconfig();
-            },
-          },
-          () => (busy.val === "network-ifconfig" ? "Reading…" : ifconfig.val ? "Read again" : "Read status")
-        )
-      ),
-      () =>
-        ifconfig.val
-          ? pre({ style: OUTPUT_STYLE }, ifconfig.val)
-          : div({ class: "settings-note", role: "status" }, results.val["network-ifconfig"] ?? "")
-    ),
+    SettingsCard("Turn Wi-Fi on or off", "", WifiSwitch()),
+    NetworkStatus(),
     ConsoleRestart()
   );
 }

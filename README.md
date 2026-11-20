@@ -123,6 +123,7 @@ emcool> restart
 | `SERVICE_MODE_ENABLED` | `0` | `1` to let the dashboard read the VCU's calibration parameters, only while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `SERVICE_WRITE_ENABLED` | `0` | `1` to let the dashboard **write** to the VCU (`/vcu-write`). The one switch that lets a web page change the bike. Needs `OBD_ENABLED` and `SERVICE_MODE_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `CHARGE_AUTO_ENABLED` | `0` | `1` for the automatic charge-current controller. It commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`docs/service-mode.md`](docs/service-mode.md). |
+| `WIFI_ENABLED` | `1` | `0` turns Wi-Fi off and `1` back on, at once, keeping the network and the passwords. The dashboard's **Turn Wi-Fi off / on** sets it. |
 | `WIFI_SSID` | not set | The Wi-Fi network to join, 2.4 GHz. With `ADMIN_PASSWORD` or `TELNET_PASSWORD` set too, the bike serves SSH on port 22 and the ride log on port 80. See [Wi-Fi](#wi-fi). |
 | `WIFI_PASSWORD` | not set | That network's password, 8–63 characters. Unset for an open network. |
 | `ADMIN_PASSWORD` | not set | The SSH console's password, 8–128 characters. Unset keeps SSH off. |

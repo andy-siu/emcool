@@ -13,6 +13,7 @@ import { request } from "../lib/transport.js";
 import { showTab } from "../lib/router.js";
 import { openDestination } from "../lib/destination.js";
 import { BatteryCoolingPage } from "./battery-cooling.js";
+import { NetworkInfo } from "./network-info.js";
 
 const { button, div, h2 } = van.tags;
 const bikeReadState = van.state(/** @type {import("../../src/http/vcu-read.ts").VcuReadResponse | null} */ (null));
@@ -21,6 +22,8 @@ export function DestinationPage() {
   switch (destination.val) {
     case "settings":
       return SettingsPage();
+    case "network":
+      return NetworkInfo();
     case "session":
       return div({ class: "settings-page" }, h2("This session"), TripStats());
     case "bike-information":

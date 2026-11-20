@@ -11,6 +11,7 @@
 #include <mutex>
 #include <string>
 
+#include "boot_guard.hpp"
 #include "card_files.hpp"
 #include "dashboard_console.hpp"
 #include "firmware_update.hpp"
@@ -66,6 +67,16 @@ struct Link {
   esp_timer_handle_t retryTimer = nullptr;
   std::int64_t retryMs = kFirstRetryMs;
   httpd_handle_t http = nullptr;
+
+  // The boot's settings, kept so WIFI_ENABLED can bring Wi-Fi up after boot.
+  const settings::Settings* settings = nullptr;
+  // Bringing Wi-Fi up is tried at most once per boot (a half-started stack can't be started again);
+  // `started` once it has run. `stopped` while WIFI_ENABLED has turned it off since.
+  bool bringUpTried = false;
+  std::atomic<bool> started{false};
+  std::atomic<bool> stopped{false};
+  std::atomic<WifiLinkState> state{WifiLinkState::kOff};
+  std::mutex switchMutex;
 
   // The telnet console's copy of the log while a client is logged in (log_tee.hpp).
   LogSink* log = nullptr;
@@ -384,6 +395,7 @@ std::string describeServices(const std::string& ip) {
 }
 
 void connectLater() {
+  if (link.stopped.load(std::memory_order_relaxed)) return;
   esp_timer_stop(link.retryTimer);
   esp_timer_start_once(link.retryTimer, static_cast<std::uint64_t>(link.retryMs) * 1000);
   link.retryMs = std::min(link.retryMs * 2, kLastRetryMs);
@@ -391,10 +403,16 @@ void connectLater() {
 
 void onEvent(void*, esp_event_base_t base, std::int32_t id, void* data) {
   if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+    link.state.store(WifiLinkState::kJoining, std::memory_order_relaxed);
     esp_wifi_connect();
+  } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_CONNECTED) {
+    link.state.store(WifiLinkState::kJoining, std::memory_order_relaxed);
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
     const bool wasConnected = link.counters->connected.exchange(false, std::memory_order_relaxed);
     link.counters->address.store(0, std::memory_order_relaxed);
+    // Turned off with WIFI_ENABLED: this is the stop's own disconnect, not a network that dropped.
+    if (link.stopped.load(std::memory_order_relaxed)) return;
+    link.state.store(WifiLinkState::kNotJoined, std::memory_order_relaxed);
     const auto* event = static_cast<const wifi_event_sta_disconnected_t*>(data);
     if (wasConnected) {
       logWarning(kTag, "disconnected (reason %u); reconnecting", event->reason);
@@ -405,6 +423,7 @@ void onEvent(void*, esp_event_base_t base, std::int32_t id, void* data) {
     const auto* event = static_cast<const ip_event_got_ip_t*>(data);
     link.counters->address.store(event->ip_info.ip.addr, std::memory_order_relaxed);
     link.counters->connected.store(true, std::memory_order_relaxed);
+    link.state.store(WifiLinkState::kJoined, std::memory_order_relaxed);
     link.retryMs = kFirstRetryMs;
     const std::string ip = address(event->ip_info.ip);
     logInfo(kTag, "connected as %s: %s", ip.c_str(), describeServices(ip).c_str());
@@ -426,9 +445,13 @@ std::string describeNetwork() {
   char macLine[48];
   std::snprintf(macLine, sizeof macLine, "mac:      %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3],
                 mac[4], mac[5]);
-  if (link.netif == nullptr) {
-    std::string out = std::string("wifi:     off (set WIFI_SSID, and ADMIN_PASSWORD or TELNET_PASSWORD, then restart)\n") +
-                      macLine;
+  if (!wifiRunning()) {
+    const bool setUp = link.settings != nullptr && link.settings->wifiSetUp();
+    const bool switchedOff = link.running != nullptr && !link.running->wifiSwitchedOn();
+    const char* why = setUp && switchedOff ? "wifi:     off (WIFI_ENABLED 0; `set WIFI_ENABLED 1` turns it on)\n"
+                      : setUp ? "wifi:     off (it did not start; the boot log says why, and `restart` tries again)\n"
+                              : "wifi:     off (set WIFI_SSID, and ADMIN_PASSWORD or TELNET_PASSWORD, then restart)\n";
+    std::string out = std::string(why) + macLine;
     // The host key is made with the first SSH start, but it's printed whenever there is one.
     const std::string fingerprint = sshHostKeyFingerprint();
     if (fingerprint != kNoHostKey) out += "host key: " + fingerprint + "\n";
@@ -478,21 +501,16 @@ std::string describeNetwork() {
   return out;
 }
 
-bool startWifi(const settings::Settings& settings, settings::SettingsStorage& storage,
-               settings::RuntimeSettings& running, ride_log::DownloadCard* card, WifiCounters& counters) {
-  if (!settings.wifiEnabled()) {
-    logInfo(kTag, "off (%s)",
-            settings.wifiSsid.empty() ? "WIFI_SSID isn't set" : "neither ADMIN_PASSWORD nor TELNET_PASSWORD is set");
-    return false;
-  }
-  link.counters = &counters;
-  link.storage = &storage;
-  link.running = &running;
-  link.card = card;
-  link.telnetPassword = settings.telnetPassword;
-  link.ssid = settings.wifiSsid;
-  link.console = settings.telnetEnabled();
-  link.ssh = settings.sshEnabled();
+namespace {
+
+// Everything Wi-Fi needs, started: the stack, the join, and what it serves. Once per boot, at boot
+// or from `set WIFI_ENABLED 1`.
+bool bringUp() {
+  const settings::Settings& settings = *link.settings;
+  settings::SettingsStorage& storage = *link.storage;
+  settings::RuntimeSettings& running = *link.running;
+  WifiCounters& counters = *link.counters;
+  link.bringUpTried = true;
 
   if (esp_netif_init() != ESP_OK) {
     logError(kTag, "esp_netif_init failed; Wi-Fi stays off");
@@ -513,7 +531,10 @@ bool startWifi(const settings::Settings& settings, settings::SettingsStorage& st
   }
   // The network's name and password live in emcool's settings, not Wi-Fi's own NVS copy.
   esp_wifi_set_storage(WIFI_STORAGE_RAM);
-  const esp_timer_create_args_t retry = {.callback = [](void*) { esp_wifi_connect(); },
+  const esp_timer_create_args_t retry = {.callback =
+                                             [](void*) {
+                                               if (!link.stopped.load(std::memory_order_relaxed)) esp_wifi_connect();
+                                             },
                                          .arg = nullptr,
                                          .dispatch_method = ESP_TIMER_TASK,
                                          .name = "wifi-retry",
@@ -539,6 +560,7 @@ bool startWifi(const settings::Settings& settings, settings::SettingsStorage& st
     logError(kTag, "esp_wifi_start failed (%s); Wi-Fi stays off", esp_err_to_name(result));
     return false;
   }
+  link.started.store(true, std::memory_order_relaxed);
   logInfo(kTag, "joining \"%s\"%s; once it connects: %s", settings.wifiSsid.c_str(),
           settings.wifiPassword.empty() ? " (an open network)" : "", describeServices("<bike>").c_str());
 
@@ -558,6 +580,81 @@ bool startWifi(const settings::Settings& settings, settings::SettingsStorage& st
   // The ride-log page asks for the telnet password; without one, port 80 stays closed too.
   if (!settings.telnetPassword.empty()) startWebServer();
   return true;
+}
+
+}  // namespace
+
+bool startWifi(const settings::Settings& settings, settings::SettingsStorage& storage,
+               settings::RuntimeSettings& running, ride_log::DownloadCard* card, WifiCounters& counters) {
+  link.settings = &settings;
+  link.counters = &counters;
+  link.storage = &storage;
+  link.running = &running;
+  link.card = card;
+  link.telnetPassword = settings.telnetPassword;
+  link.ssid = settings.wifiSsid;
+  link.console = settings.telnetEnabled();
+  link.ssh = settings.sshEnabled();
+  if (!settings.wifiSetUp()) {
+    logInfo(kTag, "off (%s)",
+            settings.wifiSsid.empty() ? "WIFI_SSID isn't set" : "neither ADMIN_PASSWORD nor TELNET_PASSWORD is set");
+    return false;
+  }
+  if (!settings.wifiSwitchedOn) {
+    logInfo(kTag, "off (WIFI_ENABLED 0; `set WIFI_ENABLED 1` turns it on, joining \"%s\")", settings.wifiSsid.c_str());
+    return false;
+  }
+  const std::lock_guard<std::mutex> lock(link.switchMutex);
+  return bringUp();
+}
+
+bool switchWifi(bool on) {
+  const std::lock_guard<std::mutex> lock(link.switchMutex);
+  if (link.settings == nullptr) return false;
+  if (on) {
+    if (!link.started.load(std::memory_order_relaxed)) {
+      // Off since boot: bring it up now, unless boot (or an earlier switch) already tried and failed.
+      if (link.bringUpTried) return false;
+      logInfo(kTag, "on (WIFI_ENABLED 1)");
+      const bool up = bringUp();
+      if (up) noteHeap("Wi-Fi");
+      return up;
+    }
+    if (!link.stopped.load(std::memory_order_relaxed)) return true;
+    link.stopped.store(false, std::memory_order_relaxed);
+    link.retryMs = kFirstRetryMs;
+    const esp_err_t result = esp_wifi_start();
+    if (result != ESP_OK) {
+      link.stopped.store(true, std::memory_order_relaxed);
+      logError(kTag, "esp_wifi_start failed (%s); Wi-Fi stays off", esp_err_to_name(result));
+      return false;
+    }
+    logInfo(kTag, "on again (WIFI_ENABLED 1); joining \"%s\"", link.ssid.c_str());
+    return true;
+  }
+  if (!link.started.load(std::memory_order_relaxed) || link.stopped.load(std::memory_order_relaxed)) return true;
+  link.stopped.store(true, std::memory_order_relaxed);
+  esp_timer_stop(link.retryTimer);
+  const esp_err_t result = esp_wifi_stop();
+  if (result != ESP_OK) {
+    link.stopped.store(false, std::memory_order_relaxed);
+    logError(kTag, "esp_wifi_stop failed (%s); Wi-Fi stays on", esp_err_to_name(result));
+    return false;
+  }
+  link.counters->connected.store(false, std::memory_order_relaxed);
+  link.counters->address.store(0, std::memory_order_relaxed);
+  link.state.store(WifiLinkState::kOff, std::memory_order_relaxed);
+  // The address goes with the stop, and lwIP aborts every connection that used it.
+  logInfo(kTag, "off (WIFI_ENABLED 0): the radio is Bluetooth's alone; SSH, telnet and the ride-log page are closed");
+  return true;
+}
+
+bool wifiRunning() {
+  return link.started.load(std::memory_order_relaxed) && !link.stopped.load(std::memory_order_relaxed);
+}
+
+WifiLinkState wifiLinkState() {
+  return wifiRunning() ? link.state.load(std::memory_order_relaxed) : WifiLinkState::kOff;
 }
 
 }  // namespace emcool

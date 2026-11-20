@@ -263,8 +263,10 @@ extern "C" void app_main() {
   const bool wifi = nvsReady && emcool::startWifi(settings, settingsStorage, runtimeSettings,
                                                   download != nullptr ? &cardAccess : nullptr, wifiCounters);
   if (wifi) emcool::noteHeap("Wi-Fi");
+  // WIFI_ENABLED turns it off and on from here on, without a restart.
+  if (nvsReady) runtimeSettings.setWifiSwitch(emcool::switchWifi);
   static emcool::StatusReport status({bus, store, storeMutex, rideLog, writer, rideLogTaskCounters, clock,
-                                      bleLinkCounters, wifiCounters, wifi, runtimeSettings, diagnostics, statusText});
+                                      bleLinkCounters, wifiCounters, runtimeSettings, diagnostics, statusText});
   static DecodeContext context{bus, decoder, packTemperature, store, storeMutex, rideLog, clock, status, *diagnostics};
   if (xTaskCreatePinnedToCore(decodeTask, "decode", kDecodeTaskStackBytes, &context, kDecodeTaskPriority, nullptr,
                               kDecodeTaskCore) != pdPASS) {
@@ -348,6 +350,10 @@ void decodeTask(void* argument) {
         const std::lock_guard<std::mutex> lock(context.storeMutex);
         context.store.record("can_link", up ? 1 : 0, emcool::wallClockMs(), nowMs);
       }
+      // The dashboard header's Wi-Fi dot: the reference's codes, 0 off, 1 not joined, 2 joining, 3 joined.
+      const std::lock_guard<std::mutex> lock(context.storeMutex);
+      context.store.record("wifi_link_state", static_cast<double>(emcool::wifiLinkState()), emcool::wallClockMs(),
+                           nowMs);
     }
     context.bus.recoverIfBusOff(nowMs);
     context.rideLog.tick(nowMs);

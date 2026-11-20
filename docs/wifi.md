@@ -1,6 +1,6 @@
 # Wi-Fi: the consoles and the ride log over the network
 
-Wi-Fi is off until a network and a password are set. Then the bike joins your network as a client and serves:
+Wi-Fi is off until a network and a password are set. Then the bike joins your network as a client (unless `WIFI_ENABLED` is `0`) and serves:
 
 - **The SSH console** on port 22, behind `ADMIN_PASSWORD`: every command the USB console has, with the log following it. That includes settings, `restart`, firmware updates from the card, the card's commands, and the manual CAN commands (`can-send`, `can-dump`, `psu`, `poller`, `can-repeat`). It also serves the card's files to `scp`, `sftp` and the GUI file-transfer apps. It's encrypted.
 - **The ride log** on port 80, behind `TELNET_PASSWORD`: a page listing every boot and part, and downloads of them.
@@ -34,7 +34,7 @@ Wi-Fi comes on with `WIFI_SSID` and either password. With only `ADMIN_PASSWORD`,
 
 **Upgrading from a build before SSH:** what was saved as `ADMIN_PASSWORD` is now `TELNET_PASSWORD`, so the ride-log page keeps working with the password you had. SSH stays off until you set a new `ADMIN_PASSWORD`, from the USB console or the dashboard. Don't reuse the old one: it has crossed the network in plain text. The telnet console is off after the upgrade too, unless `TELNET_CONSOLE` had been saved as `1`; `set TELNET_CONSOLE 1` brings it back, read-only.
 
-Or from the dashboard: **Menu → Network settings** (also **Settings → Network connections**). It takes the network name, the Wi-Fi password (or *Open network*), the SSH password and the telnet password, and saves them with the same `set` commands over Bluetooth, so the bike checks them the same way. It won't save a network until a password is saved or typed beside it, since Wi-Fi stays off without one. It saves the passwords first and the network last, so a save that stops partway never leaves a network without a password. **Turn Wi-Fi off** runs `unset WIFI_SSID`. **Read status** shows the `ifconfig` report, and **Restart** applies the change.
+Or from the dashboard: **Settings → Network connections**. It takes the network name, the Wi-Fi password (or *Open network*), the SSH password and the telnet password, and saves them with the same `set` commands over Bluetooth, so the bike checks them the same way. It won't save a network until a password is saved or typed beside it, since Wi-Fi stays off without one. It saves the passwords first and the network last, so a save that stops partway never leaves a network without a password. **Forget the network** runs `unset WIFI_SSID`. **Read status** shows the `ifconfig` report, and **Restart** applies the change. **Menu → Network info** shows the same summary and `ifconfig` report without the form, for checking the bike's address or whether it has joined.
 
 The boot log says where to find it:
 
@@ -64,7 +64,20 @@ ride log: http://192.168.1.42/
 
 Before it has joined, it gives the SSID it is trying and how many attempts it has made. With Wi-Fi off, it says so and gives the MAC address. A router can reserve the bike an address by that MAC address. The bike asks the router for the hostname `emcool`, so `emcool.local` or `emcool` may work too, depending on the router.
 
-The bike rejoins by itself if the network drops or the router restarts, retrying from 1 s up to once a minute. `unset WIFI_SSID` then `restart` turns Wi-Fi off.
+The bike rejoins by itself if the network drops or the router restarts, retrying from 1 s up to once a minute.
+
+## Turning it off and on
+
+```
+emcool> set WIFI_ENABLED 0
+WIFI_ENABLED saved; Wi-Fi is off now
+emcool> set WIFI_ENABLED 1
+WIFI_ENABLED saved; Wi-Fi is on now, joining "garage wifi"
+```
+
+`WIFI_ENABLED` takes effect at once, with no restart, and is kept across restarts. Off stops Wi-Fi and leaves the radio to Bluetooth. It closes SSH, telnet and the ride-log page, so an SSH session that turns it off ends right there. The network and the passwords stay saved, so on joins the same network again. If Wi-Fi was off at boot, on starts it now. A changed network or password still waits for `restart`. `unset WIFI_SSID` forgets the network instead.
+
+On the dashboard, **Menu → Network info** (or tap **Wi-Fi** in the header) has a **Turn Wi-Fi off / on** button, which runs the same `set` over Bluetooth. The header's **Wi-Fi** dot shows the link: green once the bike has an address, amber while it joins, red while it can't reach the network, and grey when Wi-Fi is off or the phone isn't connected. The bike records it each second as `wifi_link_state` (0 off, 1 not joined, 2 joining, 3 joined), which goes into the ride log too.
 
 ## The SSH console
 

@@ -196,7 +196,7 @@ int main() {
   EMCOOL_CHECK(run(storage, rebooted, {"set", "BLE_NAME", "this name is far too long for one"}).status == 1,
                "a 33-character name was accepted");
   EMCOOL_CHECK(run(storage, rebooted, {"set", "BLE_NAME", "bad\tname"}).status == 1, "a control character was accepted");
-  EMCOOL_CHECK(run(storage, rebooted, {"set", "WIFI_ENABLED", "1"}).status == 1, "an unknown setting was accepted");
+  EMCOOL_CHECK(run(storage, rebooted, {"set", "WIFI_MODE", "1"}).status == 1, "an unknown setting was accepted");
   result = run(storage, rebooted, {"unset", "BLE_SECRET"});
   EMCOOL_CHECK(result.status == 0 && storage.values.count("ble_secret") == 0, "unset did not remove the secret");
   storage.failWrites = true;
@@ -329,6 +329,64 @@ int main() {
                  "TELNET_PASSWORD alone did not turn Wi-Fi on with SSH off");
     EMCOOL_CHECK(run(wifiStorage, fresh, {"unset", "WIFI_SSID"}).status == 0 && !Settings::load(wifiStorage).wifiEnabled(),
                  "unset WIFI_SSID did not turn Wi-Fi off");
+  }
+
+  // WIFI_ENABLED: on by default, live, and it turns Wi-Fi off and on without touching the network or
+  // the passwords. Only the switch: the network still waits for the restart.
+  {
+    MemoryStorage wifiStorage;
+    wifiStorage.values["wifi_ssid"] = "garage";
+    wifiStorage.values["ssh_admin_pw"] = "a long admin phrase";
+    RuntimeSettings running(Settings::load(wifiStorage));
+    EMCOOL_CHECK(running.boot().wifiSwitchedOn && running.boot().wifiEnabled() && running.wifiSwitchedOn(),
+                 "WIFI_ENABLED is off by default");
+    // Before the firmware hands over its switch, it saves and waits for the restart like the rest.
+    Result early = run(wifiStorage, running, {"set", "WIFI_ENABLED", "0"});
+    EMCOOL_CHECK(early.status == 0 && contains(early.output, "after `restart`") && running.wifiSwitchedOn() &&
+                     wifiStorage.values["wifi_enabled"] == "0" && !Settings::load(wifiStorage).wifiEnabled() &&
+                     Settings::load(wifiStorage).wifiSetUp(),
+                 "set WIFI_ENABLED 0 with no switch:\n%s", early.output.c_str());
+    EMCOOL_CHECK(run(wifiStorage, running, {"unset", "WIFI_ENABLED"}).status == 0, "unset WIFI_ENABLED failed");
+
+    std::vector<bool> switched;
+    bool works = true;
+    running.setWifiSwitch([&](bool on) {
+      switched.push_back(on);
+      return works;
+    });
+    Result off = run(wifiStorage, running, {"set", "WIFI_ENABLED", "off"});
+    EMCOOL_CHECK(off.status == 0 && switched == std::vector<bool>({false}) && !running.wifiSwitchedOn() &&
+                     contains(off.output, "Wi-Fi is off now") && wifiStorage.values["wifi_enabled"] == "0" &&
+                     wifiStorage.values["wifi_ssid"] == "garage" && wifiStorage.values["ssh_admin_pw"] == "a long admin phrase",
+                 "set WIFI_ENABLED off did not switch Wi-Fi off, or touched the network:\n%s", off.output.c_str());
+    Result shown = run(wifiStorage, running, {"show"});
+    EMCOOL_CHECK(contains(shown.output, "WIFI_ENABLED       0") && !contains(shown.output, "WIFI_ENABLED       0   <-"),
+                 "show waits for a restart that WIFI_ENABLED doesn't need:\n%s", shown.output.c_str());
+    Result again = run(wifiStorage, running, {"set", "WIFI_ENABLED", "0"});
+    EMCOOL_CHECK(again.status == 0 && switched.size() == 1 && contains(again.output, "already off"),
+                 "switching Wi-Fi off twice:\n%s", again.output.c_str());
+    Result on = run(wifiStorage, running, {"unset", "WIFI_ENABLED"});
+    EMCOOL_CHECK(on.status == 0 && switched == std::vector<bool>({false, true}) && running.wifiSwitchedOn() &&
+                     contains(on.output, "Wi-Fi is on now, joining \"garage\"") && !wifiStorage.values.contains("wifi_enabled"),
+                 "unset WIFI_ENABLED did not switch Wi-Fi back on:\n%s", on.output.c_str());
+    // A switch that fails leaves it where it was, saved or not, and says so.
+    works = false;
+    Result failed = run(wifiStorage, running, {"set", "WIFI_ENABLED", "0"});
+    EMCOOL_CHECK(failed.status == 0 && running.wifiSwitchedOn() && contains(failed.output, "did not stop"),
+                 "a failed switch:\n%s", failed.output.c_str());
+    // With nothing set up this boot, the switch only moves; there is nothing to start.
+    MemoryStorage bare;
+    RuntimeSettings unset(Settings::load(bare));
+    std::vector<bool> bareSwitched;
+    unset.setWifiSwitch([&](bool value) {
+      bareSwitched.push_back(value);
+      return true;
+    });
+    Result bareOff = run(bare, unset, {"set", "WIFI_ENABLED", "0"});
+    Result bareOn = run(bare, unset, {"set", "WIFI_ENABLED", "1"});
+    EMCOOL_CHECK(bareSwitched.empty() && unset.wifiSwitchedOn() && contains(bareOff.output, "Wi-Fi is off now") &&
+                     contains(bareOn.output, "no WIFI_SSID"),
+                 "the switch on a bike with no network:\n%s\n%s", bareOff.output.c_str(), bareOn.output.c_str());
   }
 
   // A bike that had ADMIN_PASSWORD before SSH: its password is the telnet one now, and SSH stays off.

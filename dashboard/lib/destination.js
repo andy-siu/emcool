@@ -4,7 +4,7 @@ import { hashForView, currentViewLabel } from "./router.js";
 import { SETTINGS_PAGE_TITLES } from "./settings-map.js";
 import { armed } from "./arming.js";
 
-/** @typedef {"" | "settings" | "session" | "bike-information" | "battery-cooling" | "advanced-service"} Destination */
+/** @typedef {"" | "settings" | "network" | "session" | "bike-information" | "battery-cooling" | "advanced-service"} Destination */
 export const destination = van.state(/** @type {Destination} */ (""));
 export const destinationSection = van.state("");
 export const backDestinationName = van.state("Ride");
@@ -62,7 +62,7 @@ function readDestination() {
   backDestinationName.val = history.state?.backName ?? currentViewLabel();
   const url = new URL(location.href);
   const name = url.searchParams.get("panel") ?? "";
-  destination.val = ["settings", "session", "bike-information", "battery-cooling", "advanced-service"].includes(name)
+  destination.val = ["settings", "network", "session", "bike-information", "battery-cooling", "advanced-service"].includes(name)
     ? /** @type {Destination} */ (name)
     : "";
   destinationSection.val = url.searchParams.get("section") ?? "";
@@ -102,6 +102,7 @@ export function destinationName(name = destination.val, section = destinationSec
   if (name === "settings") return SETTINGS_PAGE_TITLES[section] ?? "Settings";
   return (
     /** @type {Record<string, string>} */ ({
+      network: "Network info",
       session: "Session",
       "bike-information": "Bike information",
       "battery-cooling": "Battery & cooling",

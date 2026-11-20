@@ -1,7 +1,8 @@
 #pragma once
 
-// Wi-Fi, off until WIFI_SSID and ADMIN_PASSWORD are both set: the bike joins that network as a
-// client (reconnecting on its own whenever it drops), and serves, both behind ADMIN_PASSWORD:
+// Wi-Fi, off until WIFI_SSID and ADMIN_PASSWORD are both set, and while WIFI_ENABLED is 0: the bike
+// joins that network as a client (reconnecting on its own whenever it drops), and serves, both behind
+// ADMIN_PASSWORD:
 //
 //   port 23  the console: `nc <bike> 23`, the password, then the USB console's commands, with the
 //            log (status reports and all) following it, as on the serial port
@@ -36,10 +37,23 @@ struct WifiCounters {
   std::atomic<std::uint64_t> bytesDownloaded{0};
 };
 
+// Where the link is, as the dashboard's header shows it (the reference's wifi_link_state codes):
+// off, not joined (and retrying), joining (associating, or waiting for an address), joined.
+enum class WifiLinkState : std::uint8_t { kOff = 0, kNotJoined = 1, kJoining = 2, kJoined = 3 };
+
 // The ride log the web page serves: its own download, so a page download and a Bluetooth one can
-// run at once. Null without a card.
+// run at once. Null without a card. Starts nothing while WIFI_ENABLED is 0, but keeps what
+// switchWifi() needs to start it later.
 bool startWifi(const settings::Settings& settings, settings::SettingsStorage& storage,
                settings::RuntimeSettings& running, ride_log::DownloadCard* card, WifiCounters& counters);
+
+// WIFI_ENABLED, while running: off stops the radio's Wi-Fi side (which closes every SSH, telnet and
+// page connection), on starts it again with the boot's network, or for the first time if it was off
+// at boot. False if it could not; for RuntimeSettings::setWifiSwitch.
+bool switchWifi(bool on);
+// Whether Wi-Fi is up now: started, and not switched off since.
+bool wifiRunning();
+WifiLinkState wifiLinkState();
 
 // The `ifconfig` command's report: the network joined (its SSID and signal), and the
 // address, network, netmask, gateway and DNS server it handed out, or why there are none, then the
