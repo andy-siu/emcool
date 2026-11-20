@@ -45,6 +45,26 @@ std::vector<std::string> splitWords(std::string_view line) {
   return words;
 }
 
+bool readOnlyAllows(int argumentCount, const char* const* arguments) {
+  if (argumentCount < 1) return false;
+  const std::string_view command = arguments[0];
+  if (command == "status") return argumentCount == 1;
+  if (command == "update") return argumentCount == 2 && std::string_view(arguments[1]) == "status";
+  for (const char* allowed : {"help", "show", "ifconfig", "dir", "ls", "cd", "pwd", "type", "cat"}) {
+    if (command == allowed) return true;
+  }
+  return false;
+}
+
+bool isFullConsoleCommand(std::string_view command) {
+  for (const char* known : {"help",  "show",   "set",    "unset", "status", "ifconfig", "restart",  "update",
+                            "dir",   "ls",     "cd",     "pwd",   "type",   "cat",      "mkdir",    "rmdir",
+                            "rm",    "cp",     "mv",     "psu",   "poller", "can-send", "can-repeat", "can-dump"}) {
+    if (command == known) return true;
+  }
+  return false;
+}
+
 bool constantTimeEquals(std::string_view left, std::string_view right) {
   if (left.size() != right.size()) return false;
   unsigned char difference = 0;
@@ -118,7 +138,8 @@ std::string RemoteConsole::connected(std::int64_t) {
   telnet_ = Telnet::kData;
   echoing_ = true;
   // Asks a telnet client not to echo the password (WILL ECHO); nc shows the bytes and ignores them.
-  return std::string("emcool console over Wi-Fi. Everything here crosses the network in plain text.\r\npassword: ") +
+  return std::string("emcool telnet console, read-only. Everything here crosses the network in plain text.\r\n"
+                     "password: ") +
          static_cast<char>(kIac) + static_cast<char>(kWill) + static_cast<char>(kEcho);
 }
 
@@ -246,6 +267,25 @@ std::string RemoteConsole::login(std::string_view attempt, std::int64_t nowMs, b
     return "\r\nwrong password\r\n";
   }
   return "\r\nwrong password\r\npassword: ";
+}
+
+}  // namespace emcool::settings
+
+#include "emcool/settings/login_limiter.hpp"
+
+namespace emcool::settings {
+
+LoginLimiter::Verdict LoginLimiter::check(std::string_view attempt, std::string_view password, std::int64_t nowMs) {
+  if (nowMs < lockedUntilMs_) return Verdict::kLockedOut;
+  // An empty password never logs in, whatever is typed.
+  if (!password.empty() && constantTimeEquals(attempt, password)) {
+    failuresInARow_ = 0;
+    return Verdict::kAccepted;
+  }
+  failuresInARow_++;
+  attemptsThisConnection_++;
+  if (failuresInARow_ >= kFreeAttempts) lockedUntilMs_ = nowMs + kLockoutMs;
+  return attemptsThisConnection_ >= kAttemptsPerConnection ? Verdict::kWrongLast : Verdict::kWrong;
 }
 
 }  // namespace emcool::settings

@@ -158,14 +158,14 @@ std::optional<std::string> ConsoleEndpoints::restartRefusal(const ble::JsonObjec
   if (savedKey == running_.valueOf(keySpec)) return std::nullopt;
   if (savedKey.empty()) {
     return std::string("not restarting from here: BLE_SECRET is unset, so Bluetooth would be off after the restart "
-                       "and this page could not reconnect. Restart from the USB or telnet console.\n");
+                       "and this page could not reconnect. Restart from the USB or SSH console.\n");
   }
   const ble::JsonMember* key = request.find("bluetoothKey");
   if (key == nullptr || key->type != ble::JsonType::kString || settings::validate(keySpec, key->text) ||
       !settings::constantTimeEquals(settings::normalizeValue(keySpec, key->text), savedKey)) {
     return std::string("not restarting yet: a new Bluetooth key is saved, and this phone would need it to reconnect. "
                        "Paste the new key beside Restart (it is used only to check, and kept on this phone), or "
-                       "restart from the USB or telnet console.\n");
+                       "restart from the USB or SSH console.\n");
   }
   return std::nullopt;
 }

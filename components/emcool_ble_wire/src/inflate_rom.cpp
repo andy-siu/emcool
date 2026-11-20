@@ -1,17 +1,18 @@
 // The ESP32 backend of inflateRaw(): the miniz tinfl inflater in the chip's ROM.
 
-#include <cstdlib>
-
 #include "emcool/ble/deflate.hpp"
 #include "emcool/log.hpp"
+#include "esp_heap_caps.h"
 #include "miniz.h"
 
 namespace emcool::ble {
 
 std::optional<std::size_t> inflateRaw(std::span<const std::uint8_t> in, std::span<std::uint8_t> out) {
   // ~11 KB of decode tables, on the heap only while a message is being inflated: phone →
-  // ESP32 traffic is a handshake and the odd request, so it isn't worth holding.
-  auto* decompressor = static_cast<tinfl_decompressor*>(std::malloc(sizeof(tinfl_decompressor)));
+  // ESP32 traffic is a handshake and the odd request, so it isn't worth holding. PSRAM first:
+  // with Wi-Fi up, internal RAM rarely has an 11 KB block left, and these messages are small.
+  auto* decompressor = static_cast<tinfl_decompressor*>(heap_caps_malloc_prefer(
+      sizeof(tinfl_decompressor), 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, MALLOC_CAP_DEFAULT));
   if (decompressor == nullptr) {
     logWarning("ble-wire", "no memory to inflate a %zu-byte message", in.size());
     return std::nullopt;
@@ -22,7 +23,7 @@ std::optional<std::size_t> inflateRaw(std::span<const std::uint8_t> in, std::spa
   // No TINFL_FLAG_PARSE_ZLIB_HEADER: raw DEFLATE. The whole output buffer is the window.
   const tinfl_status status = tinfl_decompress(decompressor, in.data(), &inBytes, out.data(), out.data(), &outBytes,
                                                TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
-  std::free(decompressor);
+  heap_caps_free(decompressor);
   if (status != TINFL_STATUS_DONE) {
     return std::nullopt;
   }

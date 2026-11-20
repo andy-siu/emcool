@@ -12,7 +12,7 @@ set(emcool_ble_wire_sources
 if(ESP_PLATFORM)
   idf_component_register(SRCS ${emcool_ble_wire_sources} src/crypto_psa.cpp src/inflate_rom.cpp
                          INCLUDE_DIRS include
-                         REQUIRES emcool_log emcool_text esp_hw_support esp_rom mbedtls)
+                         REQUIRES emcool_log emcool_text esp_hw_support esp_rom heap mbedtls)
 else()
   find_package(OpenSSL 3 REQUIRED)
   find_package(ZLIB REQUIRED)

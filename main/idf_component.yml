@@ -1,0 +1,6 @@
+# The SSH console's library (main/ssh_console.cpp), from the ESP component registry. Both are
+# GPL-3.0-or-later as used here, which the AGPL-3.0 firmware may include.
+dependencies:
+  idf: ">=6.1"
+  wolfssl/wolfssl: "5.8.2~1"
+  wolfssl/wolfssh: "1.4.20"

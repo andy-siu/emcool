@@ -1,8 +1,8 @@
 // emcool: listen to the bike's CAN bus, decode every frame into live state, log what changes
 // to the microSD card, keep the clock on GPS time, serve the phone dashboard over Bluetooth,
 // and report over the serial console every 10 s. With OBD_ENABLED, also poll OBD-II; otherwise
-// it never sends. With WIFI_SSID and ADMIN_PASSWORD, join that Wi-Fi and serve the console and
-// the ride log over it.
+// it never sends. With WIFI_SSID, join that Wi-Fi and serve the SSH console (ADMIN_PASSWORD), and
+// the ride log and the read-only telnet console (TELNET_PASSWORD), over it.
 //
 // Tasks: decode (core 1) owns the CAN queue, the clock and the ride log's segment buffers, and
 // writes live state; diagnostics (core 1) owns everything that transmits — the OBD poller and
@@ -227,6 +227,8 @@ extern "C" void app_main() {
   static emcool::DashboardConsoleHost consoleHost(statusText, store, storeMutex, *diagnostics);
   // An update waits for what a restart waits for: flash writes pause the CAN interrupt.
   emcool::setUpdateBlockers([] { return consoleHost.restartBlockers(); });
+  // The SSH console's `restart` waits for the same.
+  emcool::setRestartBlockers(&consoleHost);
   // A /emcool.bin on the card installs itself, is removed, and is restarted into.
   if (download != nullptr) emcool::startCardUpdateWatch(bikeCard, emcool::cardFiles().gate);
   static emcool::files::CardShell bikeConsoleCard(bikeCard, emcool::cardFiles().gate, "Bike console",

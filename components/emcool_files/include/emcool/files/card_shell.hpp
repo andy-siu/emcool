@@ -73,6 +73,19 @@ struct FreeSpace {
   std::uint64_t totalBytes = 0;
 };
 
+// Why `path` (folder names from the card's top) mustn't be changed now, from what the ride log is
+// doing; nullopt when it may be. `creating` when something is put there (mkdir, a file written, a
+// copy's or a move's destination), else when something is taken away (rm, rmdir, a move's source).
+// Each name is first taken as FatFs takes it: trailing spaces and dots dropped, so RIDES. is RIDES.
+// A name with a control character in it is refused (FatFs ends the whole path there), and so is a
+// top-level name shaped like an 8.3 short name (VCU-PA~1 is vcu-params). The consoles' card
+// commands and the SSH console's file transfers both ask it.
+std::optional<std::string> cardChangeRefusal(const std::vector<std::string>& path, bool creating,
+                                             const CardFacts& facts);
+
+// What a console says about an errno from the card.
+std::string cardErrorText(int error);
+
 // What the firmware supplies: the card's mount point, its lock, and what is using it.
 class Card {
  public:

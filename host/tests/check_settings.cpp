@@ -10,6 +10,8 @@
 
 #include "check.hpp"
 #include "emcool/log.hpp"
+#include "emcool/settings/line_editor.hpp"
+#include "emcool/settings/login_limiter.hpp"
 #include "emcool/settings/remote_console.hpp"
 #include "emcool/settings/settings.hpp"
 
@@ -262,24 +264,36 @@ int main() {
   result = run(storage, live, {"unset", "STATUS_INTERVAL_S"});
   EMCOOL_CHECK(result.status == 0 && live.statusIntervalSeconds() == 10, "unset did not restore the 10 s default");
 
-  // Wi-Fi: off by default, and on only with both a network and an admin password. The passwords are
-  // never printed; WPA's 8-63 characters or nothing.
+  // Wi-Fi: off by default, and on only with a network and a password for something it serves. The
+  // passwords are never printed; WPA's 8-63 characters or nothing.
   {
     MemoryStorage wifiStorage;
     RuntimeSettings fresh(Settings::load(wifiStorage));
     EMCOOL_CHECK(!fresh.boot().wifiEnabled(), "Wi-Fi is on by default");
     EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "WIFI_SSID", "garage"}).status == 0, "set WIFI_SSID failed");
-    EMCOOL_CHECK(!Settings::load(wifiStorage).wifiEnabled(), "Wi-Fi came on with no admin password");
+    EMCOOL_CHECK(!Settings::load(wifiStorage).wifiEnabled(), "Wi-Fi came on with no password");
     EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "ADMIN_PASSWORD", "1234567"}).status == 1,
                  "a 7-character admin password was accepted");
     EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "ADMIN_PASSWORD", "12345678"}).status == 0,
                  "an 8-character admin password was refused");
     EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "ADMIN_PASSWORD", "a long admin phrase"}).status == 0,
                  "set ADMIN_PASSWORD failed");
-    const Settings withPassword = Settings::load(wifiStorage);
-    EMCOOL_CHECK(withPassword.wifiEnabled() && withPassword.wifiSsid == "garage" && withPassword.wifiPassword.empty() &&
-                     withPassword.adminPassword == "a long admin phrase",
+    const Settings withAdmin = Settings::load(wifiStorage);
+    EMCOOL_CHECK(withAdmin.wifiEnabled() && withAdmin.sshEnabled() && withAdmin.wifiSsid == "garage" &&
+                     withAdmin.wifiPassword.empty() && withAdmin.adminPassword == "a long admin phrase" &&
+                     withAdmin.telnetPassword.empty() && !withAdmin.telnetEnabled(),
                  "the Wi-Fi settings did not load");
+    // The SSH password lives under a key of its own; the old ADMIN_PASSWORD key is the telnet one's.
+    EMCOOL_CHECK(wifiStorage.values["ssh_admin_pw"] == "a long admin phrase" && !wifiStorage.values.contains("admin_password"),
+                 "ADMIN_PASSWORD was not saved under ssh_admin_pw");
+    // The two passwords must differ: the telnet one crosses the network in plain text.
+    const Result same = run(wifiStorage, fresh, {"set", "TELNET_PASSWORD", "a long admin phrase"});
+    EMCOOL_CHECK(same.status == 1 && contains(same.output, "must differ") && !wifiStorage.values.contains("admin_password"),
+                 "TELNET_PASSWORD was allowed to equal ADMIN_PASSWORD:\n%s", same.output.c_str());
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "TELNET_PASSWORD", "a telnet phrase"}).status == 0,
+                 "set TELNET_PASSWORD failed");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "ADMIN_PASSWORD", "a telnet phrase"}).status == 1,
+                 "ADMIN_PASSWORD was allowed to equal TELNET_PASSWORD");
     EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "WIFI_PASSWORD", "1234567"}).status == 1, "a 7-character WPA password");
     EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "WIFI_PASSWORD", std::string(64, 'x').c_str()}).status == 1,
                  "a 64-character WPA password");
@@ -289,21 +303,113 @@ int main() {
                  "a 33-character WIFI_SSID was accepted");
     const Result shown = run(wifiStorage, fresh, {"show"});
     EMCOOL_CHECK(!contains(shown.output, "wpa password") && !contains(shown.output, "a long admin phrase") &&
+                     !contains(shown.output, "a telnet phrase") &&
                      contains(shown.output, "WIFI_PASSWORD      set (12 characters)") &&
                      contains(shown.output, "ADMIN_PASSWORD     set (19 characters)") &&
+                     contains(shown.output, "TELNET_PASSWORD    set (15 characters)") &&
                      contains(shown.output, "WIFI_SSID          garage"),
                  "show printed a password, or not the Wi-Fi settings:\n%s", shown.output.c_str());
-    // The console on port 23: on by default, off with TELNET_CONSOLE 0, and only at the restart.
-    EMCOOL_CHECK(Settings::load(wifiStorage).telnetConsole, "TELNET_CONSOLE is not on by default");
-    const Result consoleOff = run(wifiStorage, fresh, {"set", "TELNET_CONSOLE", "off"});
-    EMCOOL_CHECK(consoleOff.status == 0 && wifiStorage.values["telnet_console"] == "0" &&
-                     !Settings::load(wifiStorage).telnetConsole && Settings::load(wifiStorage).wifiEnabled() &&
-                     contains(consoleOff.output, "after `restart`"),
-                 "set TELNET_CONSOLE off:\n%s", consoleOff.output.c_str());
-    EMCOOL_CHECK(run(wifiStorage, fresh, {"unset", "TELNET_CONSOLE"}).status == 0 && Settings::load(wifiStorage).telnetConsole,
-                 "unset TELNET_CONSOLE did not turn the console back on");
+    // The telnet console: off by default, on with TELNET_CONSOLE 1 and a TELNET_PASSWORD, and only at the restart.
+    EMCOOL_CHECK(!Settings::load(wifiStorage).telnetConsole && !Settings::load(wifiStorage).telnetEnabled(),
+                 "TELNET_CONSOLE is on by default");
+    const Result consoleOn = run(wifiStorage, fresh, {"set", "TELNET_CONSOLE", "on"});
+    EMCOOL_CHECK(consoleOn.status == 0 && wifiStorage.values["telnet_console"] == "1" &&
+                     Settings::load(wifiStorage).telnetEnabled() && contains(consoleOn.output, "after `restart`"),
+                 "set TELNET_CONSOLE on:\n%s", consoleOn.output.c_str());
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"unset", "TELNET_PASSWORD"}).status == 0 &&
+                     !Settings::load(wifiStorage).telnetEnabled() && Settings::load(wifiStorage).wifiEnabled(),
+                 "the telnet console stayed on without a password, or Wi-Fi went off with SSH still set");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"unset", "TELNET_CONSOLE"}).status == 0 && !Settings::load(wifiStorage).telnetConsole,
+                 "unset TELNET_CONSOLE did not turn the console back off");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"unset", "ADMIN_PASSWORD"}).status == 0 && !Settings::load(wifiStorage).wifiEnabled(),
+                 "Wi-Fi stayed on with neither password");
+    // Telnet's password alone turns Wi-Fi on, with SSH off.
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "TELNET_PASSWORD", "a telnet phrase"}).status == 0 &&
+                     Settings::load(wifiStorage).wifiEnabled() && !Settings::load(wifiStorage).sshEnabled(),
+                 "TELNET_PASSWORD alone did not turn Wi-Fi on with SSH off");
     EMCOOL_CHECK(run(wifiStorage, fresh, {"unset", "WIFI_SSID"}).status == 0 && !Settings::load(wifiStorage).wifiEnabled(),
                  "unset WIFI_SSID did not turn Wi-Fi off");
+  }
+
+  // A bike that had ADMIN_PASSWORD before SSH: its password is the telnet one now, and SSH stays off.
+  {
+    MemoryStorage upgraded;
+    upgraded.values["wifi_ssid"] = "garage";
+    upgraded.values["admin_password"] = "an old admin phrase";
+    const Settings loaded = Settings::load(upgraded);
+    EMCOOL_CHECK(loaded.telnetPassword == "an old admin phrase" && loaded.adminPassword.empty() && !loaded.sshEnabled() &&
+                     loaded.wifiEnabled() && !loaded.telnetEnabled(),
+                 "the old ADMIN_PASSWORD did not become TELNET_PASSWORD, or SSH came on");
+  }
+
+  // The telnet console runs only what looks.
+  {
+    const auto allows = [](std::vector<const char*> words) {
+      return readOnlyAllows(static_cast<int>(words.size()), words.data());
+    };
+    for (const auto& words : std::vector<std::vector<const char*>>{
+             {"help"}, {"show"}, {"status"}, {"ifconfig"}, {"update", "status"}, {"dir"}, {"ls", "/RIDES"},
+             {"cd", "RIDES"}, {"pwd"}, {"type", "/a.txt"}, {"cat", "/a.txt"}}) {
+      EMCOOL_CHECK(allows(words), "the telnet console refused %s", words[0]);
+    }
+    for (const auto& words : std::vector<std::vector<const char*>>{
+             {"set", "ADMIN_PASSWORD", "x"}, {"set", "TELNET_CONSOLE", "0"}, {"unset", "WIFI_SSID"}, {"status", "off"},
+             {"status", "every", "60"}, {"restart"}, {"update", "/emcool.bin"}, {"rm", "/a.txt"}, {"cp", "a", "b"},
+             {"mv", "a", "b"}, {"mkdir", "x"}, {"rmdir", "x"}, {"psu", "on"}, {"psu"}, {"poller", "off"},
+             {"can-send", "7DF", "02"}, {"can-repeat", "150", "500"}, {"can-dump"}, {}}) {
+      EMCOOL_CHECK(!allows(words), "the telnet console allowed %s", words.empty() ? "(nothing)" : words[0]);
+    }
+    EMCOOL_CHECK(isFullConsoleCommand("psu") && isFullConsoleCommand("set") && !isFullConsoleCommand("rm-rf"),
+                 "isFullConsoleCommand");
+  }
+
+  // SSH's login: three tries a connection, and a lockout for everyone after three wrong in a row.
+  {
+    LoginLimiter unset;
+    unset.connected();
+    EMCOOL_CHECK(unset.check("", "", 0) != LoginLimiter::Verdict::kAccepted, "an empty password logged in");
+    LoginLimiter limiter;
+    limiter.connected();
+    EMCOOL_CHECK(limiter.check("a long admin phrase", "a long admin phrase", 0) == LoginLimiter::Verdict::kAccepted,
+                 "the right password was refused");
+    limiter.connected();
+    EMCOOL_CHECK(limiter.check("one", "pw", 1000) == LoginLimiter::Verdict::kWrong, "first wrong");
+    EMCOOL_CHECK(limiter.check("two", "pw", 1000) == LoginLimiter::Verdict::kWrong, "second wrong");
+    EMCOOL_CHECK(limiter.check("three", "pw", 1000) == LoginLimiter::Verdict::kWrongLast, "third wrong didn't end it");
+    limiter.connected();
+    EMCOOL_CHECK(limiter.check("pw", "pw", 2000) == LoginLimiter::Verdict::kLockedOut,
+                 "the right password got in during the lockout");
+    limiter.connected();
+    EMCOOL_CHECK(limiter.check("pw", "pw", 1000 + LoginLimiter::kLockoutMs) == LoginLimiter::Verdict::kAccepted,
+                 "the lockout did not end");
+  }
+
+  // The SSH console's line editing.
+  {
+    LineEditor terminal(true);
+    LineEditor::Result result = terminal.feed("sho");
+    EMCOOL_CHECK(result.echo == "sho" && result.lines.empty(), "typing didn't echo");
+    result = terminal.feed("x\x7fw\r");
+    EMCOOL_CHECK(result.echo == "x\b \bw\r\n" && result.lines == std::vector<std::string>{"show"},
+                 "backspace and Return: [%s]", result.echo.c_str());
+    result = terminal.feed("\x1b" "[Aset" "\x1b" "[D x\r\n");
+    EMCOOL_CHECK(result.lines == std::vector<std::string>{"set x"}, "arrow keys weren't swallowed");
+    result = terminal.feed("rm -r /\x15" "dir\r");
+    EMCOOL_CHECK(result.lines == std::vector<std::string>{"dir"}, "Ctrl-U didn't clear the line");
+    result = terminal.feed("restart\x03");
+    EMCOOL_CHECK(result.interrupted && result.lines.empty() && terminal.pending().empty(), "Ctrl-C didn't drop the line");
+    result = terminal.feed("\x04");
+    EMCOOL_CHECK(result.endOfInput, "Ctrl-D on an empty line didn't end");
+    terminal.hideNextLine();
+    result = terminal.feed("secret\r");
+    EMCOOL_CHECK(result.echo == "\r\n" && result.lines == std::vector<std::string>{"secret"}, "a hidden line echoed");
+    result = terminal.feed(std::string(LineEditor::kMaxLineBytes + 5, 'x') + "\r");
+    EMCOOL_CHECK(result.lines.size() == 1 && result.lines[0].empty() && contains(result.echo, "longer than"),
+                 "an overlong line wasn't refused");
+    LineEditor plain(false);
+    result = plain.feed("show\nstatus\n");
+    EMCOOL_CHECK(result.echo.empty() && result.lines == (std::vector<std::string>{"show", "status"}),
+                 "without a terminal: echoed, or lines wrong");
   }
 
   // The schedule: every interval while on, nothing while off, and a fresh window on resuming.
@@ -330,7 +436,7 @@ int main() {
     EMCOOL_CHECK(schedule.decide(running, false, 210000).report, "no report 10 s after resuming");
   }
 
-  // The telnet console: the password first, then the same commands as the USB console.
+  // The telnet console: the password first, then commands.
   {
     MemoryStorage remoteStorage;
     RuntimeSettings running(Settings::load(remoteStorage));
@@ -373,7 +479,7 @@ int main() {
     EMCOOL_CHECK(ran.size() == 2 && ran[0] == expectedSet &&
                      remoteStorage.values["wifi_ssid"] == "garage wifi" && contains(out, "WIFI_SSID saved") &&
                      contains(out, "\r\n") && contains(out, "WIFI_SSID          garage wifi"),
-                 "commands over the telnet console:\n%s", out.c_str());
+                 "commands through the console:\n%s", out.c_str());
     out = send(std::string(RemoteConsole::kMaxLineBytes + 10, 'x') + "\n", 0, close);
     EMCOOL_CHECK(ran.size() == 2 && contains(out, "longer than"), "an overlong line ran:\n%s", out.c_str());
     out = send("exit\n", 0, close);

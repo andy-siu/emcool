@@ -1,5 +1,8 @@
 #include "settings_console.hpp"
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <cstdio>
 #include <memory>
 
@@ -9,6 +12,8 @@
 #include "emcool/log.hpp"
 #include "esp_console.h"
 #include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs.h"
 #include "wifi_link.hpp"
 
@@ -64,6 +69,37 @@ int restart(int, char**) {
   return 0;
 }
 
+// stdout, and the keys typed on the serial port: stdin non-blocking while a command watches for them.
+class UsbConsoleIo final : public ConsoleIo {
+ public:
+  const char* name() const override { return "USB console"; }
+  void write(std::string_view text) override { std::fwrite(text.data(), 1, text.size(), stdout); }
+  void flush() override { std::fflush(stdout); }
+  void watchKeys() override {
+    fd_ = fileno(stdin);
+    savedFlags_ = fcntl(fd_, F_GETFL, 0);
+    if (savedFlags_ != -1) fcntl(fd_, F_SETFL, savedFlags_ | O_NONBLOCK);
+    // Enter sends CR LF and the console ends the line at the CR; the LF can trail it by a character
+    // time or a USB packet, so give it a moment to land, then throw it away.
+    vTaskDelay(pdMS_TO_TICKS(30));
+    interrupted();
+  }
+  bool interrupted() override {
+    char typed = 0;
+    bool any = false;
+    while (read(fd_, &typed, 1) > 0) any = true;
+    return any;
+  }
+  void endWatch() override {
+    if (savedFlags_ != -1) fcntl(fd_, F_SETFL, savedFlags_);
+    savedFlags_ = -1;
+  }
+
+ private:
+  int fd_ = -1;
+  int savedFlags_ = -1;
+};
+
 std::string helpText() {
   std::string text = "Settings, kept in NVS:";
   for (const settings::SettingSpec& spec : settings::settingSpecs()) {
@@ -76,6 +112,11 @@ std::string helpText() {
 }
 
 }  // namespace
+
+ConsoleIo& usbConsoleIo() {
+  static UsbConsoleIo io;
+  return io;
+}
 
 std::optional<std::string> NvsSettingsStorage::read(std::string_view key) {
   nvs_handle_t handle = 0;
@@ -205,7 +246,7 @@ bool startSettingsConsole(settings::SettingsStorage& storage, settings::RuntimeS
       return false;
     }
   }
-  // The manual CAN commands (can-send, can-dump, poller), on the USB console only.
+  // The manual CAN commands (can-send, can-dump, poller, psu), here and on the SSH console.
   registerCanConsoleCommands();
   esp_console_register_help_command();
   result = esp_console_start_repl(repl);

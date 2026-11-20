@@ -16,7 +16,7 @@ or, on a board that's already flashed, just `idf.py monitor`. It runs on the chi
 emcool>
 ```
 
-With Wi-Fi set up, the same console is also on the network as the telnet console: `nc <bike> 23`, behind `ADMIN_PASSWORD` (`set TELNET_CONSOLE 0` turns it off). See [`wifi.md`](wifi.md).
+With Wi-Fi set up, the same console is also on the network as the SSH console: `ssh admin@<bike>`, behind `ADMIN_PASSWORD`, with every command here. A read-only telnet console (`nc <bike> 23`, behind `TELNET_PASSWORD`) is there too if `TELNET_CONSOLE` is `1`. See [`wifi.md`](wifi.md).
 
 NVS settings **survive reflashing and firmware updates**. Only `idf.py erase-flash` clears them (which also wipes the Bluetooth key, so the link goes off until you make one again).
 
@@ -46,7 +46,7 @@ There is deliberately **no `get`** — `show` prints everything, and it is short
 
 ## The card
 
-These work on the microSD card, the same on this console, the telnet console and the dashboard's Bike console:
+These work on the microSD card, the same on this console, the SSH console and the dashboard's Bike console. The read-only telnet console has `dir`, `cd`, `pwd` and `type` only:
 
 | Command | What it does |
 | --- | --- |
@@ -91,10 +91,11 @@ Types: **flag** is `0`/`1`; **integer** is a whole number in a range; **text**/*
 | `SERVICE_MODE_ENABLED` | flag | `0` | — | restart | `1` to let the dashboard **read** the VCU's calibration parameters, lifetime stats and freeze frames, while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`service-mode.md`](service-mode.md). |
 | `SERVICE_WRITE_ENABLED` | flag | `0` | — | restart | `1` to let the dashboard **write** to the VCU (`/vcu-write`: allowlisted parameters, service point, clock sync, clear DTCs, charge current/stop, SOC limit, reset). The only switch that lets a web page change the bike. Needs `OBD_ENABLED` and `SERVICE_MODE_ENABLED`. See [`service-mode.md`](service-mode.md). |
 | `CHARGE_AUTO_ENABLED` | flag | `0` | — | restart | `1` for the automatic charge-current controller — it commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`service-mode.md`](service-mode.md). |
-| `WIFI_SSID` | text | *not set* | 1–32 chars | restart | The Wi-Fi network to join. With `ADMIN_PASSWORD` also set, the bike joins it and serves this console on port 23 and the ride log on port 80. Unset keeps Wi-Fi off. See [`wifi.md`](wifi.md). |
+| `WIFI_SSID` | text | *not set* | 1–32 chars | restart | The Wi-Fi network to join. With `ADMIN_PASSWORD` or `TELNET_PASSWORD` also set, the bike joins it and serves the SSH console on port 22 and the ride log on port 80. Unset keeps Wi-Fi off. See [`wifi.md`](wifi.md). |
 | `WIFI_PASSWORD` | secret | *not set* | 8–63 chars | restart | That network's password. Unset for an open network. |
-| `ADMIN_PASSWORD` | secret | *not set* | 8–128 chars | restart | What the telnet console and the ride-log page ask for. Unset keeps Wi-Fi off. ⚠️ It crosses the network in plain text, and it unlocks everything the console can do. |
-| `TELNET_CONSOLE` | flag | `1` | 0/1 | restart | Whether the bike serves the telnet console on port 23 while Wi-Fi is on. `0` closes the port; the ride-log page on port 80, this console and the dashboard's Bike console stay. See [`wifi.md`](wifi.md#turning-the-telnet-console-off). |
+| `TELNET_PASSWORD` | secret | *not set* | 8–128 chars | restart | What the ride-log page and the read-only telnet console ask for. Unset, both are off. ⚠️ It crosses the network in plain text, so it unlocks nothing that changes the bike. Must differ from `ADMIN_PASSWORD`. (A bike that had `ADMIN_PASSWORD` before SSH has it here now.) |
+| `ADMIN_PASSWORD` | secret | *not set* | 8–128 chars | restart | The SSH console's password (port 22). SSH runs every command, CAN commands and firmware updates included. Unset keeps SSH off. Encrypted on the network. |
+| `TELNET_CONSOLE` | flag | `0` | 0/1 | restart | `1` serves the read-only telnet console on port 23 while Wi-Fi is on and `TELNET_PASSWORD` is set. See [`wifi.md`](wifi.md#the-telnet-console). |
 | `STATUS_REPORT` | flag | `1` | — | **now** | Whether the serial console prints the periodic status report. `status on` / `status off` is the shorthand. |
 | `STATUS_INTERVAL_S` | integer | `10` | 5–3600 | **now** | Seconds between status reports. `status every SECONDS` is the shorthand (and turns the report on if it was off). |
 
@@ -116,9 +117,11 @@ OBD_ENABLED=1                 the CAN controller becomes an active node; polls O
 Each step of startup logs the memory (heap) it leaves, so a boot log shows where it went:
 
 ```
-I (412) boot: heap after the CAN bus: 187264 free, largest block 110592, lowest so far 187000
-I (980) boot: heap after Bluetooth: 61220 free, largest block 31744, lowest so far 60900
+I (967) boot: heap after Bluetooth: internal 97852 free, largest block 57344, lowest so far 97764; PSRAM 8385896 free
+I (1117) boot: heap after Wi-Fi: internal 41160 free, largest block 31744, lowest so far 41160; PSRAM 8373884 free
 ```
+
+Internal RAM is the figure that matters. Task stacks, DMA buffers and Bluetooth's buffers have to be there. PSRAM is counted separately, because its 8 MB would hide internal RAM running out.
 
 An allocation that fails logs its size and what was left, as `E (heap) … could not get N bytes`, just before whatever needed it gives up or crashes.
 
@@ -150,9 +153,9 @@ What differs from this console:
 - **Two taps for writes.** Turning `SERVICE_WRITE_ENABLED` or `CHARGE_AUTO_ENABLED` on needs a second tap, as the dashboard's other bike-changing controls do. The command line refuses `set` for those two, and refuses `restart`, so the two taps can't be skipped. Turning them off is one tap.
 - **Restart is refused while the bike isn't parked.** That means while a fresh reading says it is moving, in drive, being asked for drive, or the throttle is open. It is also refused while a service-mode read or write holds the bus, or while something holds the OBD poller. A charging bike can restart.
 - **A restart can't lock the phone out.** If a new `BLE_SECRET` is saved but not yet running, **Restart** asks for that key and the bike checks it before restarting. The phone then keeps it for the reconnect. If `BLE_SECRET` is unset, the page refuses to restart, since Bluetooth would come back off; restart from here or over Wi-Fi.
-- **Access:** anyone holding the Bluetooth key can change any setting, including turning on VCU writes, just as anyone with `ADMIN_PASSWORD` can over Wi-Fi. The link is encrypted (AES-256-GCM), unlike the telnet console. Each change is logged with the setting's name (never its value) under the `console` tag.
+- **Access:** anyone holding the Bluetooth key can change any setting, including turning on VCU writes, just as anyone with `ADMIN_PASSWORD` can over SSH. Both are encrypted (the link with AES-256-GCM). Each change is logged with the setting's name (never its value) under the `console` tag.
 
-**Menu → Network settings** (Settings → Network connections) is a form for the three Wi-Fi settings on the same endpoints; it requires an admin password before it saves a network. See [`wifi.md`](wifi.md#turning-it-on).
+**Menu → Network settings** (Settings → Network connections) is a form for the Wi-Fi settings and both passwords on the same endpoints; it requires one of the passwords before it saves a network. See [`wifi.md`](wifi.md#turning-it-on).
 
 The endpoints behind it, `GET /console`, `GET /console/status` and `POST /console`, are in [`ble.md`](ble.md).
 

@@ -14,19 +14,19 @@
 #include "card_files.hpp"
 #include "dashboard_console.hpp"
 #include "firmware_update.hpp"
+#include "log_tee.hpp"
+#include "ssh_console.hpp"
 #include "emcool/log.hpp"
 #include "emcool/settings/remote_console.hpp"
 #include "emcool/text/help.hpp"
 #include "esp_console.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
-#include "esp_log_write.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/stream_buffer.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"
 
@@ -56,26 +56,20 @@ struct Link {
   settings::SettingsStorage* storage = nullptr;
   settings::RuntimeSettings* running = nullptr;
   ride_log::DownloadCard* card = nullptr;
-  std::string adminPassword;
+  std::string telnetPassword;
   std::string ssid;
-  // TELNET_CONSOLE: whether port 23 is served this boot.
-  bool console = true;
+  // Whether port 23 is served this boot (TELNET_CONSOLE, and a TELNET_PASSWORD to ask for), and
+  // port 22 (ADMIN_PASSWORD).
+  bool console = false;
+  bool ssh = false;
   esp_netif_t* netif = nullptr;
   esp_timer_handle_t retryTimer = nullptr;
   std::int64_t retryMs = kFirstRetryMs;
   httpd_handle_t http = nullptr;
 
-  // The log tee: every log line also goes into `logBuffer` while a client is logged in, for the
-  // console task to send. Whoever logs only ever copies into the buffer, never touches the network:
-  // the CAN decode task must not wait on a slow client, and Wi-Fi's and lwIP's own tasks log too.
-  vprintf_like_t serialPrint = nullptr;
-  StreamBufferHandle_t logBuffer = nullptr;
-  std::mutex logMutex;  // a stream buffer takes one writer at a time
-  std::atomic<bool> forwarding{false};
-  std::atomic<std::uint32_t> logBytesDropped{0};
+  // The telnet console's copy of the log while a client is logged in (log_tee.hpp).
+  LogSink* log = nullptr;
 } link;
-
-// ---------------------------------------------------------------------------------- the log tee
 
 // Sends everything, or gives up: the console's socket is blocking, with a send timeout.
 bool sendAll(int socket, const char* data, std::size_t length) {
@@ -88,52 +82,35 @@ bool sendAll(int socket, const char* data, std::size_t length) {
   return true;
 }
 
-// Every log line goes to the serial port as before, and, while a client is logged in, into the
-// console's buffer. Never blocks: a full buffer drops the line and counts it.
-int teeLog(const char* format, va_list arguments) {
-  va_list copy;
-  va_copy(copy, arguments);
-  const int written = link.serialPrint(format, arguments);
-  if (link.forwarding.load(std::memory_order_relaxed)) {
-    char line[384];
-    const int length = vsnprintf(line, sizeof line, format, copy);
-    if (length > 0) {
-      const std::size_t bytes = std::min<std::size_t>(static_cast<std::size_t>(length), sizeof line - 1);
-      std::unique_lock<std::mutex> lock(link.logMutex, std::try_to_lock);
-      if (!lock.owns_lock() || xStreamBufferSend(link.logBuffer, line, bytes, 0) != bytes) {
-        link.logBytesDropped.fetch_add(static_cast<std::uint32_t>(bytes), std::memory_order_relaxed);
-      }
-    }
-  }
-  va_end(copy);
-  return written;
-}
-
 // What the log tee has buffered, to the client: from the console task only.
 bool drainLog(int client) {
-  char chunk[256];
-  while (true) {
-    const std::size_t got = xStreamBufferReceive(link.logBuffer, chunk, sizeof chunk, 0);
-    if (got == 0) break;
-    const std::string text = settings::withCrLf(std::string_view(chunk, got));
-    if (!sendAll(client, text.data(), text.size())) return false;
-  }
-  const std::uint32_t dropped = link.logBytesDropped.exchange(0, std::memory_order_relaxed);
-  if (dropped > 0) {
-    const std::string note = "[" + std::to_string(dropped) + " bytes of log dropped: the network was too slow]\r\n";
-    if (!sendAll(client, note.data(), note.size())) return false;
-  }
-  return true;
+  std::string text;
+  link.log->drain(text);
+  if (text.empty()) return true;
+  text = settings::withCrLf(text);
+  return sendAll(client, text.data(), text.size());
 }
 
 // ---------------------------------------------------------------------------------- the console
 
-// The console's commands, as the USB console runs them: `help`, `restart`, and the settings'.
+// The telnet console's commands: the USB console's that only look (settings::readOnlyAllows). Its
+// password crosses the network in plain text, so nothing here saves, deletes, restarts, installs or
+// transmits; the SSH console does those.
 // The card commands' state for the telnet console: its folder, kept from client to client unless reset.
 std::unique_ptr<files::CardShell> cardShell;
 
 void runCommand(int argumentCount, char** arguments, std::string& output) {
   const std::string_view command = arguments[0];
+  if (!settings::readOnlyAllows(argumentCount, arguments)) {
+    if (settings::isFullConsoleCommand(command)) {
+      output += "`" + std::string(command) +
+                "` isn't on the telnet console, which only looks: its password crosses the network in plain "
+                "text. Use the SSH console (ssh admin@<bike>, ADMIN_PASSWORD) or the USB console.\n";
+    } else {
+      output += "no command called " + std::string(command) + "; `help` lists them\n";
+    }
+    return;
+  }
   if (command == "update") {
     runUpdateCommand(argumentCount, arguments, cardFiles().card, [&](std::string& piece) { output += piece; });
     return;
@@ -149,47 +126,27 @@ void runCommand(int argumentCount, char** arguments, std::string& output) {
   }
   if (command == "help") {
     static constexpr text::HelpLine kHelp[] = {
-        {"", "Settings:"},
+        {"", "The telnet console only looks; the SSH console (port 22) changes things."},
+        {"", ""},
         {"show", "list every setting and its value"},
-        {"set NAME VALUE", "save a setting; quote a value with spaces"},
-        {"unset NAME", "put a setting back to its default"},
         {"status", "print the status report now"},
-        {"status on | off", "turn the periodic status report on or off"},
-        {"status every SECONDS", "how often it prints (5-3600)"},
-        {"", "Most settings take effect after `restart`. What each one does is in the USB\n"
-             "console's `help`, and in docs/setup.md."},
-        {"", ""},
-        {"", "The bike:"},
         {"ifconfig", "the Wi-Fi network, address and MAC address"},
-        {"update FILE", "install firmware from the card: update /emcool.bin"},
         {"update status", "which firmware runs now, and which boots next"},
-        {"restart", "restart, so saved settings take effect"},
+        {"dir [PATH]", "list a folder on the card (also ls)"},
+        {"cd [FOLDER]", "change folder; cd alone goes to the top"},
+        {"pwd", "show the folder you're in"},
+        {"type FILE", "print a text file (also cat)"},
         {"exit", "leave this console (also quit, logout)"},
-        {"", ""},
     };
     text::appendHelp(output, kHelp);
-    text::appendHelp(output, files::CardShell::help());
     return;
   }
   if (command == "ifconfig") {
     output += describeNetwork();
     return;
   }
-  if (command == "restart") {
-    output += "restarting\n";
-    logWarning(kTag, "restart asked for over the telnet console");
-    // After the reply has gone.
-    restartAfter(500);
-    return;
-  }
-  if (command == "show" || command == "set" || command == "unset" || command == "status") {
-    if (command == "set" || command == "unset") {
-      logInfo(kTag, "over the telnet console: %s %s", arguments[0], argumentCount > 1 ? arguments[1] : "");
-    }
-    settings::runSettingsCommand(*link.storage, *link.running, argumentCount, arguments, output);
-    return;
-  }
-  output += "no command called " + std::string(command) + "; `help` lists them\n";
+  // show, and status with no arguments (a report now).
+  settings::runSettingsCommand(*link.storage, *link.running, argumentCount, arguments, output);
 }
 
 // One client: its input, its replies, and the log between them, all from this task. A client that
@@ -227,9 +184,7 @@ void serveConsoleClient(int client, settings::RemoteConsole& console) {
         wasAuthenticated = true;
         link.counters->consoleLogins.fetch_add(1, std::memory_order_relaxed);
         logInfo(kTag, "console: logged in over Wi-Fi");
-        xStreamBufferReset(link.logBuffer);
-        link.logBytesDropped.store(0, std::memory_order_relaxed);
-        link.forwarding.store(true, std::memory_order_relaxed);
+        link.log->start();
       }
       if (!sendAll(client, out.data(), out.size()) || close) break;
     }
@@ -241,13 +196,13 @@ void serveConsoleClient(int client, settings::RemoteConsole& console) {
       break;
     }
   }
-  link.forwarding.store(false, std::memory_order_relaxed);
+  link.log->stop();
   if (!wasAuthenticated) link.counters->consoleRefusals.fetch_add(1, std::memory_order_relaxed);
 }
 
 // One client at a time; a second is told so and closed.
 void consoleTask(void*) {
-  settings::RemoteConsole console(link.adminPassword, runCommand);
+  settings::RemoteConsole console(link.telnetPassword, runCommand);
   const int listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   sockaddr_in address = {};
   address.sin_family = AF_INET;
@@ -282,13 +237,13 @@ bool authorised(httpd_req_t* request) {
   char header[256] = {};
   if (httpd_req_get_hdr_value_str(request, "Authorization", header, sizeof header) == ESP_OK) {
     const std::optional<std::string> password = settings::basicAuthPassword(header);
-    if (password && settings::constantTimeEquals(*password, link.adminPassword)) return true;
+    if (password && settings::constantTimeEquals(*password, link.telnetPassword)) return true;
   }
   link.counters->pagesRefused.fetch_add(1, std::memory_order_relaxed);
   httpd_resp_set_status(request, "401 Unauthorized");
   httpd_resp_set_hdr(request, "WWW-Authenticate", "Basic realm=\"emcool\", charset=\"UTF-8\"");
   httpd_resp_set_type(request, "text/plain; charset=utf-8");
-  httpd_resp_sendstr(request, "emcool: the admin password (ADMIN_PASSWORD) is needed; any user name will do\n");
+  httpd_resp_sendstr(request, "emcool: the telnet password (TELNET_PASSWORD) is needed; any user name will do\n");
   return false;
 }
 
@@ -302,49 +257,6 @@ esp_err_t sendText(httpd_req_t* request, const char* status, const std::string& 
   httpd_resp_set_status(request, status);
   httpd_resp_set_type(request, "text/plain; charset=utf-8");
   return httpd_resp_send(request, text.data(), static_cast<ssize_t>(text.size()));
-}
-
-// PUT /update: a new firmware image as the request body, streamed into the spare slot:
-//   curl -u :PASSWORD -T build/emcool.bin http://emcool/update
-// It boots at the next restart, on trial. Only the image's own checks and ADMIN_PASSWORD stand
-// between this and new firmware, and both cross the network in plain text.
-esp_err_t serveUpdate(httpd_req_t* request) {
-  if (!authorised(request)) return ESP_OK;
-  if (request->content_len == 0) {
-    return sendText(request, "411 Length Required",
-                    "emcool: send the image as the body: curl -u :PASSWORD -T build/emcool.bin http://emcool/update\n");
-  }
-  if (const std::string refusal = updateRefusal(); !refusal.empty()) {
-    return sendText(request, "409 Conflict", "emcool: not updating now: " + refusal + "\n");
-  }
-  update::Updater& updater = firmwareUpdater();
-  std::string why;
-  if (!updater.start(request->content_len, "Wi-Fi", why)) {
-    return sendText(request, "409 Conflict", "emcool: not updating: " + why + "\n");
-  }
-  logWarning(kTag, "firmware update over Wi-Fi: %u bytes", static_cast<unsigned>(request->content_len));
-  const auto buffer = std::make_unique<std::uint8_t[]>(kHttpPieceBytes);
-  int timeouts = 0;
-  while (updater.state() == update::Updater::State::kWriting && updater.received() < updater.total()) {
-    const std::size_t want = std::min(kHttpPieceBytes, updater.total() - updater.received());
-    const int got = httpd_req_recv(request, reinterpret_cast<char*>(buffer.get()), want);
-    if (got == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts < 6) continue;  // a slow network: up to 30 s of silence
-    if (got <= 0) {
-      updater.cancel("the upload stopped after " + std::to_string(updater.received()) + " bytes");
-      break;
-    }
-    timeouts = 0;
-    if (!updater.feed(std::span<const std::uint8_t>(buffer.get(), static_cast<std::size_t>(got)))) break;
-  }
-  const bool done = updater.state() == update::Updater::State::kWriting && updater.finish();
-  if (!done) {
-    return sendText(request, "400 Bad Request",
-                    "emcool: not updated: " + updater.problem() + "\nThe running firmware is unchanged.\n");
-  }
-  return sendText(request, "200 OK",
-                  "emcool: written and checked: " + update::describe(*updater.incoming()) +
-                      "\nRestart it to run it (the console's `restart`). It boots on trial: let it run 30 s, since a crash "
-                      "or a restart before then goes back to the firmware running now.\n");
 }
 
 // GET /: every boot and part, with links to download them.
@@ -453,14 +365,23 @@ bool startWebServer() {
   }
   const httpd_uri_t page = {.uri = "/", .method = HTTP_GET, .handler = servePage, .user_ctx = nullptr};
   const httpd_uri_t download = {.uri = "/dl", .method = HTTP_GET, .handler = serveDownload, .user_ctx = nullptr};
-  const httpd_uri_t upload = {.uri = "/update", .method = HTTP_PUT, .handler = serveUpdate, .user_ctx = nullptr};
   httpd_register_uri_handler(link.http, &page);
   httpd_register_uri_handler(link.http, &download);
-  httpd_register_uri_handler(link.http, &upload);
   return true;
 }
 
 // ---------------------------------------------------------------------------------- Wi-Fi itself
+
+std::string address(const esp_ip4_addr_t& ip);
+
+// What the bike serves at `ip`, for the log: "ssh admin@1.2.3.4, ride log http://1.2.3.4/, telnet off".
+std::string describeServices(const std::string& ip) {
+  std::string out = link.ssh ? "ssh admin@" + ip : std::string("ssh off (no ADMIN_PASSWORD)");
+  out += link.telnetPassword.empty() ? std::string(", ride log off (no TELNET_PASSWORD)") : ", ride log http://" + ip + "/";
+  out += link.console ? ", telnet `nc " + ip + " " + std::to_string(kConsolePort) + "` (read-only)"
+                      : std::string(", telnet off");
+  return out;
+}
 
 void connectLater() {
   esp_timer_stop(link.retryTimer);
@@ -485,13 +406,8 @@ void onEvent(void*, esp_event_base_t base, std::int32_t id, void* data) {
     link.counters->address.store(event->ip_info.ip.addr, std::memory_order_relaxed);
     link.counters->connected.store(true, std::memory_order_relaxed);
     link.retryMs = kFirstRetryMs;
-    if (link.console) {
-      logInfo(kTag, "connected as " IPSTR ": console `nc " IPSTR " %u`, ride log http://" IPSTR "/",
-              IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.ip), kConsolePort, IP2STR(&event->ip_info.ip));
-    } else {
-      logInfo(kTag, "connected as " IPSTR ": ride log http://" IPSTR "/ (console off: TELNET_CONSOLE 0)",
-              IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.ip));
-    }
+    const std::string ip = address(event->ip_info.ip);
+    logInfo(kTag, "connected as %s: %s", ip.c_str(), describeServices(ip).c_str());
   }
 }
 
@@ -511,7 +427,12 @@ std::string describeNetwork() {
   std::snprintf(macLine, sizeof macLine, "mac:      %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3],
                 mac[4], mac[5]);
   if (link.netif == nullptr) {
-    return std::string("wifi:     off (set WIFI_SSID and ADMIN_PASSWORD, then restart)\n") + macLine;
+    std::string out = std::string("wifi:     off (set WIFI_SSID, and ADMIN_PASSWORD or TELNET_PASSWORD, then restart)\n") +
+                      macLine;
+    // The host key is made with the first SSH start, but it's printed whenever there is one.
+    const std::string fingerprint = sshHostKeyFingerprint();
+    if (fingerprint != kNoHostKey) out += "host key: " + fingerprint + "\n";
+    return out;
   }
   std::string out;
   char line[160];
@@ -547,27 +468,31 @@ std::string describeNetwork() {
   esp_netif_get_hostname(link.netif, &hostname);
   out += std::string("hostname: ") + (hostname != nullptr ? hostname : "-") + "\n";
   out += macLine;
-  if (ip.ip.addr != 0) {
-    out += link.console ? "console:  nc " + address(ip.ip) + " " + std::to_string(kConsolePort) + "\n"
-                        : std::string("console:  off (TELNET_CONSOLE 0)\n");
-    out += "ride log: http://" + address(ip.ip) + "/\n";
-  }
+  const std::string at = ip.ip.addr != 0 ? address(ip.ip) : std::string("<bike>");
+  out += link.ssh ? "ssh:      ssh admin@" + at + "\n" : std::string("ssh:      off (set ADMIN_PASSWORD, then restart)\n");
+  if (link.ssh) out += "host key: " + sshHostKeyFingerprint() + "\n";
+  out += link.console ? "telnet:   nc " + at + " " + std::to_string(kConsolePort) + " (read-only)\n"
+                      : std::string("telnet:   off (TELNET_CONSOLE 0, or no TELNET_PASSWORD)\n");
+  out += link.telnetPassword.empty() ? std::string("ride log: off (no TELNET_PASSWORD)\n")
+                                     : "ride log: http://" + at + "/\n";
   return out;
 }
 
 bool startWifi(const settings::Settings& settings, settings::SettingsStorage& storage,
                settings::RuntimeSettings& running, ride_log::DownloadCard* card, WifiCounters& counters) {
   if (!settings.wifiEnabled()) {
-    logInfo(kTag, "off (%s)", settings.wifiSsid.empty() ? "WIFI_SSID isn't set" : "ADMIN_PASSWORD isn't set");
+    logInfo(kTag, "off (%s)",
+            settings.wifiSsid.empty() ? "WIFI_SSID isn't set" : "neither ADMIN_PASSWORD nor TELNET_PASSWORD is set");
     return false;
   }
   link.counters = &counters;
   link.storage = &storage;
   link.running = &running;
   link.card = card;
-  link.adminPassword = settings.adminPassword;
+  link.telnetPassword = settings.telnetPassword;
   link.ssid = settings.wifiSsid;
-  link.console = settings.telnetConsole;
+  link.console = settings.telnetEnabled();
+  link.ssh = settings.sshEnabled();
 
   if (esp_netif_init() != ESP_OK) {
     logError(kTag, "esp_netif_init failed; Wi-Fi stays off");
@@ -614,24 +539,24 @@ bool startWifi(const settings::Settings& settings, settings::SettingsStorage& st
     logError(kTag, "esp_wifi_start failed (%s); Wi-Fi stays off", esp_err_to_name(result));
     return false;
   }
-  logInfo(kTag, "joining \"%s\"%s; %s once it connects", settings.wifiSsid.c_str(),
-          settings.wifiPassword.empty() ? " (an open network)" : "",
-          link.console ? "the console and the ride-log page follow" : "the ride-log page follows (TELNET_CONSOLE 0)");
+  logInfo(kTag, "joining \"%s\"%s; once it connects: %s", settings.wifiSsid.c_str(),
+          settings.wifiPassword.empty() ? " (an open network)" : "", describeServices("<bike>").c_str());
 
-  // With the console off, nothing listens on port 23, and the log isn't teed.
+  // With the console off, nothing listens on port 23, and the log isn't teed for it.
   if (link.console) {
-    link.logBuffer = xStreamBufferCreate(kLogBufferBytes, 1);
-    if (link.logBuffer == nullptr) {
-      logError(kTag, "no memory for the console's log buffer");
-    } else {
-      link.serialPrint = esp_log_set_vprintf(teeLog);
-    }
-    if (xTaskCreatePinnedToCore(consoleTask, "wifi-console", kConsoleStackBytes, nullptr, kConsolePriority, nullptr,
-                                kCore) != pdPASS) {
+    link.log = LogSink::create(kLogBufferBytes);
+    if (link.log == nullptr) {
+      logError(kTag, "no memory for the telnet console's log buffer; it stays off");
+      link.console = false;
+    } else if (xTaskCreatePinnedToCore(consoleTask, "wifi-console", kConsoleStackBytes, nullptr, kConsolePriority,
+                                       nullptr, kCore) != pdPASS) {
       logError(kTag, "could not create the console task");
+      link.console = false;
     }
   }
-  startWebServer();
+  if (link.ssh && !startSshConsole(storage, running, counters)) link.ssh = false;
+  // The ride-log page asks for the telnet password; without one, port 80 stays closed too.
+  if (!settings.telnetPassword.empty()) startWebServer();
   return true;
 }
 

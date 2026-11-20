@@ -8,3 +8,20 @@ CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 # The controller keeps about 830 bytes per BLE "activity", each connection and the advertising
 # set. One phone connected, and advertising for it again the moment it drops, is two.
 CONFIG_BT_CTRL_BLE_MAX_ACT=2
+
+# The ESP32-S3-WROOM-1-N8R8's 8 MB of octal PSRAM, for the SSH console: its key exchange and buffers
+# ask for it by name (heap_caps_malloc_prefer), leaving internal RAM for Wi-Fi and Bluetooth.
+# malloc() never returns it (SPIRAM_USE_CAPS_ALLOC, not SPIRAM_USE_MALLOC), and FatFs keeps its
+# buffers internal: with malloc() handing out PSRAM, the ride log's 8 KB write buffer landed there,
+# every card write went through a 512-byte bounce buffer a sector at a time, and the ride-log task
+# kept core 0 busy long enough for the task watchdog to fire. A board without PSRAM still boots: SSH
+# then takes internal RAM.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+CONFIG_FATFS_ALLOC_PREFER_EXTRAM=n
+# Wi-Fi's and lwIP's buffers in PSRAM first. Kept internal, Wi-Fi joining left Bluetooth, the card
+# and the consoles about 2 KB of internal RAM, and the driver dropped frames for want of a buffer.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y

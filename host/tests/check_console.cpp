@@ -308,11 +308,11 @@ int main() {
   run = console.post("restart", std::nullopt, ",\"bluetoothKey\":\"" + kNewKey + "\"");
   EMCOOL_CHECK(run.status == 200 && run.ok && run.restarting && console.host.restarts == 1,
                "restart with the new key: %s", run.body.c_str());
-  // With the key unset, this page could never reconnect: the USB or telnet console restarts instead.
+  // With the key unset, this page could never reconnect: the USB or SSH console restarts instead.
   run = console.postNow("unset BLE_SECRET");
   EMCOOL_CHECK(run.ok, "unset BLE_SECRET: %s", run.body.c_str());
   run = console.post("restart", std::nullopt, ",\"bluetoothKey\":\"" + kNewKey + "\"");
-  EMCOOL_CHECK(run.status == 409 && console.host.restarts == 1 && contains(run.output, "USB or telnet console"),
+  EMCOOL_CHECK(run.status == 409 && console.host.restarts == 1 && contains(run.output, "USB or SSH console"),
                "restart into Bluetooth off: %s", run.body.c_str());
   run = console.postNow("set BLE_SECRET " + kKey);
   run = console.post("restart", std::nullopt);
