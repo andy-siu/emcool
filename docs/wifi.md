@@ -2,7 +2,7 @@
 
 Wi-Fi is off until a network and a password are set. Then the bike joins your network as a client and serves:
 
-- **The SSH console** on port 22, behind `ADMIN_PASSWORD`: every command the USB console has, with the log following it. That includes settings, `restart`, firmware updates from the card, the card's commands, and the manual CAN commands (`can-send`, `can-dump`, `psu`, `poller`, `can-repeat`). It's encrypted.
+- **The SSH console** on port 22, behind `ADMIN_PASSWORD`: every command the USB console has, with the log following it. That includes settings, `restart`, firmware updates from the card, the card's commands, and the manual CAN commands (`can-send`, `can-dump`, `psu`, `poller`, `can-repeat`). It also serves the card's files to `scp`, `sftp` and the GUI file-transfer apps. It's encrypted.
 - **The ride log** on port 80, behind `TELNET_PASSWORD`: a page listing every boot and part, and downloads of them.
 - **The telnet console** on port 23, behind `TELNET_PASSWORD`, only if `TELNET_CONSOLE` is `1`. It's off by default, and **read-only**: it can look (`show`, `status`, `ifconfig`, `update status`, the card's `dir` and `type`) but changes nothing.
 
@@ -10,7 +10,7 @@ The split is about what crosses the network in the clear. The telnet password an
 
 Bluetooth carries on beside it, sharing the radio.
 
-Code: `main/wifi_link.cpp` (Wi-Fi, the telnet console's socket, the web server), `main/ssh_console.cpp` (the SSH console, on wolfSSH), `components/emcool_settings/src/remote_console.cpp` (the telnet console's login and what it allows, the SSH login's limits), `components/emcool_settings/src/line_editor.cpp` (the SSH console's line editing), `components/emcool_ride_log/src/download.cpp` (what the page lists and serves, shared with Bluetooth's `/dl`). All but the sockets and the library are checked on the laptop.
+Code: `main/wifi_link.cpp` (Wi-Fi, the telnet console's socket, the web server), `main/ssh_console.cpp` (the SSH console, on wolfSSH), `components/emcool_settings/src/remote_console.cpp` (the telnet console's login and what it allows, the SSH login's limits), `components/emcool_settings/src/line_editor.cpp` (the SSH console's line editing), `components/emcool_files/src/sftp_server.cpp` (the card over SFTP), `components/emcool_ride_log/src/download.cpp` (what the page lists and serves, shared with Bluetooth's `/dl`). All but the sockets and the library are checked on the laptop.
 
 ## Turning it on
 
@@ -81,7 +81,7 @@ ssh admin@192.168.1.42
 
 ```bash
 ssh admin@emcool.local show
-ssh admin@emcool.local update /emcool.bin
+ssh admin@emcool.local update status
 ssh admin@emcool.local restart
 ```
 
@@ -91,13 +91,37 @@ ssh admin@emcool.local restart
 
 **Limits:**
 
-- One client at a time. A second waits until the first leaves.
+- One client at a time, and a file transfer counts as one. A second waits until the first leaves.
 - Three wrong passwords end the connection. After three wrong in a row, every attempt fails for 5 s, whoever makes it.
-- A client that types nothing for 30 minutes is disconnected; one that hasn't logged in after a minute is too.
+- A client that types nothing for 30 minutes is disconnected (a file transfer that goes quiet for 30 minutes too); one that hasn't logged in after a minute is too.
 - `restart` waits for what the dashboard's restart waits for: a parked bike and a free bus. It says what's in the way.
-- Password logins only: no keys, no port forwarding, no agent forwarding, no `scp` or `sftp`. To put firmware on the bike, copy `emcool.bin` onto the card, then `update /emcool.bin`.
+- Password logins only: no keys, no port forwarding, no agent forwarding.
 
 **Algorithms** (wolfSSH): curve25519-sha256 (or ecdh-sha2-nistp256) key exchange, an ssh-ed25519 host key, AES-256-GCM, AES-128-GCM or AES-CTR with HMAC-SHA2. Any OpenSSH from the last ten years agrees on these.
+
+### Copying files: scp and sftp
+
+The same login also serves the card's files over SFTP, so `scp`, `sftp` and GUI apps that speak SFTP can use it. `/` is the card's top folder:
+
+```bash
+scp -r admin@emcool.local:/RIDES ./rides             # the whole ride log
+scp notes.txt admin@emcool.local:/notes.txt
+sftp admin@emcool.local                              # ls, get, put, rm, mkdir, rename, df
+```
+
+From OpenSSH 9.0 on, `scp` speaks SFTP by default. On 8.7 and 8.8, give it `-s`. Older `scp`, and `scp -O` (the old protocol), don't work; use `sftp` instead.
+
+The card's rules are the same as for the card commands, and are checked again before every change:
+
+- **Reading is always allowed,** the ride being recorded included.
+- **The ride log is protected.** Nothing in the ride being recorded is removed, renamed or written, and nothing new goes in `RIDES`. Older rides can be removed.
+- **`vcu-params` is read-only.**
+- **One console changes the card at a time.** An upload holds the card from when it opens until it's closed, so meanwhile the USB console's `rm` (say) is refused, and the other way round.
+- **An upload stops before it would leave less than 16 MB free** for the ride log.
+- **A file is only ever written whole.** An upload goes in as `NAME.part` and takes its name once it's closed whole, replacing the old file then. A dropped connection or a full card leaves the old file as it was. Appending and resuming (`reput`) are refused.
+- **FAT has no owners, permissions or links.** Permissions sent are ignored and links are refused. A file's time can be set (`scp -p`).
+
+OpenSSH's clients only print what kind of refusal it was ("Permission denied", "Failure"). The bike's log, on the USB or SSH console, says why.
 
 ## The telnet console
 
@@ -154,18 +178,28 @@ curl -u x:'the telnet password' -OJ 'http://192.168.1.42/dl?boot=12&mb=256'
 
 ## Firmware updates
 
-Not over HTTP any more: `PUT /update` is gone, since its password crossed the network in plain text. Over the network, it's the SSH console:
+Not over HTTP any more: `PUT /update` is gone, since its password crossed the network in plain text. Over the network, copy the image onto the card with `scp`:
 
 ```bash
-ssh admin@emcool.local update /emcool.bin     # after copying build/esp32s3/emcool.bin onto the card
-ssh admin@emcool.local restart
+scp build/esp32s3/emcool.bin admin@emcool.local:/emcool.bin
 ```
 
-or the dashboard's Firmware panel over Bluetooth. The README has the rest, under *Updating without the cable*.
+It then goes the way of an `emcool.bin` on a card put in: within about 10 s the bike installs it and removes it from the card. Once the bike is parked with the bus free, it restarts into the new firmware. The upload only takes the name `emcool.bin` once it's whole, so a half-copied image is never installed. If an `emcool.bin` was already refused since the card went in, a new one waits until the card is put back in; use the next way instead.
+
+To choose when it restarts, copy it under another name and install it yourself:
+
+```bash
+scp build/esp32s3/emcool.bin admin@emcool.local:/new.bin
+ssh admin@emcool.local update /new.bin
+ssh admin@emcool.local restart
+ssh admin@emcool.local rm /new.bin               # update leaves the file on the card
+```
+
+Or use the dashboard's Firmware panel over Bluetooth. The README has the rest, under *Updating without the cable*.
 
 ## What the passwords do and don't protect
 
-- **`ADMIN_PASSWORD` never crosses the network in the clear.** SSH encrypts it and everything after it. It unlocks everything: VCU writes and the automatic charge controller (with their settings), the Bluetooth secret, firmware, the CAN bus. So it guards what the Bluetooth secret guards.
+- **`ADMIN_PASSWORD` never crosses the network in the clear.** SSH encrypts it and everything after it. It unlocks everything: VCU writes and the automatic charge controller (with their settings), the Bluetooth secret, firmware, the CAN bus, the card's files. So it guards what the Bluetooth secret guards.
 - **`TELNET_PASSWORD` does cross it in plain text, and so does everything after it:** the telnet console's output (settings' names and values, never a secret's characters) and the ride log. Anyone on the same network can see it: on an open network that's anyone in range, and on WPA2 it's anyone who knows the network's password. That's why it unlocks nothing that changes the bike.
 - **The two must differ.** The bike refuses to save one equal to the other.
 - **Use Wi-Fi on a network you control,** like your garage Wi-Fi or your own phone's hotspot, not a public one. SSH is safe on any network; the ride-log page isn't private on one you don't control.
@@ -174,12 +208,12 @@ or the dashboard's Firmware panel over Bluetooth. The README has the rest, under
 
 ## What it costs
 
-- **Flash:** Wi-Fi took the firmware from 1.46 MB to 1.74 MB, even after building for size; with the card commands and updates it's 1.81 MB, and with SSH (wolfSSH and wolfCrypt) 2.13 MB. On the S3's 8 MB flash each app slot is 3.875 MB, so there's room; it was the 4 MB table's 1.875 MB slots that made it tight.
+- **Flash:** Wi-Fi took the firmware from 1.46 MB to 1.74 MB, even after building for size; with the card commands and updates it's 1.81 MB, and with SSH and its file transfer (wolfSSH and wolfCrypt) 2.15 MB. On the S3's 8 MB flash each app slot is 3.875 MB, so there's room; it was the 4 MB table's 1.875 MB slots that made it tight.
 - **The firmware is now built for size (`-Os`), not for debugging (`-Og`).** Both stacks don't fit otherwise: the fast instruction RAM overflowed by 2 KB, and the image outgrew its slot. One cost: a crash's backtrace and variables are a little harder to read, since the compiler inlines and reorders more.
 - **Wi-Fi features left out** (`sdkconfig.defaults`): being an access point, enterprise (802.1X) logins, OWE, and a receive-path speed-up that lives in instruction RAM. Joining a home network or a phone hotspot with WPA2 or WPA3 needs none of them.
 - **The Wi-Fi stack is linked in either way.** Turning Wi-Fi off doesn't make the firmware smaller; it just never starts the radio.
 - **RAM:** on the board, starting Wi-Fi takes about 57 KB of internal RAM (98 KB free after Bluetooth, 41 KB after Wi-Fi), and the boot settles at about 13–19 KB free. That's with Wi-Fi's and lwIP's buffers in PSRAM (`CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP`). Without that, the boot settled at about 2 KB free, and the driver logged failed 1.7 KB buffer allocations every time a frame arrived. The 10 s status line's `heap … free, … lowest` counts internal RAM only.
-- **PSRAM:** the build turns on the S3-WROOM-1-N8R8's 8 MB of octal PSRAM (`sdkconfig.defaults.esp32s3`), for SSH and the Wi-Fi stack's buffers only: `malloc()` never returns it, and FatFs keeps its buffers internal. (Letting `malloc()` use it put the ride log's write buffer there, which made every card write go a sector at a time through a bounce buffer, and the task watchdog fired.) wolfSSL and wolfSSH are built with `XMALLOC_USER`, so all their allocations go to `main/ssh_console.cpp`'s `XMALLOC`, which asks for PSRAM first: the key exchange's numbers, a session's buffers (4 KB windows and packets, not wolfSSH's 128 KB default). (`wolfSSL_SetAllocators` isn't enough on ESP-IDF: wolfSSL's FreeRTOS settings make `XMALLOC` call `pvPortMalloc`, which only gives internal RAM, and never consult the allocators.) Its task's 12 KB stack is internal RAM. A board without PSRAM still boots (`CONFIG_SPIRAM_IGNORE_NOTFOUND`); SSH then takes internal RAM.
+- **PSRAM:** the build turns on the S3-WROOM-1-N8R8's 8 MB of octal PSRAM (`sdkconfig.defaults.esp32s3`), for SSH and the Wi-Fi stack's buffers only: `malloc()` never returns it, and FatFs keeps its buffers internal. (Letting `malloc()` use it put the ride log's write buffer there, which made every card write go a sector at a time through a bounce buffer, and the task watchdog fired.) wolfSSL and wolfSSH are built with `XMALLOC_USER`, so all their allocations go to `main/ssh_console.cpp`'s `XMALLOC`, which asks for PSRAM first: the key exchange's numbers, a session's buffers (4 KB windows and packets, not wolfSSH's 128 KB default). (`wolfSSL_SetAllocators` isn't enough on ESP-IDF: wolfSSL's FreeRTOS settings make `XMALLOC` call `pvPortMalloc`, which only gives internal RAM, and never consult the allocators.) Its task's 12 KB stack is internal RAM. A file transfer adds about 100 KB, for buffers that hold a 32 KB request and two answers, also PSRAM first. Card reads and writes go through a 4 KB buffer in internal RAM, since FatFs would send a PSRAM buffer a sector at a time. A board without PSRAM still boots (`CONFIG_SPIRAM_IGNORE_NOTFOUND`); SSH then takes internal RAM.
 - **wolfSSL's ESP32 crypto hardware port is off.** It doesn't build against ESP-IDF 6.1 (it calls clock-gate functions that have moved), so wolfCrypt runs its software code. A login's key exchange is a curve25519 multiply and an Ed25519 signature, which should take well under a second on the S3 in software (not yet timed on the board); after that, AES-GCM in software is ample for a console.
 - **Licences:** wolfSSL is GPL-3.0-or-later, and wolfSSH GPL-2.0-or-later, used here under version 3, which the AGPL-3.0 firmware can include.
 
@@ -198,11 +232,17 @@ or the dashboard's Firmware panel over Bluetooth. The README has the rest, under
 - The page's listing: every boot and part at the size a download sends, newest boot first.
 - The download it serves is the same code as Bluetooth's `/dl`, with the same checks.
 
+**Verified on the laptop by hand** (not yet in `tools/check.sh`): the SFTP server, through `host/build/sftp_server_host` and OpenSSH's own clients (`sftp -D`, `scp -D`). The runs covered:
+
+- `put`, `get`, and a 300 KB `scp` both ways coming back byte for byte
+- `scp -r` of `RIDES`, `scp -p` keeping the time, `mkdir`, `rename` and `df`
+- refusals: writing or removing in the ride being recorded, a new file in `RIDES`, writing in `vcu-params`, a symlink, and `reput`
+
 **Not verified yet** (nothing has run on the ESP32):
 
 - Joining a network, reconnecting, and Wi-Fi and Bluetooth sharing the radio.
 - The consoles and the page on real sockets, and how fast a download goes.
-- The SSH console at all: wolfSSH's handshake with OpenSSH, the host key's fingerprint matching what ssh shows, a session's output and keypresses, the log following it, and how long a login takes. The firmware builds; nothing of SSH has run.
+- The SSH console at all: wolfSSH's handshake with OpenSSH, the host key's fingerprint matching what ssh shows, a session's output and keypresses, the log following it, and how long a login takes. The firmware builds; nothing of SSH has run. Nor has SFTP over wolfSSH: how fast it goes, and an upload whose card is pulled midway.
 - PSRAM coming up on the board, and the heap left with SSH logged in.
 - The heap left with both stacks running.
 - Whether `-Os` changes anything in the CAN decoding's timing. The host checks, which compare every decoded value with the reference implementation's, don't run the firmware's compiler.
