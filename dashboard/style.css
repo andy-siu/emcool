@@ -1802,9 +1802,6 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.settings-action {
-  margin: 12px 0;
-}
 .destination-header {
   position: sticky;
   top: 0;

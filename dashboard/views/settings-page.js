@@ -17,7 +17,6 @@ import { SettingsRecovery } from "./settings-recovery.js";
 import { SettingsRestart } from "./settings-restart.js";
 import { DashboardBluetooth } from "./settings-bluetooth.js";
 import { MotorcycleConnection } from "./settings-hub.js";
-import { CanRestartButton } from "./pi-actions.js";
 import { FirmwareUpdate } from "./firmware-update.js";
 import { ScreenGeometry } from "./screen-geometry.js";
 import { BikeConsole } from "./bike-console.js";
@@ -33,7 +32,7 @@ export function SettingsPage() {
         ? div()
         : SettingsCard(
             "Changed with the bike's console",
-            "emcool's settings change through its console commands: in Bike console here, over Bluetooth, or on the serial console (idf.py monitor, or nc <bike> 23 over Wi-Fi). Save buttons on the other pages are refused.",
+            "emcool's settings change through its console commands: in Bike console here, over Bluetooth, or on the serial console (idf.py monitor). Save buttons on the other pages are refused.",
             div(
               { class: "settings-links" },
               button(
@@ -136,31 +135,12 @@ function SettingsContent(section) {
     case "connections":
       return div(
         h2("Connections"),
-        TextSetting(
-          "phoneHotspotSsid",
-          "Hotspot name used for connection checks",
-          "This identifies the phone hotspot for monitoring. Saving a name does not configure a Wi-Fi connection."
-        ),
-        SettingsCard(
-          "Saved Wi-Fi connections",
-          "Keep the working home network or phone hotspot. Saved Wi-Fi credentials change on the console (WIFI_SSID, WIFI_PASSWORD), as the Wi-Fi guide describes.",
-          a(
-            {
-              class: "settings-link",
-              href: "https://github.com/andy-siu/emcool/blob/main/docs/wifi.md",
-              target: "_blank",
-              rel: "noopener",
-            },
-            "Open the Wi-Fi guide →"
-          )
-        ),
         DashboardBluetooth(),
         MotorcycleConnection(),
         SettingsCard(
-          "Bike data / CAN adapter",
-          "No recognised traffic may mean the bike is asleep, an unplugged USB adapter or wrong wiring. Check those first. A bus restart closes CAN sockets; restart emcool afterward if readings remain unavailable.",
-          Readiness("can"),
-          CanRestartButton()
+          "Bike data / CAN bus",
+          "No recognised traffic may mean the bike is asleep or the CAN wiring is wrong. Check those first. emcool recovers from a bus-off by itself; restart emcool if readings stay unavailable.",
+          Readiness("can")
         ),
         AccessExplanation()
       );
@@ -203,9 +183,6 @@ function SettingsContent(section) {
           "vcuParameterDirectory",
           "Service data directory",
           "An absolute persistent path outside code. Existing snapshots and change history stay in the old location."
-        ),
-        SettingsCard("Wi-Fi diagnostic location", "", () =>
-          div({ class: "settings-note" }, settings.val?.locations.wifi ?? "Unconfirmed")
         ),
         SettingsCard("CAN capture location", "", () =>
           div({ class: "settings-note" }, settings.val?.locations.captures ?? "Unconfirmed")

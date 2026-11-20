@@ -27,7 +27,7 @@ export function Header() {
       button(
         {
           class: "can-status-link",
-          "aria-label": "CAN adapter details",
+          "aria-label": "CAN bus details",
           onclick: () => openDestination("settings", "connections"),
         },
         span({ class: () => `dot ${canDotState()}` }),
