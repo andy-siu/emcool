@@ -102,7 +102,7 @@ class CardShellGate {
 struct CardCommand {
   const char* name;
   const char* hint;  // its arguments, or nullptr
-  const char* help;
+  const char* help;  // nullptr keeps it out of the console's `help`
 };
 
 class CardShell {
