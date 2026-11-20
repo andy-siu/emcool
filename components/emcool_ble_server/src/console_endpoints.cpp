@@ -47,7 +47,7 @@ ConsoleAnswer reply(int status, bool ok, const std::string& output, std::uint32_
 }
 
 std::string helpText() {
-  return std::string("show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | ipconfig | restart\n"
+  return std::string("show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | ifconfig | restart\n"
                      "Quote a value with spaces: set WIFI_SSID \"garage wifi\". Most settings take effect after "
                      "restart; the status report's apply at once.\n"
                      "The card: ") +
@@ -202,7 +202,7 @@ std::optional<ConsoleAnswer> ConsoleEndpoints::run(std::string_view body) {
     statusAsCommand_ = true;
     return poll();
   }
-  if (command == "ipconfig") return reply(200, true, host_.network(), revisionNow);
+  if (command == "ifconfig") return reply(200, true, host_.network(), revisionNow);
   if (command == "restart") {
     if (count != 1) return reply(400, false, "usage: restart\n", revisionNow);
     if (const std::optional<std::string> refusal = restartRefusal(reader)) {

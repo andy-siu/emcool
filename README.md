@@ -137,7 +137,7 @@ The console's commands, and its [card commands](docs/setup.md#the-card) (`dir`, 
 | `set NAME VALUE` | Saves a setting. Quote values with spaces. |
 | `unset NAME` | Puts a setting back to its default. |
 | `status [on \| off \| every SECONDS]` | Prints a status report now, or changes how often it prints. |
-| `ipconfig` | The Wi-Fi interface: the SSID and signal, the address, network, netmask, gateway and DNS server it handed out, and the MAC address. |
+| `ifconfig` | The Wi-Fi interface: the SSID and signal, the address, network, netmask, gateway and DNS server it handed out, and the MAC address. |
 | `restart` | Reboots, so saved settings take effect. |
 
 How the console behaves:
@@ -225,7 +225,7 @@ With `WIFI_SSID` and `ADMIN_PASSWORD` set, the bike joins that network, such as 
 - **The console** on port 23: `nc <bike> 23`, with the same commands as the USB console. The log follows it.
 - **The ride log** at `http://<bike>/`: every boot and part, to download in any browser, or with `curl -u x:'password' -OJ 'http://<bike>/dl?mb=256'`.
 
-`ipconfig` on any console, the boot log and the status line all give the address. ⚠️ It's all plain text on the network, the password included, so use it on a network you control. [`docs/wifi.md`](docs/wifi.md) has the details, the costs and what's verified.
+`ifconfig` on any console, the boot log and the status line all give the address. ⚠️ It's all plain text on the network, the password included, so use it on a network you control. [`docs/wifi.md`](docs/wifi.md) has the details, the costs and what's verified.
 
 ## Phone dashboard (Bluetooth)
 

@@ -147,7 +147,7 @@ void runCommand(int argumentCount, char** arguments, std::string& output) {
     return;
   }
   if (command == "help") {
-    output += "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | ipconfig | restart | exit\n"
+    output += "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | ifconfig | restart | exit\n"
               "`show` lists every setting and what it does is in the USB console's `help`.\n"
               "update FILE | update status\n"
               "The card: ";
@@ -155,7 +155,7 @@ void runCommand(int argumentCount, char** arguments, std::string& output) {
     output += "\n";
     return;
   }
-  if (command == "ipconfig") {
+  if (command == "ifconfig") {
     output += describeNetwork();
     return;
   }
