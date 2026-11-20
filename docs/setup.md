@@ -16,7 +16,7 @@ or, on a board that's already flashed, just `idf.py monitor`. It runs on the chi
 emcool>
 ```
 
-With Wi-Fi set up, the same console is also on the network: `nc <bike> 23`, behind `ADMIN_PASSWORD`. See [`wifi.md`](wifi.md).
+With Wi-Fi set up, the same console is also on the network as the telnet console: `nc <bike> 23`, behind `ADMIN_PASSWORD` (`set TELNET_CONSOLE 0` turns it off). See [`wifi.md`](wifi.md).
 
 NVS settings **survive reflashing and firmware updates**. Only `idf.py erase-flash` clears them (which also wipes the Bluetooth key, so the link goes off until you make one again).
 
@@ -32,7 +32,7 @@ Seven change the settings and the firmware; the rest work on the microSD card ([
 | `set NAME VALUE` | Saves one setting. Quote a value with spaces: `set WIFI_SSID "garage wifi"`. `set BLE_SECRET <key>` with Bluetooth off turns it on at once; see [`ble.md`](ble.md#turning-it-on). |
 | `unset NAME` | Puts one setting back to its default (removes it from NVS). |
 | `status [on \| off \| every SECONDS]` | The periodic status report. `status` prints one now; `status off` / `status on` / `status every SECONDS` (5–3600) change it and save at once. |
-| `network` | The Wi-Fi network joined and its signal, the address, netmask, gateway and DNS server it handed out, the hostname and MAC address, and where to find the console and the ride-log page. With Wi-Fi off, says so. |
+| `ipconfig` | The Wi-Fi interface: the SSID joined and its signal, the address, network (as `address/prefix`), netmask, gateway and DNS server it handed out, the hostname and MAC address, and where to find the console and the ride-log page. With Wi-Fi off, says so, and still gives the MAC address. |
 | `restart` | Reboots, so saved settings take effect. |
 | `update FILE`, `update status` | Installs new firmware from the card (`update /emcool.bin`): checked, written beside the running firmware, and run at the next `restart`, on trial. `update status` says what's running, what's waiting and whether an update was rolled back. An `emcool.bin` in the card's top folder needs no command: it's installed, removed and restarted into on its own. See the README's *Updating without the cable*. |
 
@@ -46,7 +46,7 @@ There is deliberately **no `get`** — `show` prints everything, and it is short
 
 ## The card
 
-These work on the microSD card, the same on this console, the Wi-Fi console and the dashboard's Bike console:
+These work on the microSD card, the same on this console, the telnet console and the dashboard's Bike console:
 
 | Command | What it does |
 | --- | --- |
@@ -93,7 +93,8 @@ Types: **flag** is `0`/`1`; **integer** is a whole number in a range; **text**/*
 | `CHARGE_AUTO_ENABLED` | flag | `0` | — | restart | `1` for the automatic charge-current controller — it commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`service-mode.md`](service-mode.md). |
 | `WIFI_SSID` | text | *not set* | 1–32 chars | restart | The Wi-Fi network to join. With `ADMIN_PASSWORD` also set, the bike joins it and serves this console on port 23 and the ride log on port 80. Unset keeps Wi-Fi off. See [`wifi.md`](wifi.md). |
 | `WIFI_PASSWORD` | secret | *not set* | 8–63 chars | restart | That network's password. Unset for an open network. |
-| `ADMIN_PASSWORD` | secret | *not set* | 8–128 chars | restart | What the Wi-Fi console and the ride-log page ask for. Unset keeps Wi-Fi off. ⚠️ It crosses the network in plain text, and it unlocks everything the console can do. |
+| `ADMIN_PASSWORD` | secret | *not set* | 8–128 chars | restart | What the telnet console and the ride-log page ask for. Unset keeps Wi-Fi off. ⚠️ It crosses the network in plain text, and it unlocks everything the console can do. |
+| `TELNET_CONSOLE` | flag | `1` | 0/1 | restart | Whether the bike serves the telnet console on port 23 while Wi-Fi is on. `0` closes the port; the ride-log page on port 80, this console and the dashboard's Bike console stay. See [`wifi.md`](wifi.md#turning-the-telnet-console-off). |
 | `STATUS_REPORT` | flag | `1` | — | **now** | Whether the serial console prints the periodic status report. `status on` / `status off` is the shorthand. |
 | `STATUS_INTERVAL_S` | integer | `10` | 5–3600 | **now** | Seconds between status reports. `status every SECONDS` is the shorthand (and turns the report on if it was off). |
 
@@ -137,9 +138,9 @@ The `restart` boots normally. A power cycle also leaves safe mode, since it clea
 **Menu → Settings → Bike console** runs this console's commands over the Bluetooth link. It writes the same NVS, with the same checks. A change made there is a change made at `emcool>`, and `show` here reports it. It offers:
 
 - **Every setting**, each on its own card: its saved value, the value in use now, a note when it is waiting for a restart, and its help text. Flags get an on/off menu, integers a number field, and text and passwords a text field. **Save** runs `set NAME VALUE`. **Default** runs `unset NAME`. The two status-report settings save as `status on|off` and `status every SECONDS`, so they apply at once, as here.
-- **Status**, the status report this console prints, read on request over the window since the last report, followed by the `network` report.
+- **Status**, the status report this console prints, read on request over the window since the last report, followed by the `ipconfig` report.
 - **Restart**, with two taps.
-- **A command line** for `show`, `status`, `network`, `help`, any `set`/`unset`, and the [card's commands](#the-card), with a transcript. A secret typed into it shows as `••••••••` in the transcript.
+- **A command line** for `show`, `status`, `ipconfig`, `help`, any `set`/`unset`, and the [card's commands](#the-card), with a transcript. A secret typed into it shows as `••••••••` in the transcript.
 
 What differs from this console:
 
@@ -149,7 +150,7 @@ What differs from this console:
 - **Two taps for writes.** Turning `SERVICE_WRITE_ENABLED` or `CHARGE_AUTO_ENABLED` on needs a second tap, as the dashboard's other bike-changing controls do. The command line refuses `set` for those two, and refuses `restart`, so the two taps can't be skipped. Turning them off is one tap.
 - **Restart is refused while the bike isn't parked.** That means while a fresh reading says it is moving, in drive, being asked for drive, or the throttle is open. It is also refused while a service-mode read or write holds the bus, or while something holds the OBD poller. A charging bike can restart.
 - **A restart can't lock the phone out.** If a new `BLE_SECRET` is saved but not yet running, **Restart** asks for that key and the bike checks it before restarting. The phone then keeps it for the reconnect. If `BLE_SECRET` is unset, the page refuses to restart, since Bluetooth would come back off; restart from here or over Wi-Fi.
-- **Access:** anyone holding the Bluetooth key can change any setting, including turning on VCU writes, just as anyone with `ADMIN_PASSWORD` can over Wi-Fi. The link is encrypted (AES-256-GCM), unlike the Wi-Fi console. Each change is logged with the setting's name (never its value) under the `console` tag.
+- **Access:** anyone holding the Bluetooth key can change any setting, including turning on VCU writes, just as anyone with `ADMIN_PASSWORD` can over Wi-Fi. The link is encrypted (AES-256-GCM), unlike the telnet console. Each change is logged with the setting's name (never its value) under the `console` tag.
 
 The endpoints behind it, `GET /console`, `GET /console/status` and `POST /console`, are in [`ble.md`](ble.md).
 

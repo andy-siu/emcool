@@ -53,7 +53,7 @@ int updateFirmware(int argumentCount, char** arguments) {
   });
 }
 
-int network(int, char**) {
+int ipconfig(int, char**) {
   std::fputs(describeNetwork().c_str(), stdout);
   return 0;
 }
@@ -160,10 +160,10 @@ bool startSettingsConsole(settings::SettingsStorage& storage, settings::RuntimeS
                "SECONDS` (5-3600) change it at once and are saved.",
        .hint = "[on | off | every SECONDS]", .func = runCommand, .argtable = nullptr, .func_w_context = nullptr,
        .context = nullptr},
-      {.command = "network",
-       .help = "The Wi-Fi network joined and its signal, and the address, netmask, gateway and DNS server it handed "
-               "out.",
-       .hint = nullptr, .func = network, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
+      {.command = "ipconfig",
+       .help = "The Wi-Fi interface: its SSID, address, network, netmask, gateway and DNS server, hostname and MAC "
+               "address.",
+       .hint = nullptr, .func = ipconfig, .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
       {.command = "restart", .help = "Restart, so saved settings take effect.", .hint = nullptr, .func = restart,
        .argtable = nullptr, .func_w_context = nullptr, .context = nullptr},
       {.command = "update", .help = kUpdateHelp, .hint = kUpdateHint, .func = updateFirmware, .argtable = nullptr,

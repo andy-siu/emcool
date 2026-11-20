@@ -143,7 +143,10 @@ std::string StatusReport::describe(std::int64_t nowMs) {
     appendLine(out,
             "wifi: %s | console %s, %u logins, %u refused | page %u served, %u refused, %.1f MB downloaded | %u "
             "reconnects",
-            where, wifi.consoleClient.load(std::memory_order_relaxed) ? "in use" : "free",
+            where,
+            !sources_.settings.boot().telnetConsole                ? "off"
+            : wifi.consoleClient.load(std::memory_order_relaxed) ? "in use"
+                                                                 : "free",
             static_cast<unsigned>(wifi.consoleLogins.load(std::memory_order_relaxed)),
             static_cast<unsigned>(wifi.consoleRefusals.load(std::memory_order_relaxed)),
             static_cast<unsigned>(wifi.pagesServed.load(std::memory_order_relaxed)),

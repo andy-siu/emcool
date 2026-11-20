@@ -293,6 +293,15 @@ int main() {
                      contains(shown.output, "ADMIN_PASSWORD     set (19 characters)") &&
                      contains(shown.output, "WIFI_SSID          garage"),
                  "show printed a password, or not the Wi-Fi settings:\n%s", shown.output.c_str());
+    // The console on port 23: on by default, off with TELNET_CONSOLE 0, and only at the restart.
+    EMCOOL_CHECK(Settings::load(wifiStorage).telnetConsole, "TELNET_CONSOLE is not on by default");
+    const Result consoleOff = run(wifiStorage, fresh, {"set", "TELNET_CONSOLE", "off"});
+    EMCOOL_CHECK(consoleOff.status == 0 && wifiStorage.values["telnet_console"] == "0" &&
+                     !Settings::load(wifiStorage).telnetConsole && Settings::load(wifiStorage).wifiEnabled() &&
+                     contains(consoleOff.output, "after `restart`"),
+                 "set TELNET_CONSOLE off:\n%s", consoleOff.output.c_str());
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"unset", "TELNET_CONSOLE"}).status == 0 && Settings::load(wifiStorage).telnetConsole,
+                 "unset TELNET_CONSOLE did not turn the console back on");
     EMCOOL_CHECK(run(wifiStorage, fresh, {"unset", "WIFI_SSID"}).status == 0 && !Settings::load(wifiStorage).wifiEnabled(),
                  "unset WIFI_SSID did not turn Wi-Fi off");
   }
@@ -321,7 +330,7 @@ int main() {
     EMCOOL_CHECK(schedule.decide(running, false, 210000).report, "no report 10 s after resuming");
   }
 
-  // The Wi-Fi console: the password first, then the same commands as the USB console.
+  // The telnet console: the password first, then the same commands as the USB console.
   {
     MemoryStorage remoteStorage;
     RuntimeSettings running(Settings::load(remoteStorage));
@@ -350,7 +359,7 @@ int main() {
     EMCOOL_CHECK(ran.size() == 2 && ran[0] == expectedSet &&
                      remoteStorage.values["wifi_ssid"] == "garage wifi" && contains(out, "WIFI_SSID saved") &&
                      contains(out, "\r\n") && contains(out, "WIFI_SSID          garage wifi"),
-                 "commands over the Wi-Fi console:\n%s", out.c_str());
+                 "commands over the telnet console:\n%s", out.c_str());
     out = send(std::string(RemoteConsole::kMaxLineBytes + 10, 'x') + "\n", 0, close);
     EMCOOL_CHECK(ran.size() == 2 && contains(out, "longer than"), "an overlong line ran:\n%s", out.c_str());
     out = send("exit\n", 0, close);

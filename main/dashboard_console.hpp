@@ -1,7 +1,7 @@
 #pragma once
 
 // The firmware's side of the dashboard's Settings → Bike console (ble_server/console_endpoints.hpp):
-// the status report, written by the decode task that owns its counters; the `network` report; what
+// the status report, written by the decode task that owns its counters; the `ipconfig` report; what
 // stops a restart (a moving bike, the bus in use); and the restart, a moment after the reply.
 
 #include <mutex>

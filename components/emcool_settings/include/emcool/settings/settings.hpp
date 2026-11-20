@@ -74,6 +74,8 @@ struct Settings {
   std::string wifiSsid;
   std::string wifiPassword;
   std::string adminPassword;
+  // The console on port 23, while Wi-Fi is on. Off leaves only the ride-log page.
+  bool telnetConsole = true;
   bool statusReport = true;
   std::uint32_t statusIntervalSeconds = 10;
 
@@ -110,7 +112,7 @@ class RuntimeSettings {
   // dashboard can tell that what it read has changed.
   std::uint32_t revision() const { return revision_.load(std::memory_order_relaxed); }
   void noteChange() { revision_.fetch_add(1, std::memory_order_relaxed); }
-  // Held while a command runs: the USB console, the Wi-Fi console and the dashboard each have a task.
+  // Held while a command runs: the USB console, the telnet console and the dashboard each have a task.
   std::mutex& commandMutex() { return commandMutex_; }
 
   // Bluetooth starts at boot when BLE_SECRET is set, and otherwise the moment a console sets it:

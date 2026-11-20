@@ -1,6 +1,6 @@
 #pragma once
 
-// The console's commands for the microSD card, which the USB console, the Wi-Fi console and the
+// The console's commands for the microSD card, which the USB console, the telnet console and the
 // dashboard's Bike console all run: dir (or ls), cd, pwd, type (or cat), mkdir, rmdir, rm, cp and
 // mv. Plain POSIX calls, which ESP-IDF maps onto FatFs, so the host checks run them on a folder of
 // the laptop's.

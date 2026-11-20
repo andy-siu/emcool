@@ -85,7 +85,7 @@ Memory: the OBD side is about 2 KB, mostly the ISO-TP reassembly buffer. It's al
 
 ## Manual CAN from the USB console
 
-Three commands on the USB serial console (`idf.py monitor`, or `make monitor`) let you drive the bus by hand. They are **registered on the USB console only** — the Wi-Fi console (port 23) and the dashboard's Bike console reject them, so nothing reachable over the network can put a frame on the bike's bus.
+Three commands on the USB serial console (`idf.py monitor`, or `make monitor`) let you drive the bus by hand. They are **registered on the USB console only** — the telnet console (port 23) and the dashboard's Bike console reject them, so nothing reachable over the network can put a frame on the bike's bus.
 
 | Command | What it does |
 | --- | --- |

@@ -133,7 +133,7 @@ int main() {
   r = run(usb, {"cat", "BIN.DAT"});
   EMCOOL_CHECK(r.status != 0 && contains(r.output, "isn't text"), "type binary: %s", r.output.c_str());
   {
-    CardShell small(card, gate, "Wi-Fi console", 300);
+    CardShell small(card, gate, "telnet console", 300);
     write(root / "BIG.TXT", std::string(2000, 'z'));
     r = run(small, {"type", "BIG.TXT"});
     EMCOOL_CHECK(r.status == 0 && contains(r.output, "[the first"), "type caps: %s", r.output.c_str());
@@ -282,7 +282,7 @@ int main() {
 
   // --- one console at a time
   {
-    CardShell wifi(card, gate, "Wi-Fi console", 64 * 1024);
+    CardShell wifi(card, gate, "telnet console", 64 * 1024);
     write(root / "COPYME.BIN", std::string(200000, 'c'));
     usb.setMaxOperationsPerStep(1);
     std::string out;

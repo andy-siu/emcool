@@ -17,7 +17,7 @@ Telemetry for an Energica electric motorcycle, on an ESP32-S3 plugged into its C
 - With **`SERVICE_MODE_ENABLED`** too, reads the VCU's calibration parameters, the lifetime battery statistics and the stored freeze frames, while the bike is parked.
 - With **`SERVICE_WRITE_ENABLED`** as well, writes allowlisted VCU parameters, sets the service point, syncs the bike's clock, clears trouble codes, commands or stops the charge current, sets the charge limit and resets the VCU. This is the one switch that lets a web page change the bike, so it's off by default.
 - With **`CHARGE_AUTO_ENABLED`** on top, runs the automatic charge-current controller. During a DC fast charge it eases the current to hold the pack near 54 °C, on a 60 s timer.
-- With **`WIFI_SSID`** and **`ADMIN_PASSWORD`**, joins that Wi-Fi network. It serves the console on port 23 and the ride log as a web page on port 80.
+- With **`WIFI_SSID`** and **`ADMIN_PASSWORD`**, joins that Wi-Fi network. It serves the telnet console on port 23 (unless `TELNET_CONSOLE` is `0`) and the ride log as a web page on port 80.
 
 **Not built:** fan control, the coolant-temperature probes, and a direct link to the Connectivity Hub.
 
@@ -124,7 +124,8 @@ emcool> restart
 | `CHARGE_AUTO_ENABLED` | `0` | `1` for the automatic charge-current controller. It commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `WIFI_SSID` | not set | The Wi-Fi network to join, 2.4 GHz. With `ADMIN_PASSWORD` set too, the bike serves the console on port 23 and the ride log on port 80. See [Wi-Fi](#wi-fi). |
 | `WIFI_PASSWORD` | not set | That network's password, 8–63 characters. Unset for an open network. |
-| `ADMIN_PASSWORD` | not set | What the Wi-Fi console and the ride-log page ask for, 8–128 characters. Unset keeps Wi-Fi off. |
+| `ADMIN_PASSWORD` | not set | What the telnet console and the ride-log page ask for, 8–128 characters. Unset keeps Wi-Fi off. |
+| `TELNET_CONSOLE` | `1` | Whether the bike serves the telnet console on port 23 while Wi-Fi is on. `0` closes the port and keeps the ride-log page. |
 | `STATUS_REPORT` | `1` | Whether the console prints the periodic status report. Applies at once. |
 | `STATUS_INTERVAL_S` | `10` | Seconds between status reports, 5–3600. Applies at once. |
 
@@ -136,7 +137,7 @@ The console's commands, and its [card commands](docs/setup.md#the-card) (`dir`, 
 | `set NAME VALUE` | Saves a setting. Quote values with spaces. |
 | `unset NAME` | Puts a setting back to its default. |
 | `status [on \| off \| every SECONDS]` | Prints a status report now, or changes how often it prints. |
-| `network` | The Wi-Fi network joined and its signal, and the address, netmask, gateway and DNS server it handed out. |
+| `ipconfig` | The Wi-Fi interface: the SSID and signal, the address, network, netmask, gateway and DNS server it handed out, and the MAC address. |
 | `restart` | Reboots, so saved settings take effect. |
 
 How the console behaves:
@@ -224,7 +225,7 @@ With `WIFI_SSID` and `ADMIN_PASSWORD` set, the bike joins that network, such as 
 - **The console** on port 23: `nc <bike> 23`, with the same commands as the USB console. The log follows it.
 - **The ride log** at `http://<bike>/`: every boot and part, to download in any browser, or with `curl -u x:'password' -OJ 'http://<bike>/dl?mb=256'`.
 
-`network` on either console, the boot log and the status line all give the address. ⚠️ It's all plain text on the network, the password included, so use it on a network you control. [`docs/wifi.md`](docs/wifi.md) has the details, the costs and what's verified.
+`ipconfig` on any console, the boot log and the status line all give the address. ⚠️ It's all plain text on the network, the password included, so use it on a network you control. [`docs/wifi.md`](docs/wifi.md) has the details, the costs and what's verified.
 
 ## Phone dashboard (Bluetooth)
 
@@ -266,7 +267,7 @@ Most of emcool's logic is checked against a **reference implementation**: an ear
   - validation and secrets never being printed
   - restart notices and the status report's schedule
   - Wi-Fi staying off without an admin password
-  - the Wi-Fi console's login, lockout, telnet handling and line editing
+  - the telnet console's login, lockout, telnet handling and line editing
   - HTTP password decoding
 - **The signal store and the clock gate behave.** That covers the deadband, non-finite readings and unknown keys. The clock gate must give the reference's verdict on 88,000 randomized offers, including cold boots at 1970, drift, outliers and week-number rollovers.
 - **The ride log round-trips.** All the decoded frames go through the whole C++ pipeline onto disk, and are read back exactly. Simulated power cuts and card damage lose only the records they touch. The result imports into `rides.db`. It runs again on a full card, simulated and then as a real FAT image on macOS, and exactly the newest readings must survive.
@@ -294,7 +295,7 @@ Most of emcool's logic is checked against a **reference implementation**: an ear
 | `components/emcool_vcu` | Service mode: the KWP2000 client, sweeps and probes, the service gate, the 29 parameter tables (generated), the snapshots on the card, the write engine and the automatic charge-current controller. Transport-free. |
 | `components/emcool_async` | An event loop with Node's ordering rules, and C++20 coroutines on it. |
 | `components/emcool_text` | Allocation-free text and JSON building, a window at a time for bodies bigger than any buffer. |
-| `components/emcool_settings` | The per-bike settings, the console commands, and the Wi-Fi console's login and line handling. |
+| `components/emcool_settings` | The per-bike settings, the console commands, and the telnet console's login and line handling. |
 | `components/emcool_log` | Logging through ESP_LOG on the device and stderr on the laptop. |
 | `main` | Firmware: CAN receive and transmit, the decode, diagnostics, ride-log and Bluetooth tasks, the microSD mount, NimBLE, Wi-Fi and its servers, NVS settings and the serial console, the clock step and the status report. |
 | `dashboard` | The phone dashboard: a static web app published to GitHub Pages. |

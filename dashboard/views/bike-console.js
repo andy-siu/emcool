@@ -2,7 +2,7 @@
 // Settings → Bike console: emcool's serial console over the Bluetooth link. Every setting with
 // its saved value and the value in force, a form per setting, the status report the serial port
 // prints, and a command line for anything else. It runs the console's own commands (show, set,
-// unset, status, network, restart) through /console, so a change here is a change at `emcool>`.
+// unset, status, ipconfig, restart) through /console, so a change here is a change at `emcool>`.
 // See docs/setup.md.
 import van from "../vendor/van-1.6.1.js";
 import { request } from "../lib/transport.js";
@@ -166,7 +166,7 @@ export function BikeConsole() {
   return div(
     SettingsCard(
       "The bike's console, over Bluetooth",
-      "Runs the serial console's commands: show, set NAME VALUE, unset NAME, status, network and restart. A change here is saved on the bike exactly as at the emcool> prompt. Most settings take effect after Restart; the status report's apply at once. Passwords are never sent back, only whether they are set.",
+      "Runs the serial console's commands: show, set NAME VALUE, unset NAME, status, ipconfig and restart. A change here is saved on the bike exactly as at the emcool> prompt. Most settings take effect after Restart; the status report's apply at once. Passwords are never sent back, only whether they are set.",
       () =>
         div(
           { class: "settings-note", role: "status" },
@@ -186,7 +186,7 @@ export function BikeConsole() {
 function StatusCard() {
   return SettingsCard(
     "Status",
-    "The status report the serial console prints, read now over the window since the last report, and the network report.",
+    "The status report the serial console prints, read now over the window since the last report, and the ipconfig report.",
     div(
       { class: "settings-actions" },
       button(
@@ -219,7 +219,7 @@ function RestartCard(current) {
     keyRemoved
       ? div(
           { class: "settings-note" },
-          "BLE_SECRET is unset, so after a restart Bluetooth is off and this page could not reconnect. Restart from the USB or Wi-Fi console."
+          "BLE_SECRET is unset, so after a restart Bluetooth is off and this page could not reconnect. Restart from the USB or telnet console."
         )
       : div(),
     keyChanging
@@ -494,7 +494,7 @@ function Editor(setting, draft) {
 function CommandCard() {
   return SettingsCard(
     "Command line",
-    "Type a command as at the emcool> prompt: help, show, status, network, set NAME VALUE, unset NAME, and the card's dir, cd, type, mkdir, rm, cp and mv. Quote a value with spaces.",
+    "Type a command as at the emcool> prompt: help, show, status, ipconfig, set NAME VALUE, unset NAME, and the card's dir, cd, type, mkdir, rm, cp and mv. Quote a value with spaces.",
     div(
       { class: "settings-row" },
       div(
