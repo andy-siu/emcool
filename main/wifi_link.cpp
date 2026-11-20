@@ -16,6 +16,7 @@
 #include "firmware_update.hpp"
 #include "emcool/log.hpp"
 #include "emcool/settings/remote_console.hpp"
+#include "emcool/text/help.hpp"
 #include "esp_console.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
@@ -147,12 +148,27 @@ void runCommand(int argumentCount, char** arguments, std::string& output) {
     return;
   }
   if (command == "help") {
-    output += "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | ifconfig | restart | exit\n"
-              "`show` lists every setting and what it does is in the USB console's `help`.\n"
-              "update FILE | update status\n"
-              "The card: ";
-    output += files::CardShell::summary();
-    output += "\n";
+    static constexpr text::HelpLine kHelp[] = {
+        {"", "Settings:"},
+        {"show", "list every setting and its value"},
+        {"set NAME VALUE", "save a setting; quote a value with spaces"},
+        {"unset NAME", "put a setting back to its default"},
+        {"status", "print the status report now"},
+        {"status on | off", "turn the periodic status report on or off"},
+        {"status every SECONDS", "how often it prints (5-3600)"},
+        {"", "Most settings take effect after `restart`. What each one does is in the USB\n"
+             "console's `help`, and in docs/setup.md."},
+        {"", ""},
+        {"", "The bike:"},
+        {"ifconfig", "the Wi-Fi network, address and MAC address"},
+        {"update FILE", "install firmware from the card: update /emcool.bin"},
+        {"update status", "which firmware runs now, and which boots next"},
+        {"restart", "restart, so saved settings take effect"},
+        {"exit", "leave this console (also quit, logout)"},
+        {"", ""},
+    };
+    text::appendHelp(output, kHelp);
+    text::appendHelp(output, files::CardShell::help());
     return;
   }
   if (command == "ifconfig") {

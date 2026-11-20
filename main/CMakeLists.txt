@@ -16,6 +16,7 @@ idf_component_register(
     emcool_ride_log
     emcool_settings
     emcool_signals
+    emcool_text
     emcool_vcu
     app_update
     esp_app_format

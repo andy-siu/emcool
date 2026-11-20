@@ -7,6 +7,7 @@
 #include "emcool/log.hpp"
 #include "emcool/settings/dashboard_reply.hpp"
 #include "emcool/settings/remote_console.hpp"
+#include "emcool/text/help.hpp"
 
 namespace emcool::ble_server {
 
@@ -47,11 +48,25 @@ ConsoleAnswer reply(int status, bool ok, const std::string& output, std::uint32_
 }
 
 std::string helpText() {
-  return std::string("show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | ifconfig | restart\n"
-                     "Quote a value with spaces: set WIFI_SSID \"garage wifi\". Most settings take effect after "
-                     "restart; the status report's apply at once.\n"
-                     "The card: ") +
-         std::string(files::CardShell::summary()) + "\n";
+  static constexpr text::HelpLine kHelp[] = {
+      {"", "Settings:"},
+      {"show", "list every setting and its value"},
+      {"set NAME VALUE", "save a setting; quote a value with spaces"},
+      {"unset NAME", "put a setting back to its default"},
+      {"status", "print the status report now"},
+      {"status on | off", "turn the periodic status report on or off"},
+      {"status every SECONDS", "how often it prints (5-3600)"},
+      {"", "Most settings take effect after Restart; the status report's apply at once."},
+      {"", ""},
+      {"", "The bike:"},
+      {"ifconfig", "the Wi-Fi network, address and MAC address"},
+      {"restart", "use Restart above: it asks twice"},
+      {"", ""},
+  };
+  std::string output;
+  text::appendHelp(output, kHelp);
+  text::appendHelp(output, files::CardShell::help());
+  return output;
 }
 
 }  // namespace
