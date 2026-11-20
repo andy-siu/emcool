@@ -144,11 +144,13 @@ The S3 build has the same features as the ESP32 one. What differs:
 
 ### Updating without the cable
 
-After the first USB flash, new firmware can go on over the air: from the dashboard over Bluetooth, from the microSD card, or over Wi-Fi. All three write the new image into the spare app slot while the bike keeps running, check it, and boot it at the next `restart`.
+After the first USB flash, new firmware can go on over the air: from the dashboard over Bluetooth, from the microSD card, or over Wi-Fi. All of them write the new image into the spare app slot while the bike keeps running, check it, and boot it at the next restart (which the card's `emcool.bin` does on its own).
 
 **From the dashboard:** open **Settings → emcool → Firmware**, choose `build/<chip>/emcool.bin` (on a phone, AirDrop or save it to Files first), tap **Send to bike** twice, then **Restart** once it says *Written and checked*. It takes a few minutes; keep the phone near the bike. See [`docs/ble.md`](docs/ble.md) for how it goes over the link.
 
-**From the card or Wi-Fi:**
+**From the card, on its own:** copy `build/esp32s3/emcool.bin` onto the card's top folder as `emcool.bin` and put the card back in. Within about 10 s of the card being mounted (and once the bike has been up 30 s), emcool installs it, removes it from the card, and restarts into it as soon as the bike is parked with the bus free. The log says each step. A file it won't install (another chip's build, a corrupt copy) stays on the card and is logged; so does the build that was rolled back last time, so a bad build isn't installed again on every boot. If the file is the firmware already running, it's just removed.
+
+**From a console or Wi-Fi:**
 
 ```
 emcool> update /emcool.bin      after copying build/<chip>/emcool.bin onto the card

@@ -227,6 +227,8 @@ extern "C" void app_main() {
   static emcool::DashboardConsoleHost consoleHost(statusText, store, storeMutex, *diagnostics);
   // An update waits for what a restart waits for: flash writes pause the CAN interrupt.
   emcool::setUpdateBlockers([] { return consoleHost.restartBlockers(); });
+  // A /emcool.bin on the card installs itself, is removed, and is restarted into.
+  if (download != nullptr) emcool::startCardUpdateWatch(bikeCard, emcool::cardFiles().gate);
   static emcool::files::CardShell bikeConsoleCard(bikeCard, emcool::cardFiles().gate, "Bike console",
                                                  emcool::ble_server::ConsoleEndpoints::kMaxOutputBytes);
   static emcool::ble_server::ConsoleEndpoints consoleEndpoints(settingsStorage, runtimeSettings, consoleHost,

@@ -8,11 +8,14 @@
 #include <cinttypes>
 #include <cstring>
 #include <memory>
+#include <optional>
 
 #include "emcool/log.hpp"
 #include "esp_app_desc.h"
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "sdkconfig.h"
 
 namespace emcool {
@@ -199,6 +202,93 @@ void startFirmwareTrial() {
   }
 }
 
+CardInstall installFromCard(files::Card& card, const std::string& path, const std::function<void(std::string&)>& flush,
+                            std::string& problem) {
+  const std::string full = card.mountPoint() + path;
+  std::uint32_t generation = 0;
+  std::size_t bytes = 0;
+  int fd = -1;
+  int error = 0;
+  {
+    const std::lock_guard<std::mutex> lock(card.lock());
+    const files::CardState state = card.state();
+    if (!state.mounted) {
+      error = ENODEV;
+    } else {
+      generation = state.generation;
+      struct stat info = {};
+      if (::stat(full.c_str(), &info) != 0) {
+        error = errno;
+      } else if (S_ISDIR(info.st_mode)) {
+        error = EISDIR;
+      } else {
+        bytes = static_cast<std::size_t>(info.st_size);
+        fd = ::open(full.c_str(), O_RDONLY);
+        if (fd < 0) error = errno;
+      }
+    }
+  }
+  if (error != 0) {
+    problem = path + ": " +
+              (error == ENODEV ? "the card isn't mounted" : error == ENOENT ? "not found" : std::strerror(error));
+    return error == ENODEV || error == ENOENT ? CardInstall::kNoFile : CardInstall::kUnreadable;
+  }
+  bool cardGone = false;
+  const auto closeFile = [&] {
+    if (cardGone) return;  // the descriptor went with the card: forgotten, never closed
+    const std::lock_guard<std::mutex> lock(card.lock());
+    if (card.state().generation == generation) ::close(fd);
+  };
+
+  update::Updater& updater = firmwareUpdater();
+  if (const std::string refusal = updateRefusal(); !refusal.empty()) {
+    closeFile();
+    problem = "not now: " + refusal;
+    return CardInstall::kNotNow;
+  }
+  if (updater.state() == update::Updater::State::kWriting) {
+    closeFile();
+    problem = "an update from " + updater.source() + " is already running";
+    return CardInstall::kNotNow;
+  }
+  if (!updater.start(bytes, "the card's " + path, problem)) {
+    closeFile();
+    return CardInstall::kNotStarted;
+  }
+  std::string out = "updating from " + path + " (" + std::to_string(bytes) + " bytes)\n";
+  flush(out);
+  const auto buffer = std::make_unique<std::uint8_t[]>(kReadBytes);
+  std::size_t shown = 0;
+  while (updater.state() == update::Updater::State::kWriting && updater.received() < bytes) {
+    ssize_t got = 0;
+    {
+      const std::lock_guard<std::mutex> lock(card.lock());
+      const files::CardState state = card.state();
+      if (!state.mounted || state.generation != generation) {
+        cardGone = true;
+        break;
+      }
+      got = ::read(fd, buffer.get(), kReadBytes);
+    }
+    if (got <= 0) break;
+    // Written outside the card's lock: a flash write can take a while, and the ride log needs the card.
+    if (!updater.feed(std::span<const std::uint8_t>(buffer.get(), static_cast<std::size_t>(got)))) break;
+    const std::size_t tenth = updater.received() * 10 / bytes;
+    if (tenth > shown) {
+      shown = tenth;
+      out = "  " + std::to_string(tenth * 10) + "%\n";
+      flush(out);
+    }
+  }
+  closeFile();
+  if (cardGone) updater.cancel("the card went away mid-update");
+  if (updater.state() != update::Updater::State::kWriting || !updater.finish()) {
+    problem = updater.problem();
+    return CardInstall::kFailed;
+  }
+  return CardInstall::kInstalled;
+}
+
 int runUpdateCommand(int argumentCount, const char* const* arguments, files::Card* card,
                      const std::function<void(std::string&)>& flush) {
   std::string out;
@@ -221,92 +311,238 @@ int runUpdateCommand(int argumentCount, const char* const* arguments, files::Car
     return 1;
   }
   if (path.empty() || path.front() != '/') path = "/" + path;
-  const std::string full = card->mountPoint() + path;
 
-  std::uint32_t generation = 0;
-  std::size_t bytes = 0;
-  int fd = -1;
-  int error = 0;
-  {
-    const std::lock_guard<std::mutex> lock(card->lock());
-    const files::CardState state = card->state();
-    if (!state.mounted) {
-      error = ENODEV;
-    } else {
-      generation = state.generation;
-      struct stat info = {};
-      if (::stat(full.c_str(), &info) != 0) {
-        error = errno;
-      } else if (S_ISDIR(info.st_mode)) {
-        error = EISDIR;
-      } else {
-        bytes = static_cast<std::size_t>(info.st_size);
-        fd = ::open(full.c_str(), O_RDONLY);
-        if (fd < 0) error = errno;
-      }
-    }
-  }
-  if (error != 0) {
-    out = path + ": " + (error == ENODEV ? "the card isn't mounted" : error == ENOENT ? "not found" : std::strerror(error)) +
-          "\n";
-    flush(out);
-    return 1;
-  }
-
-  update::Updater& updater = firmwareUpdater();
-  std::string why = updateRefusal();
-  if (!why.empty()) why = "not now: " + why;
-  if (!why.empty() || !updater.start(bytes, "the card's " + path, why)) {
-    {
-      const std::lock_guard<std::mutex> lock(card->lock());
-      if (card->state().generation == generation) ::close(fd);
-    }
-    out = "not updating: " + why + "\n";
-    flush(out);
-    return 1;
-  }
-  out = "updating from " + path + " (" + std::to_string(bytes) + " bytes)\n";
-  flush(out);
-  const auto buffer = std::make_unique<std::uint8_t[]>(kReadBytes);
-  std::size_t shown = 0;
-  bool cardGone = false;
-  while (updater.state() == update::Updater::State::kWriting && updater.received() < bytes) {
-    ssize_t got = 0;
-    {
-      const std::lock_guard<std::mutex> lock(card->lock());
-      const files::CardState state = card->state();
-      if (!state.mounted || state.generation != generation) {
-        cardGone = true;  // the descriptor went with the card: forgotten, never closed
-        break;
-      }
-      got = ::read(fd, buffer.get(), kReadBytes);
-    }
-    if (got <= 0) break;
-    // Written outside the card's lock: a flash write can take a while, and the ride log needs the card.
-    if (!updater.feed(std::span<const std::uint8_t>(buffer.get(), static_cast<std::size_t>(got)))) break;
-    const std::size_t tenth = updater.received() * 10 / bytes;
-    if (tenth > shown) {
-      shown = tenth;
-      out = "  " + std::to_string(tenth * 10) + "%\n";
+  std::string problem;
+  switch (installFromCard(*card, path, flush, problem)) {
+    case CardInstall::kInstalled:
+      break;
+    case CardInstall::kNoFile:
+    case CardInstall::kUnreadable:
+      out = problem + "\n";
       flush(out);
-    }
+      return 1;
+    case CardInstall::kNotNow:
+    case CardInstall::kNotStarted:
+      out = "not updating: " + problem + "\n";
+      flush(out);
+      return 1;
+    case CardInstall::kFailed:
+      out = "not updated: " + problem + "\nThe running firmware is unchanged.\n";
+      flush(out);
+      return 1;
   }
-  if (!cardGone) {
-    const std::lock_guard<std::mutex> lock(card->lock());
-    if (card->state().generation == generation) ::close(fd);
-  }
-  if (cardGone) updater.cancel("the card went away mid-update");
-  const bool done = updater.state() == update::Updater::State::kWriting && updater.finish();
-  if (!done) {
-    out = "not updated: " + updater.problem() + "\nThe running firmware is unchanged.\n";
-    flush(out);
-    return 1;
-  }
-  out = "written and checked: " + update::describe(*updater.incoming()) +
+  out = "written and checked: " + update::describe(*firmwareUpdater().incoming()) +
         "\n`restart` to run it. It boots on trial: let it run 30 s, since a crash or a restart before then goes back "
         "to the firmware running now.\n";
   flush(out);
   return 0;
+}
+
+namespace {
+
+constexpr std::int64_t kCardWatchMs = 10 * 1000;
+constexpr std::uint32_t kCardWatchStackBytes = 6144;
+constexpr UBaseType_t kCardWatchPriority = 2;
+constexpr const char* kCardWatchConsole = "card's firmware update";
+
+struct CardWatch {
+  files::Card& card;
+  files::CardShellGate& gate;
+};
+
+std::int64_t uptimeMs() { return esp_timer_get_time() / 1000; }
+
+bool runningOnTrial() {
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+  return running != nullptr && esp_ota_get_state_partition(running, &state) == ESP_OK &&
+         state == ESP_OTA_IMG_PENDING_VERIFY;
+}
+
+// The image's app description, where the build puts it: after the 24-byte image header and the
+// first segment's 8-byte header.
+constexpr std::size_t kDescriptionAt = 24 + 8;
+
+// What the card's file is to this board, from its app description's ELF hash.
+enum class Known : std::uint8_t { kNew, kRunning, kWaiting, kRolledBack, kUnreadable };
+
+bool sameBuild(const esp_app_desc_t& file, const esp_partition_t* partition) {
+  esp_app_desc_t other = {};
+  return partition != nullptr && esp_ota_get_partition_description(partition, &other) == ESP_OK &&
+         std::memcmp(file.app_elf_sha256, other.app_elf_sha256, sizeof(file.app_elf_sha256)) == 0;
+}
+
+// Under the card's lock, on the mount `generation`. Missing or short: kNew, for installFromCard to say why.
+Known whatIs(files::Card& card, std::uint32_t generation) {
+  esp_app_desc_t file = {};
+  {
+    const std::lock_guard<std::mutex> lock(card.lock());
+    const files::CardState state = card.state();
+    if (!state.mounted || state.generation != generation) return Known::kUnreadable;
+    const int fd = ::open((card.mountPoint() + kCardUpdateFile).c_str(), O_RDONLY);
+    if (fd < 0) return Known::kNew;
+    const bool read = ::lseek(fd, kDescriptionAt, SEEK_SET) == static_cast<off_t>(kDescriptionAt) &&
+                      ::read(fd, &file, sizeof(file)) == static_cast<ssize_t>(sizeof(file));
+    ::close(fd);
+    if (!read || file.magic_word != ESP_APP_DESC_MAGIC_WORD) return Known::kNew;
+  }
+  const esp_app_desc_t* running = esp_app_get_description();
+  if (std::memcmp(file.app_elf_sha256, running->app_elf_sha256, sizeof(file.app_elf_sha256)) == 0) {
+    return Known::kRunning;
+  }
+  const esp_partition_t* boot = esp_ota_get_boot_partition();
+  if (boot != nullptr && boot != esp_ota_get_running_partition() && sameBuild(file, boot)) return Known::kWaiting;
+  if (sameBuild(file, esp_ota_get_last_invalid_partition())) return Known::kRolledBack;
+  return Known::kNew;
+}
+
+// Removes the card's /emcool.bin once it's installed, so the next boot doesn't install it again: on
+// the card it was read from, under the lock. Empty once removed, else why not.
+std::string removeInstalledFile(files::Card& card, std::uint32_t generation) {
+  const std::lock_guard<std::mutex> lock(card.lock());
+  const files::CardState state = card.state();
+  if (!state.mounted || state.generation != generation) return "the card went away";
+  if (::unlink((card.mountPoint() + kCardUpdateFile).c_str()) != 0) return std::strerror(errno);
+  return {};
+}
+
+void cardWatchTask(void* argument) {
+  CardWatch& watch = *static_cast<CardWatch*>(argument);
+  // The mount whose /emcool.bin is left alone (refused, rolled back, or the running firmware that
+  // couldn't be removed): a card put back in is a new mount, and is looked at again.
+  std::optional<std::uint32_t> settled;
+  std::string lastWait;
+  bool restarting = false;
+  const auto waiting = [&](const std::string& why, const char* format) {
+    if (why != lastWait) logInfo(kTag, format, kCardUpdateFile, why.c_str());
+    lastWait = why;
+  };
+
+  while (true) {
+    vTaskDelay(pdMS_TO_TICKS(kCardWatchMs));
+
+    if (restarting) {
+      const std::string refusal = updateRefusal();
+      if (!refusal.empty()) {
+        waiting(refusal, "the restart into %s's firmware waits: %s");
+        continue;
+      }
+      logWarning(kTag, "restarting into the firmware from the card");
+      vTaskDelay(pdMS_TO_TICKS(500));  // for the log line to go out
+      esp_restart();
+    }
+
+    // A look, without the consoles' gate, so a console's command is never refused for it.
+    files::CardState state;
+    bool present = false;
+    {
+      const std::lock_guard<std::mutex> lock(watch.card.lock());
+      state = watch.card.state();
+      struct stat info = {};
+      present = state.mounted && ::stat((watch.card.mountPoint() + kCardUpdateFile).c_str(), &info) == 0;
+    }
+    if (!present || settled == state.generation) continue;
+    // Past startup, so the readings that say the bike is moving have arrived; and not while this
+    // image is on trial, since the spare slot can't be written until it's kept.
+    if (uptimeMs() < kTrialMs || runningOnTrial()) continue;
+
+    // The consoles' gate for the whole install: no console copies over the file, moves it or
+    // removes it while it's read (FatFs here keeps no record of open files), and one copying it
+    // onto the card finishes first.
+    std::string holder;
+    if (!watch.gate.take(kCardWatchConsole, holder)) {
+      waiting("the " + holder + " is changing the card", "%s may be on the card; looking waits: %s");
+      continue;
+    }
+    // Already installed (`update /emcool.bin` on a console leaves the file; so does a removal that
+    // failed): removed, and nothing written. Waiting for the next boot: left for the restart. Rolled
+    // back once already: left alone, or it would install, fail its trial and roll back on every boot.
+    switch (whatIs(watch.card, state.generation)) {
+      case Known::kNew:
+        break;
+      case Known::kRunning: {
+        const std::string removal = removeInstalledFile(watch.card, state.generation);
+        watch.gate.give(kCardWatchConsole);
+        if (removal.empty()) {
+          watch.card.changed(false);
+          logInfo(kTag, "%s on the card is the firmware running now; removed it", kCardUpdateFile);
+        } else {
+          logWarning(kTag, "%s on the card is the firmware running now, but couldn't be removed: %s", kCardUpdateFile,
+                     removal.c_str());
+          settled = state.generation;
+        }
+        continue;
+      }
+      case Known::kWaiting:
+        watch.gate.give(kCardWatchConsole);
+        waiting("it's already written, and runs at the next `restart`", "%s is on the card: %s");
+        continue;
+      case Known::kRolledBack:
+        watch.gate.give(kCardWatchConsole);
+        logWarning(kTag, "%s on the card is the firmware that was rolled back (it didn't run its first 30 s); not "
+                         "installing it again. Remove it, or put a new build there",
+                   kCardUpdateFile);
+        settled = state.generation;
+        continue;
+      case Known::kUnreadable:
+        watch.gate.give(kCardWatchConsole);
+        continue;
+    }
+
+    std::string problem;
+    const CardInstall result = installFromCard(
+        watch.card, kCardUpdateFile,
+        [](std::string& piece) {
+          while (!piece.empty() && piece.back() == '\n') piece.pop_back();
+          if (!piece.empty()) logInfo(kTag, "%s", piece.c_str());
+          piece.clear();
+        },
+        problem);
+    std::string removal;
+    if (result == CardInstall::kInstalled) removal = removeInstalledFile(watch.card, state.generation);
+    watch.gate.give(kCardWatchConsole);
+
+    switch (result) {
+      case CardInstall::kNoFile:  // gone since the look
+        break;
+      case CardInstall::kNotNow:
+        waiting(problem, "%s is on the card; installing it waits: %s");
+        break;
+      case CardInstall::kUnreadable:
+      case CardInstall::kNotStarted:
+      case CardInstall::kFailed:
+        // Left on the card for the laptop to look at; tried again when the card is next mounted.
+        logWarning(kTag, "%s on the card isn't installed: %s. The running firmware is unchanged, and the file stays on "
+                         "the card",
+                   kCardUpdateFile, problem.c_str());
+        settled = state.generation;
+        break;
+      case CardInstall::kInstalled:
+        watch.card.changed(false);
+        lastWait.clear();
+        // A file left behind isn't installed again: once the new firmware runs, it's the one running.
+        if (removal.empty()) {
+          logWarning(kTag, "installed %s from the card and removed it: %s. Restarting into it once the bike is parked",
+                     kCardUpdateFile, update::describe(*firmwareUpdater().incoming()).c_str());
+        } else {
+          logWarning(kTag, "installed %s from the card: %s, but couldn't remove it (%s). Restarting into it once the "
+                           "bike is parked",
+                     kCardUpdateFile, update::describe(*firmwareUpdater().incoming()).c_str(), removal.c_str());
+        }
+        restarting = true;
+        break;
+    }
+  }
+}
+
+}  // namespace
+
+void startCardUpdateWatch(files::Card& card, files::CardShellGate& gate) {
+  static CardWatch watch{card, gate};
+  if (xTaskCreatePinnedToCore(cardWatchTask, "card-update", kCardWatchStackBytes, &watch, kCardWatchPriority, nullptr,
+                              0) != pdPASS) {
+    logError(kTag, "could not create the card's firmware-update task; `update %s` still works", kCardUpdateFile);
+  }
 }
 
 }  // namespace emcool
