@@ -39,8 +39,8 @@ export const sheetOpen = van.state(false);
 export function openSheet() {
   sheetOpen.val = true;
   // ⚠️ Re-opening the sheet must never find a half-confirmed Update waiting for its second
-  // tap. Spelled here rather than left to refreshServiceMode()'s disarm: the two controls
-  // in ./pi-actions.js are this file's to reset, not another module's to reset for it.
+  // tap. Spelled here rather than left to refreshServiceMode()'s disarm: the sheet's own
+  // controls are this file's to reset, not another module's to reset for it.
   // scripts/check-arming.ts asserts this line, and reads this file only because of it.
   armed.val = "";
   // Same rule, same reason: a section this sheet expanded stays expanded across opens

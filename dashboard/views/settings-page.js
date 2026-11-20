@@ -17,7 +17,6 @@ import { SettingsRecovery } from "./settings-recovery.js";
 import { SettingsRestart } from "./settings-restart.js";
 import { DashboardBluetooth } from "./settings-bluetooth.js";
 import { MotorcycleConnection } from "./settings-hub.js";
-import { CanRestartButton } from "./pi-actions.js";
 import { FirmwareUpdate } from "./firmware-update.js";
 import { ScreenGeometry } from "./screen-geometry.js";
 import { BikeConsole } from "./bike-console.js";
@@ -157,10 +156,9 @@ function SettingsContent(section) {
         DashboardBluetooth(),
         MotorcycleConnection(),
         SettingsCard(
-          "Bike data / CAN adapter",
-          "No recognised traffic may mean the bike is asleep, an unplugged USB adapter or wrong wiring. Check those first. A bus restart closes CAN sockets; restart emcool afterward if readings remain unavailable.",
-          Readiness("can"),
-          CanRestartButton()
+          "Bike data / CAN bus",
+          "No recognised traffic may mean the bike is asleep or the CAN wiring is wrong. Check those first. emcool recovers from a bus-off by itself; restart emcool if readings stay unavailable.",
+          Readiness("can")
         ),
         AccessExplanation()
       );

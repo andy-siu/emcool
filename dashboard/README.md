@@ -11,7 +11,7 @@ It is plain static files, served over HTTPS (Web Bluetooth needs a secure contex
 
 Bluetooth opens only from the exact origins in [`lib/hosted-origin.js`](lib/hosted-origin.js), and from `localhost` with `?transport=ble`. Anywhere else, `andy-siu.github.io` included, the page says *"Bluetooth needs its own address"*. The key is kept in the origin's `localStorage`, and a shared origin would let another site read it.
 
-There is no server component here, and the ESP32 serves nothing over HTTP: the bike link is Bluetooth only. The pages fetch the bike's endpoints (`/status`, `/settings`, `/vcu-read`, `/vcu-write`, `/charge-auto`, `/firmware`, …) by tunnelling HTTP-shaped requests over the link, which the firmware answers. Endpoints emcool does not serve (`/update`, `/can-restart`, the hub scan) get a 404 or a refusal saying why.
+There is no server component here, and the ESP32 serves nothing over HTTP: the bike link is Bluetooth only. The pages fetch the bike's endpoints (`/status`, `/settings`, `/vcu-read`, `/vcu-write`, `/charge-auto`, `/firmware`, …) by tunnelling HTTP-shaped requests over the link, which the firmware answers. Endpoints emcool does not serve (`/update`, the hub scan) get a 404 or a refusal saying why.
 
 ## Connecting
 

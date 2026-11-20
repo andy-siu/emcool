@@ -109,7 +109,7 @@ The key lives in NVS, not in the firmware image or the build directory. The cons
   - **How long:** about 940 pieces for a 1.9 MB image. Real throughput on this board hasn't been measured.
   - **After `finish`:** the new firmware runs after a `restart` (the panel's Restart sends the console's), on trial for 30 s, as [README](../README.md#updating-without-the-cable) explains.
   - ⚠️ **Only the Bluetooth key protects it.** The image isn't signed, so anyone holding the key can install firmware.
-- **Everything else** answers 404, with a body saying the endpoint isn't on emcool yet. That covers fan control, `/update`, `/can-restart`, `/recording/flush` and `/waypoint`. The dashboard shows the error where it would show the result.
+- **Everything else** answers 404, with a body saying the endpoint isn't on emcool yet. That covers fan control, `/update`, `/recording/flush` and `/waypoint`. The dashboard shows the error where it would show the result.
 
 ## How the server is built
 

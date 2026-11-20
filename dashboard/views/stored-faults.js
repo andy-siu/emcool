@@ -100,7 +100,7 @@ function describeList(list) {
       return list.truncated ? `${list.codes.length} of ${list.declaredCount} — cut short` : `${list.codes.length}`;
     case "no-response":
       return "no response";
-    // "we never asked", not "the bike did not answer" — a dead can0 socket must not
+    // "we never asked", not "the bike did not answer" — a request that never reached the bus must not
     // be reported as the VCU declining.
     case "not-asked":
       return "could not ask";
