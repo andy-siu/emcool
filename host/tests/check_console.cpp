@@ -4,6 +4,7 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -221,9 +222,27 @@ int main() {
                    !contains(run.output, kKey) && !contains(run.output, "a long admin phrase"),
                "show:\n%s", run.output.c_str());
   run = console.post("help", std::nullopt);
-  EMCOOL_CHECK(run.ok && contains(run.output, "set NAME VALUE") && contains(run.output, "ipconfig"), "help: %s", run.body.c_str());
-  run = console.post("ipconfig", std::nullopt);
-  EMCOOL_CHECK(run.ok && run.output == "wifi: off\n", "ipconfig: %s", run.body.c_str());
+  EMCOOL_CHECK(run.ok && contains(run.output, "set NAME VALUE") && contains(run.output, "ifconfig"), "help: %s", run.body.c_str());
+  {
+    // One command per line, in two columns, each line fitting an 80-column terminal.
+    std::size_t lines = 0;
+    std::size_t widest = 0;
+    std::size_t start = 0;
+    while (start < run.output.size()) {
+      const std::size_t end = run.output.find('\n', start);
+      const std::size_t stop = end == std::string::npos ? run.output.size() : end;
+      widest = std::max(widest, stop - start);
+      lines++;
+      start = stop + 1;
+    }
+    EMCOOL_CHECK(lines > 15 && widest <= 80, "help: %zu lines, the widest %zu characters:\n%s", lines, widest,
+                 run.output.c_str());
+    EMCOOL_CHECK(contains(run.output, "\n  set NAME VALUE         save a setting") &&
+                     contains(run.output, "\n  rm [-r] PATH...        delete files"),
+                 "help's columns: %s", run.output.c_str());
+  }
+  run = console.post("ifconfig", std::nullopt);
+  EMCOOL_CHECK(run.ok && run.output == "wifi: off\n", "ifconfig: %s", run.body.c_str());
   EMCOOL_CHECK(console.post("network", std::nullopt).status == 400, "network is gone: an unknown command");
 
   // The live settings, as `status on|off|every`, apply at once.

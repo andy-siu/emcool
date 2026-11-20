@@ -6,19 +6,15 @@ import { knownKeys, valueOf } from "../lib/store.js";
 import { bytes } from "../lib/format.js";
 import * as units from "../lib/units.js";
 import * as theme from "../lib/theme.js";
-import { saveWaypoint } from "../lib/waypoint.js";
 import { armed } from "../lib/arming.js";
 import { FanControl, refreshFanStatus } from "./fan.js";
-import { TripStats } from "./trip-stats.js";
-import { WaypointList, collapseWaypointList } from "./waypoints.js";
-import { blankWaypointMemory, shouldRefreshOnWaypoint } from "../lib/waypoint-list.js";
 import { download, request } from "../lib/transport.js";
 import { openDestination, destination } from "../lib/destination.js";
 
 const { button, div, h2, h3 } = van.tags;
 
-// The sheet behind the header button: trip summary, waypoints, and the two actions
-// that used to require typing a URL on a phone.
+// The sheet behind the header button: screen and units, links to the pages behind it,
+// the fan and the ride-log download.
 //
 // Everything here is deliberately not on the riding screens. None of it is worth
 // looking at at speed, and all of it is worth having when you stop.
@@ -43,17 +39,11 @@ export function openSheet() {
   // controls are this file's to reset, not another module's to reset for it.
   // scripts/check-arming.ts asserts this line, and reads this file only because of it.
   armed.val = "";
-  // Same rule, same reason: a section this sheet expanded stays expanded across opens
-  // unless somebody shuts it, and a waypoint list left open pushes every control on this
-  // sheet down by however long the ride was. ./waypoints.js says it there too.
-  collapseWaypointList();
   void refreshStatus();
   void refreshFanStatus();
 }
 
 export const status = van.state(/** @type {StatusPayload | null} */ (null));
-const waypointMessage = van.state("");
-const saving = van.state(false);
 
 export function Sheet() {
   return div(
@@ -87,58 +77,13 @@ export function Sheet() {
       h2({ class: "sheet-heading" }, "Units"),
       UnitsToggle(),
       MenuLink("Settings", "settings"),
+      MenuLink("Network settings", "settings", "network"),
       FanControl(),
-      WaypointButton(),
-      MenuLink("This session & waypoints", "session"),
+      MenuLink("This session", "session"),
       DownloadButton(),
       MenuLink("Bike information", "bike-information"),
       MenuLink("Advanced service", "advanced-service")
     )
-  );
-}
-
-/**
- * Saves a waypoint from the phone. The same endpoint a Siri Shortcut hits and the same
- * one a long press of the indicator-cancel switch reaches, through the same client in
- * lib/waypoint.js — so there is one code path and one thing to get wrong.
- *
- * No banner from here, unlike the handlebar gesture: you are looking at this button
- * when you press it, and the note under it is already in view.
- */
-function WaypointButton() {
-  return div(
-    { class: "settings-card" },
-    OwnerActionRow(
-      "Waypoint",
-      button(
-        {
-          class: "action",
-          disabled: saving,
-          onclick: async () => {
-            saving.val = true;
-            waypointMessage.val = "saving…";
-            try {
-              const reply = await saveWaypoint();
-              waypointMessage.val = reply.message;
-              if (reply.saved) {
-                // The Waypoints tile above this button asks /status whether any waypoint
-                // belongs to THIS boot, and nothing else refreshes that after a save — so
-                // without this the note here says "Waypoint 1 saved." while the tile two
-                // rows up still reads "none since restart" until the sheet is reopened.
-                void refreshStatus();
-              }
-            } finally {
-              // saveWaypoint() reports its own failures and never throws, so this is
-              // only here to guarantee the button re-enables.
-              saving.val = false;
-            }
-          },
-        },
-        "📍  Save waypoint here"
-      ),
-      () => (saving.val ? "Saving…" : "Save")
-    ),
-    () => (waypointMessage.val ? div({ class: "action-note" }, waypointMessage.val) : div())
   );
 }
 
@@ -249,39 +194,6 @@ export function UnitsToggle() {
   );
 }
 
-/**
- * Starts watching the two waypoint counters, so a press made on the BARS while the sheet is
- * open lands in the list without reopening it — a save AND a refusal, since `refuse()` in
- * src/gps/waypoint.ts moves only its own counter and "did my press land?" is the question
- * the list is for.
- *
- * ⚠️ Call at module top level, from app.js, never from inside a view or a binding — a
- * derive created inside one is pinned to that render's DOM node and dropped, silently, at
- * the next re-render. lib/announce.js §installAnnouncements has the mechanism.
- *
- * The phone's own button does not need this for a SAVE: WaypointButton() below refreshes
- * /status the moment its reply lands. Its refusals come through here with the bars'.
- */
-export function installWaypointRefresh() {
-  let memory = blankWaypointMemory();
-  van.derive(() => {
-    // Both read before anything is decided — VanJS re-collects a binding's dependencies
-    // from the reads its LAST run made, so a run that returned above one of these would
-    // leave the refresh deaf to it. views/trip-stats.js §Waypoints measured that.
-    const counters = { saved: valueOf("waypoint_seq"), refused: valueOf("waypoint_refused_seq") };
-    // rawVal: whether the sheet is open is SAMPLED, not reacted to. Subscribing here would
-    // re-run this derive on every open and close for a question it only asks in passing —
-    // lib/store.js §peek. ⚠️ A sheet left open THROUGH a service restart keeps the previous
-    // boot's rows until it is reopened, exactly as the tile above it does and for the same
-    // reason — views/trip-stats.js says it there.
-    const decision = shouldRefreshOnWaypoint(memory, counters, sheetOpen.rawVal || destination.rawVal === "session");
-    memory = decision.memory;
-    if (decision.refresh) {
-      void refreshStatus();
-    }
-  });
-}
-
 /** Refreshes /status while the sheet is open, and once at startup for the log size. */
 export async function refreshStatus() {
   try {
@@ -292,14 +204,14 @@ export async function refreshStatus() {
   }
 }
 
-/** @param {string} title @param {import("../lib/destination.js").Destination} name */
-function MenuLink(title, name) {
+/** @param {string} title @param {import("../lib/destination.js").Destination} name @param {string} [section] */
+function MenuLink(title, name, section = "") {
   return button(
     {
       class: "menu-link",
       onclick: () => {
         sheetOpen.val = false;
-        openDestination(name, "", openSheet);
+        openDestination(name, section, openSheet);
       },
     },
     title,

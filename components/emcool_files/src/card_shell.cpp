@@ -194,9 +194,22 @@ bool CardShell::handles(std::string_view command) {
 
 const std::vector<CardCommand>& CardShell::commands() { return kCommands; }
 
-std::string_view CardShell::summary() {
-  return "dir [PATH] | cd [FOLDER] | pwd | type FILE | mkdir FOLDER | rmdir FOLDER | rm [-r] PATH... | cp FROM... TO | "
-         "mv FROM... TO";
+std::span<const text::HelpLine> CardShell::help() {
+  static constexpr text::HelpLine kHelp[] = {
+      {"", "The microSD card:"},
+      {"dir [PATH]", "list a folder (also ls)"},
+      {"cd [FOLDER]", "change folder; cd alone goes to the top"},
+      {"pwd", "show the folder you're in"},
+      {"type FILE", "print a text file (also cat)"},
+      {"mkdir FOLDER", "make a folder"},
+      {"rmdir FOLDER", "remove an empty folder"},
+      {"rm [-r] PATH...", "delete files; -r deletes folders too"},
+      {"cp FROM... TO", "copy; never overwrites"},
+      {"mv FROM... TO", "move or rename; never overwrites"},
+      {"", "dir, rm, cp and mv take * and ? in the last name. Nothing new goes in RIDES,\n"
+           "and the ride being recorded is never deleted."},
+  };
+  return kHelp;
 }
 
 // ---------------------------------------------------------------------------------- the card

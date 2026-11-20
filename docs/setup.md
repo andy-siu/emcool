@@ -32,7 +32,7 @@ Seven change the settings and the firmware; the rest work on the microSD card ([
 | `set NAME VALUE` | Saves one setting. Quote a value with spaces: `set WIFI_SSID "garage wifi"`. `set BLE_SECRET <key>` with Bluetooth off turns it on at once; see [`ble.md`](ble.md#turning-it-on). |
 | `unset NAME` | Puts one setting back to its default (removes it from NVS). |
 | `status [on \| off \| every SECONDS]` | The periodic status report. `status` prints one now; `status off` / `status on` / `status every SECONDS` (5–3600) change it and save at once. |
-| `ipconfig` | The Wi-Fi interface: the SSID joined and its signal, the address, network (as `address/prefix`), netmask, gateway and DNS server it handed out, the hostname and MAC address, and where to find the console and the ride-log page. With Wi-Fi off, says so, and still gives the MAC address. |
+| `ifconfig` | The Wi-Fi interface: the SSID joined and its signal, the address, network (as `address/prefix`), netmask, gateway and DNS server it handed out, the hostname and MAC address, and where to find the console and the ride-log page. With Wi-Fi off, says so, and still gives the MAC address. |
 | `restart` | Reboots, so saved settings take effect. |
 | `update FILE`, `update status` | Installs new firmware from the card (`update /emcool.bin`): checked, written beside the running firmware, and run at the next `restart`, on trial. `update status` says what's running, what's waiting and whether an update was rolled back. An `emcool.bin` in the card's top folder needs no command: it's installed, removed and restarted into on its own. See the README's *Updating without the cable*. |
 
@@ -138,9 +138,9 @@ The `restart` boots normally. A power cycle also leaves safe mode, since it clea
 **Menu → Settings → Bike console** runs this console's commands over the Bluetooth link. It writes the same NVS, with the same checks. A change made there is a change made at `emcool>`, and `show` here reports it. It offers:
 
 - **Every setting**, each on its own card: its saved value, the value in use now, a note when it is waiting for a restart, and its help text. Flags get an on/off menu, integers a number field, and text and passwords a text field. **Save** runs `set NAME VALUE`. **Default** runs `unset NAME`. The two status-report settings save as `status on|off` and `status every SECONDS`, so they apply at once, as here.
-- **Status**, the status report this console prints, read on request over the window since the last report, followed by the `ipconfig` report.
+- **Status**, the status report this console prints, read on request over the window since the last report, followed by the `ifconfig` report.
 - **Restart**, with two taps.
-- **A command line** for `show`, `status`, `ipconfig`, `help`, any `set`/`unset`, and the [card's commands](#the-card), with a transcript. A secret typed into it shows as `••••••••` in the transcript.
+- **A command line** for `show`, `status`, `ifconfig`, `help`, any `set`/`unset`, and the [card's commands](#the-card), with a transcript. A secret typed into it shows as `••••••••` in the transcript.
 
 What differs from this console:
 
@@ -151,6 +151,8 @@ What differs from this console:
 - **Restart is refused while the bike isn't parked.** That means while a fresh reading says it is moving, in drive, being asked for drive, or the throttle is open. It is also refused while a service-mode read or write holds the bus, or while something holds the OBD poller. A charging bike can restart.
 - **A restart can't lock the phone out.** If a new `BLE_SECRET` is saved but not yet running, **Restart** asks for that key and the bike checks it before restarting. The phone then keeps it for the reconnect. If `BLE_SECRET` is unset, the page refuses to restart, since Bluetooth would come back off; restart from here or over Wi-Fi.
 - **Access:** anyone holding the Bluetooth key can change any setting, including turning on VCU writes, just as anyone with `ADMIN_PASSWORD` can over Wi-Fi. The link is encrypted (AES-256-GCM), unlike the telnet console. Each change is logged with the setting's name (never its value) under the `console` tag.
+
+**Menu → Network settings** (Settings → Network connections) is a form for the three Wi-Fi settings on the same endpoints; it requires an admin password before it saves a network. See [`wifi.md`](wifi.md#turning-it-on).
 
 The endpoints behind it, `GET /console`, `GET /console/status` and `POST /console`, are in [`ble.md`](ble.md).
 

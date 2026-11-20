@@ -43,9 +43,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "emcool/text/help.hpp"
 
 namespace emcool::files {
 
@@ -125,8 +128,8 @@ class CardShell {
 
   static bool handles(std::string_view command);
   static const std::vector<CardCommand>& commands();
-  // The commands on one line, for a console's `help`.
-  static std::string_view summary();
+  // The card's lines in a console's `help`, heading and footnote included (emcool/text/help.hpp).
+  static std::span<const text::HelpLine> help();
 
   // Starts a command. True when it has finished and `output` is complete; false when step() has
   // more to do.

@@ -6,13 +6,13 @@
 //
 //   GET  /console          every setting with its saved value, the value in force, whether it is
 //                          waiting for a restart, and its help, plus the revision. JSON.
-//   GET  /console/status   the status report the serial port prints, plus the `ipconfig` report.
+//   GET  /console/status   the status report the serial port prints, plus the `ifconfig` report.
 //                          Text, as the console would print it.
 //   POST /console          one command line, as typed at `emcool>`, in a JSON body:
 //                          {"line": "set OBD_ENABLED 1", "revision": 7}, behind X-Emcool: console.
 //                          Answers {ok, output, revision, restarting}.
 //
-// The commands: show, set NAME VALUE, unset NAME, status [on | off | every SECONDS], ipconfig,
+// The commands: show, set NAME VALUE, unset NAME, status [on | off | every SECONDS], ifconfig,
 // restart and help, and the card's (emcool/files/card_shell.hpp): dir, cd, pwd, type, mkdir, rmdir,
 // rm, cp and mv. A card command that takes a while (rm -r, a big cp) runs a slice per poll(), so it
 // never holds up the link; its output comes back when it has finished, capped at kMaxOutputBytes. `revision` counts what has been saved since boot, from any console. A command
@@ -56,7 +56,7 @@ class ConsoleHost {
   // The status report's text, once the task that owns its counters has written it: `first` asks
   // for it, and the calls after look for it. False until it is there.
   virtual bool statusReport(bool first, std::string& text) = 0;
-  // The `ipconfig` command's report.
+  // The `ifconfig` command's report.
   virtual std::string network() = 0;
   // Why a restart can't happen now (the bike is moving, the bus is busy, …); empty when it can.
   virtual std::vector<std::string> restartBlockers() = 0;

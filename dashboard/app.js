@@ -16,7 +16,7 @@ import { ChargeView } from "./views/charge.js";
 import { AllView } from "./views/all.js";
 import { FaultsView } from "./views/faults.js";
 import { FaultReportView } from "./views/fault-report.js";
-import { Sheet, hasTroubleCodes, installWaypointRefresh, refreshStatus } from "./views/sheet.js";
+import { Sheet, hasTroubleCodes, refreshStatus } from "./views/sheet.js";
 import { Header } from "./views/header.js";
 import { CoolingView } from "./views/cooling.js";
 import { monotonicNow } from "./lib/clock.js";
@@ -264,12 +264,9 @@ installHandlebarGestures({
   },
 });
 // The other half of the same story, and the reason the list above is shorter than it was:
-// the fan cycle and the waypoint hold are recognised on emcool now, so this page finds out
+// the fan cycle is recognised on emcool now, so this page finds out
 // about them the way it finds out about anything else on the bus, and says so.
 installAnnouncements();
-// And the same story once more: a waypoint saved on the bars is news to this page too, so
-// the sheet's list goes and asks the bike for it rather than waiting to be reopened.
-installWaypointRefresh();
 // Before connect(), so the first paint is already in the right theme when the phone's
 // own setting is the one that decides it. The bike's flag can only arrive later.
 startTheming();

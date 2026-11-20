@@ -26,16 +26,18 @@ emcool> restart
 - **`ADMIN_PASSWORD`:** what the console and the page ask for, 8–128 characters. Without it, Wi-Fi stays off.
 - **`TELNET_CONSOLE`:** `1` (the default) serves the telnet console on port 23; `0` doesn't. See [below](#turning-the-telnet-console-off).
 
+Or from the dashboard: **Menu → Network settings** (also **Settings → Network connections**). It takes the network name, the Wi-Fi password (or *Open network*) and the admin password, and saves them with the same `set` commands over Bluetooth, so the bike checks them the same way. It won't save a network until an admin password is saved or typed beside it, since Wi-Fi stays off without one. It saves the admin password first and the network last, so a save that stops partway never leaves a network without its admin password. **Turn Wi-Fi off** runs `unset WIFI_SSID`. **Read status** shows the `ifconfig` report, and **Restart** applies the change.
+
 The boot log says where to find it:
 
 ```
 I wifi: connected as 192.168.1.42: console `nc 192.168.1.42 23`, ride log http://192.168.1.42/
 ```
 
-The 10 s status line repeats the address, and `ipconfig`, on any console, shows the rest:
+The 10 s status line repeats the address, and `ifconfig`, on any console, shows the rest:
 
 ```
-emcool> ipconfig
+emcool> ifconfig
 wifi:     joined, channel 6, signal -58 dBm
 ssid:     garage wifi
 address:  192.168.1.42
@@ -62,7 +64,7 @@ nc 192.168.1.42 23
 macOS has no `telnet` any more; `nc` is built in, and a telnet client works too.
 
 1. Type the admin password. A telnet client hides it; `nc` shows it as you type.
-2. Then use the same commands as the USB console: `show`, `set`, `unset`, `status`, `ipconfig`, `restart`, plus `help` and `exit`.
+2. Then use the same commands as the USB console: `show`, `set`, `unset`, `status`, `ifconfig`, `restart`, plus `help` and `exit`.
 3. The log follows the console as it does on the serial port, status reports included. If the network can't keep up, lines are dropped and a note says how many bytes.
 
 **Limits:**
@@ -80,7 +82,7 @@ emcool> set TELNET_CONSOLE 0
 emcool> restart
 ```
 
-After the restart nothing listens on port 23. The boot log says `console off: TELNET_CONSOLE 0`, `ipconfig` says `console:  off (TELNET_CONSOLE 0)`, and the status line's `wifi:` says `console off`. `set TELNET_CONSOLE 1` (or `unset TELNET_CONSOLE`) and a restart bring it back. Turn it off from the telnet console itself and the session you're in carries on until you leave or restart.
+After the restart nothing listens on port 23. The boot log says `console off: TELNET_CONSOLE 0`, `ifconfig` says `console:  off (TELNET_CONSOLE 0)`, and the status line's `wifi:` says `console off`. `set TELNET_CONSOLE 1` (or `unset TELNET_CONSOLE`) and a restart bring it back. Turn it off from the telnet console itself and the session you're in carries on until you leave or restart.
 
 ## The ride-log page
 
