@@ -18,6 +18,8 @@ class SdCard {
   bool mount(int sckGpio, int mosiGpio, int misoGpio, int csGpio);
   void unmount();
   bool mounted() const { return card_ != nullptr; }
+  // Whether a mounted card still answers a status request (CMD13): false once it's pulled.
+  bool responds();
 
  private:
   sdmmc_card_t* card_ = nullptr;

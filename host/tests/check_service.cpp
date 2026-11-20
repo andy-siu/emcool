@@ -157,7 +157,7 @@ class Scenario final : public obd::CanTransmitter, public obd::SignalRecorder {
         endMs_(endMs),
         displayDirectory_(std::move(directory)),
         loop_(order_),
-        obd_(*this, *this, false, order_) {
+        obd_(*this, *this, order_) {
     char pattern[] = "/tmp/emcool-service-XXXXXX";
     directory_ = ::mkdtemp(pattern);
     store_ = std::make_unique<VcuStore>(directory_, names_);
@@ -287,8 +287,6 @@ class Scenario final : public obd::CanTransmitter, public obd::SignalRecorder {
   void route(std::uint32_t id, const std::vector<std::uint8_t>& data) {
     if (obd::ObdPoller::isResponse(id)) {
       if (runner_->handleCanFrame(id, data, std::nullopt)) return;
-      obd_.handleFrame(id, data, now());
-    } else if (obd::ElockReader::isResponse(id)) {
       obd_.handleFrame(id, data, now());
     }
   }

@@ -7,24 +7,20 @@
 #   make menuconfig   change the build's options, such as the pins (emcool menu)
 #   make defaults     throw away the build's options and start again from the defaults
 #
-# CHIP picks the board (a preset in CMakePresets.json); each builds into build/<CHIP>:
-#   CHIP=esp32s3    an ESP32-S3 board (the default)
-#   CHIP=esp32      the Copperhill ESP32 CAN-BUS board, ESP32-WROOM-32
-#   make flash CHIP=esp32
+# It builds for the ESP32-S3 (CMakePresets.json's one preset), into build/esp32s3.
 #
 # idf.py finds the serial port on its own. To choose one, set PORT:
 #   make flash PORT=/dev/cu.usbmodem1101
-#   make monitor CHIP=esp32 PORT=/dev/cu.usbserial-0001
 #   make monitor PORT=COM5
 #
-# A build keeps the options it was first configured with in build/<CHIP>/sdkconfig, so a changed
+# A build keeps the options it was first configured with in build/esp32s3/sdkconfig, so a changed
 # default (in sdkconfig.defaults* or main/Kconfig.projbuild, such as a pin) doesn't reach a build
 # that already exists. `make defaults` deletes that file, which also drops anything set in
 # menuconfig, and the next build makes it again from the defaults.
 
 IDF ?= idf.py
 PYTHON ?= python
-CHIP ?= esp32s3
+CHIP := esp32s3
 PORT ?=
 
 PORT_ARG := $(if $(PORT),-p $(PORT))

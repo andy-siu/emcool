@@ -53,7 +53,6 @@ let watching = false;
 const RESTART_ARM = "bike-console:restart";
 const TRANSMITTING = new Set([
   "OBD_ENABLED",
-  "ELOCK_ENABLED",
   "SERVICE_MODE_ENABLED",
   "SERVICE_WRITE_ENABLED",
   "CHARGE_AUTO_ENABLED",

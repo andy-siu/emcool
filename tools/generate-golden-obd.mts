@@ -1,4 +1,4 @@
-// Drives the reference's own OBD code — src/can/obd.ts, obd-dtc.ts, obd-hold.ts, elock.ts, iso-tp.ts
+// Drives the reference's own OBD code — src/can/obd.ts, obd-dtc.ts, obd-hold.ts, iso-tp.ts
 // and src/diagnostics/obd-dtc.ts, stored-codes.ts, dtc-table.ts — and writes what it did, for
 // host/tests/check_obd.cpp to replay through the C++ port.
 //
@@ -6,7 +6,7 @@
 // - the pure functions, exhaustively or by fuzzing: formatObdDtc and the table lookup for all
 //   65 536 codes, every NRC's description, random ISO-TP frame sequences, random replies
 //   through decodeObdDtcResponse
-// - scenarios: the poller (and the E-LOCK read) started as the reference's index.ts starts them,
+// - scenarios: the poller started as the reference's index.ts starts it,
 //   against a scripted ECU on a fake clock — PIDs answered, late, short or not at all;
 //   trouble-code lists as single frames, multi-frame transfers that complete, stall, skip a
 //   sequence number, restart or overflow, refusals and silence; flow control the poller must
@@ -29,7 +29,7 @@
 //   I                                         a new ISO-TP reassembler
 //   P <frame hex> <status> <total> <payload hex|-> <reason|->
 //   D <mode> <payload hex|-> <kind> <list> <declared> <codes hex,…|-> <truncated> <service> <nrc> <reason|->
-//   run <n> <elock 0|1> <wall clock base ms> <end ms>
+//   run <n> <wall clock base ms> <end ms>
 //   a <ms> hold <wait ms> <max hold ms> <reason> | a <ms> release | a <ms> snapshot
 //   r <ms> <id hex> <data hex>                a frame arriving
 //   t <ms> <id hex> <data hex> <ok|fail>      a frame the reference sent (fail: send returned -1)
@@ -341,8 +341,6 @@ interface Profile {
   codes: number[];
   declaredDelta: number;
   separationMs: number;
-  elock: string;
-  elockLate: number;
 }
 
 function weighted<T>(choices: [T, number][]): T {
@@ -391,8 +389,6 @@ function makeProfile(): Profile {
     ),
     declaredDelta: chance(0.8) ? 0 : pick([-2, 1, 3]),
     separationMs: pick([0, 1, 2, 5]),
-    elock: pick(["direct", "session", "silent", "negative", "garbage", "session-refused", "session-no-keys", "short"]),
-    elockLate: pick([0, 0, 0.3]),
   };
 }
 
@@ -402,17 +398,16 @@ interface Fixed {
   holds: { at: number; waitMs: number; maxHoldMs: number; releaseAfter: number | null }[];
 }
 
-async function runScenario(index: number, durationMs: number, elockEnabled: boolean, fixed?: Fixed): Promise<void> {
+async function runScenario(index: number, durationMs: number, fixed?: Fixed): Promise<void> {
   generation = index + 1;
   timers = new Queue<FakeTimer>();
   timerSeq = 0;
   now = 0;
   wallBase = 1_780_000_000_000 + index * 3_600_000;
   const obd = await importFresh("can/obd.ts");
-  const elock = await importFresh("can/elock.ts");
   const stored = await importFresh("diagnostics/stored-codes.ts");
   const profile = { ...makeProfile(), ...fixed?.profile };
-  emit(`run ${index} ${elockEnabled ? 1 : 0} ${wallBase} ${durationMs}`);
+  emit(`run ${index} ${wallBase} ${durationMs}`);
 
   const arrivals = new Queue<Arrival>();
   let arrivalSeq = 0;
@@ -420,7 +415,6 @@ async function runScenario(index: number, durationMs: number, elockEnabled: bool
 
   // The ECU's half of a multi-frame transfer that's waiting for flow control.
   let transfer: { responder: number; frames: number[][]; behaviour: DtcBehaviour } | null = null;
-  let elockSession = false;
 
   function replyFrames(mode: number, behaviour: DtcBehaviour): number[][] {
     const codes = mode === 0x03 ? profile.codes : profile.codes.slice(0, between(0, 3));
@@ -487,47 +481,6 @@ async function runScenario(index: number, durationMs: number, elockEnabled: bool
     });
   }
 
-  function answerElock(data: Buffer): void {
-    const service = data[1];
-    const delay = chance(profile.elockLate) ? between(301, 500) : between(1, 40);
-    const reply = (frame: number[]) => {
-      while (frame.length < 8) frame.push(0);
-      arrive(now + delay, 0x790, frame);
-    };
-    const keys = between(0, 4);
-    switch (profile.elock) {
-      case "direct":
-        if (service === 0x21) reply([0x03, 0x61, 0x99, keys]);
-        return;
-      case "session":
-      case "session-no-keys":
-        if (service === 0x21 && !elockSession) reply([0x03, 0x7f, 0x21, 0x12]);
-        else if (service === 0x21 && profile.elock === "session") reply([0x03, 0x61, 0x99, keys]);
-        else if (service === 0x10) {
-          elockSession = true;
-          reply([0x02, 0x50, 0x81]);
-        } else if (service === 0x20) {
-          elockSession = false;
-          reply([0x01, 0x60]);
-        }
-        return;
-      case "negative":
-        reply([0x03, 0x7f, service, 0x11]);
-        return;
-      case "session-refused":
-        reply(service === 0x10 ? [0x03, 0x7f, 0x10, 0x22] : [0x03, 0x7f, service, 0x12]);
-        return;
-      case "garbage":
-        reply(randomBytes(between(0, 8)));
-        return;
-      case "short":
-        reply(pick([[0x01, 0x61], [0x02, 0x61, 0x98], [0x00], [0x05, 0x61, 0x99]]));
-        return;
-      default:
-        return;
-    }
-  }
-
   const channel = {
     send(message: { id: number; data: Buffer }) {
       const isFlowControl = message.id >= 0x7e0 && message.id <= 0x7e7 && message.data[0] === 0x30;
@@ -550,8 +503,6 @@ async function runScenario(index: number, durationMs: number, elockEnabled: bool
         answerTroubleCodes(data[1]);
       } else if (message.id >= 0x7e0 && message.id <= 0x7e7 && data[0] === 0x30) {
         if (transfer && transfer.responder - 8 === message.id) continueTransfer();
-      } else if (message.id === 0x791) {
-        answerElock(data);
       }
       return SOCKETCAN_SENT;
     },
@@ -559,7 +510,7 @@ async function runScenario(index: number, durationMs: number, elockEnabled: bool
 
   // Noise on the diagnostic ids: stray consecutive frames, other PIDs' answers, junk.
   for (let at = between(1, 3000); profile.noisePerSecond > 0 && at < durationMs; at += between(1, 2000 / profile.noisePerSecond)) {
-    const id = chance(0.05) ? 0x790 : between(0x7e0, 0x7ef);
+    const id = between(0x7e0, 0x7ef);
     const shape = random();
     const data =
       shape < 0.3
@@ -624,7 +575,6 @@ async function runScenario(index: number, durationMs: number, elockEnabled: bool
 
   obd.initObd(channel);
   const stop = obd.startObdPoller(500);
-  if (elockEnabled) void elock.readKeysPairedOnce(channel);
   await drain();
 
   let nextAction = 0;
@@ -652,7 +602,6 @@ async function runScenario(index: number, durationMs: number, elockEnabled: bool
       emit(`r ${now} ${due.id.toString(16)} ${hex(due.data) || "-"}`);
       const data = Buffer.from(due.data);
       if (obd.isObdResponse(due.id)) obd.handleResponse(due.id, data);
-      else if (elock.isElockResponse(due.id)) elock.handleElockResponse(data);
       await drain();
     }
   }
@@ -667,7 +616,7 @@ async function runScenario(index: number, durationMs: number, elockEnabled: bool
 const totals = { runs: 0, simulatedMs: 0 };
 for (let index = 0; index < 70; index++) {
   const durationMs = index % 10 === 3 ? between(600_000, 1_300_000) : between(2_000, 200_000);
-  await runScenario(index, durationMs, chance(0.7));
+  await runScenario(index, durationMs);
   totals.runs++;
   totals.simulatedMs += durationMs;
 }
@@ -693,7 +642,7 @@ const coincidences: Fixed["holds"][] = [
   [{ at: 2500, waitMs: 201, maxHoldMs: 1000, releaseAfter: 500 }],
 ];
 for (const holds of coincidences) {
-  await runScenario(totals.runs, 6000, false, { profile: silent, holds });
+  await runScenario(totals.runs, 6000, { profile: silent, holds });
   totals.runs++;
   totals.simulatedMs += 6000;
 }
@@ -708,7 +657,7 @@ const multiFrame: Partial<Profile> = {
   declaredDelta: 0,
 };
 for (const flowControlFail of [1, 0.5]) {
-  await runScenario(totals.runs, 6000, false, { profile: { ...multiFrame, flowControlFail }, holds: [] });
+  await runScenario(totals.runs, 6000, { profile: { ...multiFrame, flowControlFail }, holds: [] });
   totals.runs++;
   totals.simulatedMs += 6000;
 }

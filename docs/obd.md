@@ -1,6 +1,6 @@
 # OBD polling
 
-emcool's OBD side: the mode 01 PID poller, the trouble-code reads, the poller's hold, and the one-shot E-LOCK read. The code is in `components/emcool_obd/`.
+emcool's OBD side: the mode 01 PID poller, the trouble-code reads, and the poller's hold. The code is in `components/emcool_obd/`.
 
 ## Off by default
 
@@ -8,7 +8,6 @@ emcool doesn't poll unless `OBD_ENABLED` is 1:
 
 ```
 emcool> set OBD_ENABLED 1
-emcool> set ELOCK_ENABLED 1      optional; needs OBD_ENABLED
 emcool> restart
 ```
 
@@ -27,7 +26,6 @@ A frame the controller won't take is reported as not sent and never retried as i
 - **A PID request:** the rest of that round is skipped, trouble-code reads included, and the next round keeps its 500 ms pacing.
 - **A trouble-code request:** the list is `not-asked` and isn't retried.
 - **A trouble-code flow control:** that attempt ends at once as a stall, and the usual stall retries follow. This applies whether the send was refused or the id was outside the physical request range.
-- **The E-LOCK read:** no keys-paired value, and no retry loop.
 - **A VCU multi-frame request:** `not-sent` if its first frame was refused. If a later frame or a flow control is refused, it's `abandoned`, because the micro may have acted on part of it.
 
 Refusals are logged at once, then at most once per 5 s for each of `obd` and `obd-dtc`. The next line logged says how many were held back. clear-dtcs's PID and list reads count against the same limit as the poller's, since the limit is shared.
@@ -50,13 +48,12 @@ All on the functional address 0x7DF unless noted, 8 bytes each:
   - every 20th round: the diagnostic PIDs, which are the MIL, the freeze-frame code, and the time and distance since clearing and with the MIL on
 - **Mode 03, the stored trouble codes,** every 120th round, about once a minute. Every tenth time, it also asks mode 07 (pending) and mode 0A (permanent). Those have never answered on the bike.
 - **Flow control** to 0x7E0 (the responder's id less 8), when a trouble-code reply needs more than one frame.
-- **The E-LOCK keys-paired read**, once at startup with `ELOCK_ENABLED`: `21 99` to 0x791. If that gets no usable answer, it opens a standard session (`10 81`), asks again, and closes the session (`20`).
 
-The replies, 0x7E0–0x7EF and 0x790, go to the OBD side and never to the broadcast decoders, whether or not OBD is on.
+The replies, 0x7E0–0x7EF, go to the OBD side and never to the broadcast decoders, whether or not OBD is on.
 
 ## What it records
 
-- **Signals:** the PIDs' values, `dtc_stored_count` (and pending and permanent) when the bike answers, `freeze_frame_dtc`, and `keys_paired`.
+- **Signals:** the PIDs' values, `dtc_stored_count` (and pending and permanent) when the bike answers, and `freeze_frame_dtc`.
   - These go into live state and the ride log like any decoded signal.
 - **`/stored-dtcs`:** the three lists, in the `TroubleCodeSnapshot` shape.
   - Each list is one of `codes` (the bike answered, perhaps with none), `no-response`, `incomplete` (a transfer started and stalled on every attempt), `refused`, `not-asked` (the send failed on our side) or `not-read`.
@@ -76,7 +73,7 @@ Anything that needs the bus to itself asks the poller to park. Service mode's A8
 
 The poller and the reads are state machines the decode task advances:
 
-- Each frame from 0x7E0–0x7EF or 0x790 is passed to `handleFrame()`.
+- Each frame from 0x7E0–0x7EF is passed to `handleFrame()`.
 - The task calls `tick()` after every frame.
 - The task waits for the next frame no longer than the OBD side's next deadline.
 
@@ -109,7 +106,7 @@ A manual send shares the eight transmit slots and the active-node behaviour with
   - every NRC's name
   - 94,000 ISO-TP frames in random sequences
   - 4,000 random replies through the trouble-code decoder
-- **The poller, the reads, the hold and the E-LOCK read,** against a scripted ECU on a fake clock, in 74 scenarios covering three and a half simulated hours. The ECU's behaviour includes:
+- **The poller, the reads and the hold,** against a scripted ECU on a fake clock, in 74 scenarios covering three and a half simulated hours. The ECU's behaviour includes:
   - PIDs answered, late, short, twice or not at all
   - trouble-code lists as single frames, or as multi-frame transfers that complete, stall, skip a sequence number, restart or overflow
   - refusals, silence, and flow control to an id the poller must refuse

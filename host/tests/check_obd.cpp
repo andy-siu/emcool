@@ -2,8 +2,8 @@
 // line for line, and each scenario millisecond by millisecond — the same frames arrive and
 // the same holds are asked for at the same moments, and in every millisecond the C++ must
 // send the same frames, record the same signals, log the same lines and serve the same
-// /stored-dtcs body as the reference did. Within one millisecond the order isn't compared (the
-// E-LOCK read and the poller run side by side), only what happened.
+// /stored-dtcs body as the reference did. Within one millisecond the order isn't compared, only
+// what happened.
 //
 //   check_obd <golden file>
 
@@ -113,8 +113,8 @@ struct Millisecond {
 
 class Scenario final : public CanTransmitter, public SignalRecorder {
  public:
-  Scenario(int index, bool elock, std::int64_t wallBase, std::int64_t endMs)
-      : index_(index), wallBase_(wallBase), endMs_(endMs), stack_(*this, *this, elock) {}
+  Scenario(int index, std::int64_t wallBase, std::int64_t endMs)
+      : index_(index), wallBase_(wallBase), endMs_(endMs), stack_(*this, *this) {}
 
   std::map<std::int64_t, Millisecond>& timeline() { return timeline_; }
 
@@ -420,9 +420,8 @@ int main(int argumentCount, char** arguments) {
     } else if (line.rfind("D ", 0) == 0) {
       checkDecode(line, totals);
     } else if (line.rfind("run ", 0) == 0) {
-      const std::vector<std::string> words = fields(line, 5);
-      auto scenario = std::make_unique<Scenario>(std::stoi(words[1]), words[2] == "1", std::stoll(words[3]),
-                                                 std::stoll(words[4]));
+      const std::vector<std::string> words = fields(line, 4);
+      auto scenario = std::make_unique<Scenario>(std::stoi(words[1]), std::stoll(words[2]), std::stoll(words[3]));
       loadScenario(input, *scenario, totals);
       activeScenario = scenario.get();
       scenario->run();

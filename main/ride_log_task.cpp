@@ -24,17 +24,30 @@ void releaseAsLost(ride_log::SegmentBuffer& buffer, RideLogTaskCounters& counter
   buffer.heldByWriter.store(false, std::memory_order_release);
 }
 
+// Mounts the card if it isn't, then opens the ride log on it. A ride log that won't open (a full
+// card, a folder it can't make) leaves the card mounted: the consoles' card commands and the
+// download still work on it, and the next attempt tries the ride log again. Only a card that has
+// stopped answering is unmounted, so a new one can be mounted in its place.
 bool tryToOpen(RideLogTaskContext& context) {
-  if (!context.card.mount()) {
-    return false;
-  }
-  context.counters.cardMounted.store(true, std::memory_order_relaxed);
-  if (!context.writer.open()) {
+  if (context.card.mounted() && !context.card.responds()) {
+    logWarning(kTag, "the card stopped answering; unmounting it");
     context.card.unmount();
     context.counters.cardMounted.store(false, std::memory_order_relaxed);
-    return false;
   }
-  return true;
+  if (!context.card.mounted()) {
+    if (!context.card.mount()) {
+      return false;
+    }
+    context.counters.cardMounted.store(true, std::memory_order_relaxed);
+  }
+  context.counters.rideLogOpening.store(true, std::memory_order_relaxed);
+  const bool opened = context.writer.open();
+  context.counters.rideLogOpening.store(false, std::memory_order_relaxed);
+  if (!opened) {
+    logWarning(kTag, "the card stays mounted for the card commands; the ride log tries again in %lld s",
+               static_cast<long long>(kMountRetryMs / 1000));
+  }
+  return opened;
 }
 
 void rideLogTask(void* argument) {
@@ -62,11 +75,9 @@ void rideLogTask(void* argument) {
       if (context.writer.write(*buffer)) {
         buffer->heldByWriter.store(false, std::memory_order_release);
       } else {
-        // The writer has closed itself. The card may have been pulled: unmount, and the
-        // retry above opens a fresh boot directory once it is back.
+        // The writer has closed itself. The retry above opens a fresh boot directory, and
+        // first unmounts the card if it was pulled, so one put back is mounted again.
         releaseAsLost(*buffer, context.counters);
-        context.card.unmount();
-        context.counters.cardMounted.store(false, std::memory_order_relaxed);
         nextOpenAttemptMs = monotonicMs() + kMountRetryMs;
       }
       backgroundWorkPending = true;
@@ -86,6 +97,13 @@ bool CardAccess::mount() {
   const std::lock_guard<std::mutex> lock(mutex_);
   mounted_ = true;
   return true;
+}
+
+bool CardAccess::responds() {
+  // Under the lock, so the status request can't land in the middle of a console's or the
+  // download's file operation.
+  const std::lock_guard<std::mutex> lock(mutex_);
+  return card_.responds();
 }
 
 void CardAccess::unmount() {

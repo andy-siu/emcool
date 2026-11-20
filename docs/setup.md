@@ -1,16 +1,16 @@
 # Setup: the serial console
 
-Every per-bike option emcool has lives in the ESP32's NVS (non-volatile storage) and is set from the serial console. This is the complete reference: the commands, and every setting with its type, default, range and when it takes effect. The prose rationale for the feature flags is in the README's [Settings](../README.md#settings) section; this is the exact list.
+Every per-bike option emcool has lives in the ESP32-S3's NVS (non-volatile storage) and is set from the serial console. This is the complete reference: the commands, and every setting with its type, default, range and when it takes effect. The prose rationale for the feature flags is in the README's [Settings](../README.md#settings) section; this is the exact list.
 
 ## Opening the console
 
 Flashing opens it:
 
 ```
-idf.py --preset esp32 flash monitor
+idf.py flash monitor
 ```
 
-or, on a board that's already flashed, just `idf.py --preset esp32 monitor` (`esp32s3` for an ESP32-S3). On the ESP32 it is a UART REPL at the ESP-IDF default (115200 baud, 8N1) over the board's CP2104 USB-C bridge. On the ESP32-S3 it runs on the chip's own USB Serial/JTAG port. The prompt is:
+or, on a board that's already flashed, just `idf.py monitor`. It runs on the chip's own USB Serial/JTAG port, the board's USB-C. The prompt is:
 
 ```
 emcool>
@@ -34,7 +34,7 @@ Seven change the settings and the firmware; the rest work on the microSD card ([
 | `status [on \| off \| every SECONDS]` | The periodic status report. `status` prints one now; `status off` / `status on` / `status every SECONDS` (5–3600) change it and save at once. |
 | `network` | The Wi-Fi network joined and its signal, the address, netmask, gateway and DNS server it handed out, the hostname and MAC address, and where to find the console and the ride-log page. With Wi-Fi off, says so. |
 | `restart` | Reboots, so saved settings take effect. |
-| `update FILE`, `update status` | Installs new firmware from the card (`update /emcool.bin`): checked, written beside the running firmware, and run at the next `restart`, on trial. `update status` says what's running, what's waiting and whether an update was rolled back. See the README's *Updating without the cable*. |
+| `update FILE`, `update status` | Installs new firmware from the card (`update /emcool.bin`): checked, written beside the running firmware, and run at the next `restart`, on trial. `update status` says what's running, what's waiting and whether an update was rolled back. An `emcool.bin` in the card's top folder needs no command: it's installed, removed and restarted into on its own. See the README's *Updating without the cable*. |
 
 There is deliberately **no `get`** — `show` prints everything, and it is short. An unknown name tells you so and points at `show`.
 
@@ -88,7 +88,6 @@ Types: **flag** is `0`/`1`; **integer** is a whole number in a range; **text**/*
 | `BLE_NAME` | text | `emcool` | 1–29 chars | restart | The name the phone's device list shows. The dashboard finds the bike by its service UUID, not this. |
 | `CUSTOM_BMS_CONFIG` | flag | `0` | — | restart | `1` only if the BMS runs the custom LiBAL config, for working out which frame carries the true pack temperature. The frames still win. |
 | `OBD_ENABLED` | flag | `0` | — | restart | `1` to poll OBD-II and read trouble codes. This puts the CAN controller on the bus as an active node; off, emcool is listen-only and doesn't even acknowledge frames. |
-| `ELOCK_ENABLED` | flag | `0` | — | restart | `1` to read `keys_paired` from the E-LOCK once at startup. Needs `OBD_ENABLED`. |
 | `SERVICE_MODE_ENABLED` | flag | `0` | — | restart | `1` to let the dashboard **read** the VCU's calibration parameters, lifetime stats and freeze frames, while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`service-mode.md`](service-mode.md). |
 | `SERVICE_WRITE_ENABLED` | flag | `0` | — | restart | `1` to let the dashboard **write** to the VCU (`/vcu-write`: allowlisted parameters, service point, clock sync, clear DTCs, charge current/stop, SOC limit, reset). The only switch that lets a web page change the bike. Needs `OBD_ENABLED` and `SERVICE_MODE_ENABLED`. See [`service-mode.md`](service-mode.md). |
 | `CHARGE_AUTO_ENABLED` | flag | `0` | — | restart | `1` for the automatic charge-current controller — it commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`service-mode.md`](service-mode.md). |
@@ -108,8 +107,6 @@ OBD_ENABLED=1                 the CAN controller becomes an active node; polls O
       └ SERVICE_WRITE_ENABLED=1    the dashboard may CHANGE the bike (/vcu-write)  ⚠️ off on purpose
           └ CHARGE_AUTO_ENABLED=1  the controller commands the charge current on its own
 ```
-
-`ELOCK_ENABLED=1` hangs off `OBD_ENABLED` on its own (a one-shot read at startup).
 
 ⚠️ `SERVICE_WRITE_ENABLED` is the one that lets a web page change a calibration EEPROM, stamp the service record, clear the fault memory or actuate charging. It is off by default and would be even if the others weren't, and the boot journal says so loudly when it's on.
 

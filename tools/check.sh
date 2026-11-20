@@ -7,7 +7,7 @@
 #   - the clock gate matches the reference verdict for verdict
 #   - the pack-temperature routing matches the reference value for value, and warns as often
 #   - the diagnostic tables are current with the reference; the OBD side — the PID poller, trouble-code
-#     reads over ISO-TP, the poller's hold, the E-LOCK read — driven against a scripted ECU on a
+#     reads over ISO-TP, the poller's hold — driven against a scripted ECU on a
 #     fake clock, sends, records, logs and serves /stored-dtcs exactly as the reference does, to the
 #     millisecond
 #   - numbers are written exactly as JavaScript writes them; the event loop keeps Node's order
@@ -98,7 +98,7 @@ node "${node_flags[@]}" "$root/tools/generate-golden-pack-temperature.mts" "$ref
 
 node "${node_flags[@]}" "$root/tools/generate-golden-obd.mts" "$reference" "$build/golden-obd.txt"
 "$build/check_obd" "$build/golden-obd.txt" 2>"$build/check_obd.stderr" || {
-  grep -vE '^[IWE] (obd|obd-dtc|elock): ' "$build/check_obd.stderr" >&2
+  grep -vE '^[IWE] (obd|obd-dtc): ' "$build/check_obd.stderr" >&2
   exit 1
 }
 
@@ -152,24 +152,13 @@ node "${node_flags[@]}" "$root/tools/generate-golden-charge-auto-loop.mts" "$ref
   grep -vE '^[IW] card: ' "$build/check_card_shell.stderr" >&2
   exit 1
 }
-# Each chip's real firmware image that has been built (idf.py --preset <chip> build), else one laid
-# out the same way.
-update_images=()
-for chip in esp32 esp32s3; do
-  if [[ -f "$root/build/$chip/emcool.bin" ]]; then update_images+=("$root/build/$chip/emcool.bin"); fi
-done
-if ((${#update_images[@]} == 0)); then
-  "$build/check_update" 2>"$build/check_update.stderr" || {
-    grep -vE '^[IW] update: ' "$build/check_update.stderr" >&2
-    exit 1
-  }
-fi
-for update_image in ${update_images[@]+"${update_images[@]}"}; do
-  "$build/check_update" "$update_image" 2>"$build/check_update.stderr" || {
-    grep -vE '^[IW] update: ' "$build/check_update.stderr" >&2
-    exit 1
-  }
-done
+# The real firmware image if it has been built (idf.py build), else one laid out the same way.
+update_image=""
+if [[ -f "$root/build/esp32s3/emcool.bin" ]]; then update_image="$root/build/esp32s3/emcool.bin"; fi
+"$build/check_update" ${update_image:+"$update_image"} 2>"$build/check_update.stderr" || {
+  grep -vE '^[IW] update: ' "$build/check_update.stderr" >&2
+  exit 1
+}
 
 "$build/check_ride_log" 2>"$build/check_ride_log.stderr" || {
   cat "$build/check_ride_log.stderr" >&2
@@ -187,15 +176,14 @@ node "${node_flags[@]}" "$root/tools/check-ride-log.mts" "$build/ride-log-corpus
   cat "$build/check_ble_wire.stderr" >&2
   exit 1
 }
-# Firmware over the link sends the first real build found (else a made-up image); the other chip's
-# build, if there is one, goes again below.
-EMCOOL_UPDATE_IMAGE="${update_images[0]:-}" node "${node_flags[@]}" "$root/tools/check-ble.mts" "$build/ble_server_host" "$golden" "$reference" \
+# Firmware over the link sends the real build (else a made-up image).
+EMCOOL_UPDATE_IMAGE="$update_image" node "${node_flags[@]}" "$root/tools/check-ble.mts" "$build/ble_server_host" "$golden" "$reference" \
   "$build/ride-log-corpus/RIDES" 2>"$build/check_ble.stderr" || {
   grep -vE '^[IW] (gps|attitude|ble-server|ride-log|update|firmware): ' "$build/check_ble.stderr" >&2
   exit 1
 }
 # And with no card configured, /dl says the ride log is off.
-EMCOOL_UPDATE_IMAGE="${update_images[1]:-${update_images[0]:-}}" node "${node_flags[@]}" "$root/tools/check-ble.mts" "$build/ble_server_host" "$golden" "$reference" \
+EMCOOL_UPDATE_IMAGE="$update_image" node "${node_flags[@]}" "$root/tools/check-ble.mts" "$build/ble_server_host" "$golden" "$reference" \
   2>"$build/check_ble_no_card.stderr" || {
   grep -vE '^[IW] (gps|attitude|ble-server|ride-log|update|firmware): ' "$build/check_ble_no_card.stderr" >&2
   exit 1

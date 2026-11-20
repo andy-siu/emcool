@@ -62,9 +62,8 @@ struct Settings {
   std::string bleSecret;
   std::string bleName;
   bool customBmsConfig = false;
-  // Transmitting: off unless set. The E-LOCK read happens only with OBD on.
+  // Transmitting: off unless set.
   bool obdEnabled = false;
-  bool elockEnabled = false;
   // Service mode's VCU reads, which also need OBD_ENABLED for an active bus.
   bool serviceModeEnabled = false;
   // Service mode's VCU WRITES (/vcu-write). The only transmitting switch off by default on purpose.

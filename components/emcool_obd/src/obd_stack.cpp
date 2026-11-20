@@ -6,15 +6,10 @@ namespace emcool::obd {
 
 void ObdStack::start(Now now) {
   poller_.start(now);
-  if (elockEnabled_) elock_.start(now);
 }
 
 void ObdStack::handleFrame(std::uint32_t id, std::span<const std::uint8_t> data, Now now) {
-  if (ObdPoller::isResponse(id)) {
-    poller_.handleResponse(id, data, now);
-  } else if (ElockReader::isResponse(id)) {
-    elock_.handleResponse(data, now);
-  }
+  if (ObdPoller::isResponse(id)) poller_.handleResponse(id, data, now);
 }
 
 void ObdStack::tick(Now now) {
@@ -27,14 +22,12 @@ void ObdStack::tick(Now now) {
 }
 
 std::optional<Deadline> ObdStack::nextDeadline() const {
-  return earliest(earliest(hold_.nextDeadline(), reader_.nextDeadline()),
-                  earliest(poller_.nextDeadline(), elock_.nextDeadline()));
+  return earliest(earliest(hold_.nextDeadline(), reader_.nextDeadline()), poller_.nextDeadline());
 }
 
 bool ObdStack::fireNext(Now now) {
   const std::optional<Deadline> hold = hold_.nextDeadline();
   const std::optional<Deadline> reader = reader_.nextDeadline();
-  const std::optional<Deadline> poller = poller_.nextDeadline();
   const std::optional<Deadline> next = nextDeadline();
   if (!next || next->atMs > now.monotonicMs) return false;
   if (hold && hold->order == next->order) {
@@ -42,10 +35,8 @@ bool ObdStack::fireNext(Now now) {
   } else if (reader && reader->order == next->order) {
     reader_.tick(now);
     poller_.takeReadOutcome(now);
-  } else if (poller && poller->order == next->order) {
-    poller_.tick(now);
   } else {
-    elock_.tick(now);
+    poller_.tick(now);
   }
   return true;
 }

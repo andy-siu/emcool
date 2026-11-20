@@ -227,6 +227,8 @@ extern "C" void app_main() {
   static emcool::DashboardConsoleHost consoleHost(statusText, store, storeMutex, *diagnostics);
   // An update waits for what a restart waits for: flash writes pause the CAN interrupt.
   emcool::setUpdateBlockers([] { return consoleHost.restartBlockers(); });
+  // A /emcool.bin on the card installs itself, is removed, and is restarted into.
+  if (download != nullptr) emcool::startCardUpdateWatch(bikeCard, emcool::cardFiles().gate);
   static emcool::files::CardShell bikeConsoleCard(bikeCard, emcool::cardFiles().gate, "Bike console",
                                                  emcool::ble_server::ConsoleEndpoints::kMaxOutputBytes);
   static emcool::ble_server::ConsoleEndpoints consoleEndpoints(settingsStorage, runtimeSettings, consoleHost,
@@ -412,19 +414,16 @@ bool startBluetooth(const BluetoothParts& parts, const std::string& key) {
 // What this boot runs with — the secret only by its length — and the BMS line.
 void logSettings(const emcool::settings::Settings& settings) {
   emcool::logInfo(kTag,
-                  "settings: BLE_SECRET %s, BLE_NAME %s, CUSTOM_BMS_CONFIG %d, OBD_ENABLED %d, ELOCK_ENABLED %d, "
+                  "settings: BLE_SECRET %s, BLE_NAME %s, CUSTOM_BMS_CONFIG %d, OBD_ENABLED %d, "
                   "SERVICE_MODE_ENABLED %d, WIFI_SSID %s, status report %s (serial console: show)",
                   settings.bleSecret.empty() ? "not set" : "set",
                   settings.bleName.c_str(), settings.customBmsConfig ? 1 : 0, settings.obdEnabled ? 1 : 0,
-                  settings.elockEnabled ? 1 : 0, settings.serviceModeEnabled ? 1 : 0,
+                  settings.serviceModeEnabled ? 1 : 0,
                   settings.wifiSsid.empty() ? "not set" : settings.wifiSsid.c_str(),
                   settings.statusReport ? ("every " + std::to_string(settings.statusIntervalSeconds) + " s").c_str()
                                         : "off");
   if (!settings.obdEnabled) {
     emcool::logInfo("obd", "disabled (OBD_ENABLED=0) — passive decode only, listen-only on the bus");
-    if (settings.elockEnabled) emcool::logWarning("elock", "ELOCK_ENABLED is 1 but needs OBD_ENABLED too; not reading");
-  } else if (!settings.elockEnabled) {
-    emcool::logInfo("elock", "disabled (ELOCK_ENABLED=0)");
   }
   emcool::logInfo("bms", "%s",
                   settings.customBmsConfig

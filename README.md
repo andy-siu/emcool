@@ -1,6 +1,6 @@
 # emcool
 
-Telemetry for an Energica electric motorcycle, on an ESP32 plugged into its CAN bus. emcool decodes every frame on the bus into live values, logs them to a microSD card, and serves a phone dashboard over Bluetooth. With the settings for them turned on, it also polls OBD-II, reads and writes the VCU's parameters in service mode, controls the DC charge current to keep the pack cool, and serves its console and ride log over Wi-Fi. It's C++ on ESP-IDF.
+Telemetry for an Energica electric motorcycle, on an ESP32-S3 plugged into its CAN bus. emcool decodes every frame on the bus into live values, logs them to a microSD card, and serves a phone dashboard over Bluetooth. With the settings for them turned on, it also polls OBD-II, reads and writes the VCU's parameters in service mode, controls the DC charge current to keep the pack cool, and serves its console and ride log over Wi-Fi. It's C++ on ESP-IDF.
 
 ## Status
 
@@ -19,97 +19,13 @@ Telemetry for an Energica electric motorcycle, on an ESP32 plugged into its CAN 
 - With **`CHARGE_AUTO_ENABLED`** on top, runs the automatic charge-current controller. During a DC fast charge it eases the current to hold the pack near 54 °C, on a 60 s timer.
 - With **`WIFI_SSID`** and **`ADMIN_PASSWORD`**, joins that Wi-Fi network. It serves the console on port 23 and the ride log as a web page on port 80.
 
-**Not built:** fan control, the coolant-temperature probes (pins are reserved below), and a direct link to the Connectivity Hub.
+**Not built:** fan control, the coolant-temperature probes, and a direct link to the Connectivity Hub.
 
 **Not yet run on the board.** Everything is compiled, and the laptop checks drive most of it, but the CAN controller, the card, Bluetooth and Wi-Fi haven't run on real hardware.
 
 ## Hardware
 
-**Board:** Copperhill / SK Pang ESP32 CAN-BUS board, rev B ([schematic](https://copperhilltech.com/content/ESP32_CAN_rev_B.pdf)).
-
-- ESP32-WROOM-32: 520 KB SRAM, 4 MB flash, no PSRAM. Bluetooth 4.2 and 2.4 GHz Wi-Fi.
-- MCP2562 CAN transceiver, with TXD on GPIO25 and RXD on GPIO26. Those are the firmware defaults.
-- A CP2104 USB-C serial bridge, for `idf.py flash monitor`.
-
-**J3**, the CAN and power connector:
-
-| Pin | Signal |
-| --- | --- |
-| 1 | CAN_L |
-| 2 | CAN_H |
-| 3 | GND |
-| 4 | +12V in |
-
-Pin 1 is CAN_**L**: the schematic crosses the two lines before the connector.
-
-### Before connecting it to the bike
-
-- **Take the terminator out.** The board's 120 Ω terminator, R4, is switched in by jumper JP1. The bike's bus is already terminated at both ends, and a third resistor at the OBD port drops it from 60 Ω to 40 Ω. Remove the JP1 jumper.
-  - To check, measure between CAN_H and CAN_L on J3 with the board unpowered and disconnected. About 120 Ω means the terminator is still in; open circuit means it is out.
-- **Power it over USB-C rather than J3's +12V.** J3 pin 4 feeds an NCV4264-2 5 V regulator, which onsemi rates at 100 mA. The 3.3 V regulator, an MIC5504 rated at 300 mA, runs off that same 5 V rail, so everything on the board would share 100 mA. Bluetooth alone needs more than that: the ESP32 datasheet (v5.3, Table 5-4) gives 130 mA typical to transmit and 95–100 mA to receive. Wi-Fi needs more again.
-  - Feed USB-C from a 12 V → 5 V USB adapter instead, and leave J3 pin 4 unconnected.
-  - With USB power, J3 only needs pins 1–3.
-
-### Pins for add-on modules
-
-The microSD pins are firmware defaults (`idf.py menuconfig` → emcool → microSD card); [`docs/sd-card-wiring.md`](docs/sd-card-wiring.md) has the card's pinout and the pull-ups it needs. The coolant-probe pins are planned only, not coded yet.
-
-| Function | GPIO | Header pin |
-| --- | --- | --- |
-| microSD SCK | 5 | JP2-7 (SCK) |
-| microSD MOSI | 18 | JP2-8 (MOSI) |
-| microSD MISO | 19 | JP2-9 (MISO) |
-| microSD CS | 17 | JP2-6 |
-| MAX31865 SCK | 14 | JP2-3 |
-| MAX31865 MOSI | 13 | JP3-4 |
-| MAX31865 MISO | 27 | JP3-6 |
-| MAX31865 CS, coolant in | 32 | JP3-8 |
-| MAX31865 CS, coolant out | 33 | JP3-7 |
-
-Power for these modules:
-
-- **3.3 V:** JP2-1 or JP3-2.
-- **+5 V:** JP3-1.
-- **GND:** JP2-2 or JP3-3.
-
-Other pins:
-
-- **Don't use GPIO12 (JP3-5).** It is the strapping pin that selects the flash voltage, so anything that pulls it high at reset, such as an SD card's MISO pull-up, stops the WROOM-32 from booting.
-- **Still free** for the fan and anything else:
-  - GPIO16 and GPIO21.
-  - GPIO22 and GPIO23, which have 10 kΩ pull-ups for the QWIIC connector.
-  - Input-only pins GPIO34–39.
-- **The RGB LED** is on GPIO2 (red), GPIO15 (green) and GPIO4 (blue).
-
-## Build and flash
-
-Needs ESP-IDF v6.1. [`docs/mac-setup.md`](docs/mac-setup.md) has the full setup for a Mac.
-
-It builds for two chips. Pick one with `--preset`, or `CHIP=` with `make`. Each has its own build directory, so both can be built side by side:
-
-| Preset | Chip | Builds into |
-| --- | --- | --- |
-| `esp32` | ESP32-WROOM-32, the Copperhill board above | `build/esp32/` |
-| `esp32s3` | ESP32-S3 | `build/esp32s3/` |
-
-```bash
-. ~/esp/esp-idf/export.sh
-idf.py --preset esp32 build flash monitor      # or: make flash CHIP=esp32
-idf.py --preset esp32s3 build flash monitor    # or: make flash CHIP=esp32s3
-```
-
-Without `--preset` (or `CHIP=`), `idf.py` and `make` build for the ESP32-S3. `export IDF_PRESET=esp32` saves typing `--preset` on every command for the WROOM-32. Flashing the wrong chip's build fails with `This chip is ESP32-S3, not ESP32`, and nothing is written.
-
-- **Pins:** the CAN and microSD pins default to the Copperhill board's (GPIO25/26, and the SPI header), and to the table below on an S3. For different wiring, change them with `make menuconfig CHIP=<chip>` (or `idf.py --preset <chip> menuconfig`) → emcool. Setting a pin to -1 turns that part off.
-- **Build options:** these live in `sdkconfig.defaults`, shared by both chips, with `sdkconfig.defaults.esp32` and `sdkconfig.defaults.esp32s3` on top. The pin defaults are in `main/Kconfig.projbuild`.
-- **A build keeps its options.** Each build writes them to `build/<chip>/sdkconfig` the first time (the file isn't tracked) and uses that file from then on. A changed default, such as a new default pin, doesn't reach a build that already exists. `make defaults CHIP=<chip>` deletes the file, and the next build starts again from the defaults. That also drops anything set in menuconfig.
-- **Optimised for size:** the firmware is built with `-Os`, not `-Og`, because Bluetooth and Wi-Fi together don't fit otherwise. It's 1.81 MB of the 1.875 MB app slot.
-
-### ESP32-S3
-
 **Board:** Autosport Labs ESP32-CAN-X2 ([wiki](https://wiki.autosportlabs.com/ESP32-CAN-X2)). It has an ESP32-S3-WROOM-1-N8R8 (8 MB flash, 8 MB PSRAM) and two CAN channels, each with its own transceiver on the board. emcool uses CAN1, the S3's own CAN controller. CAN2, an MCP2515 on SPI, isn't used.
-
-The S3 build has the same features as the ESP32 one. What differs:
 
 - **Console:** the serial console runs on the chip's own USB Serial/JTAG port, the board's USB-C. It shows up as `/dev/cu.usbmodem*`, and needs no driver.
 - **Bike wiring:** the bike's CAN H and CAN L go to the board's CAN1 connector, X1. The pins are numbered from the right, looking at the board from the top:
@@ -123,8 +39,8 @@ The S3 build has the same features as the ESP32 one. What differs:
 
   The same CAN1 H and L are on header SV1, pins 1 and 2. Autosport Labs warns that the pigtail's wire colours may not match its documentation, so go by the pin position.
 
-- **Take the terminator out.** The board's CAN1 120 Ω terminator is on from the factory, and there's no jumper. Cut the copper trace between the TERM1 and TERM2 pads on the back of the board; solder them together again to put it back. As on the Copperhill board, the bike's bus is already terminated at both ends, and a third resistor drops it from 60 Ω to 40 Ω. To check, measure between CAN H and CAN L with the board unpowered and disconnected: about 120 Ω means the terminator is still in.
-- **The default pins:**
+- **Take the terminator out.** The board's CAN1 120 Ω terminator is on from the factory, and there's no jumper. Cut the copper trace between the TERM1 and TERM2 pads on the back of the board; solder them together again to put it back. The bike's bus is already terminated at both ends, and a third resistor drops it from 60 Ω to 40 Ω. To check, measure between CAN H and CAN L with the board unpowered and disconnected: about 120 Ω means the terminator is still in.
+- **The default pins** (`idf.py menuconfig` → emcool):
 
   | Function | GPIO |
   | --- | --- |
@@ -135,41 +51,60 @@ The S3 build has the same features as the ESP32 one. What differs:
   | microSD SCK | 15 |
   | microSD MISO | 16 |
 
-  [`docs/sd-card-wiring.md`](docs/sd-card-wiring.md) has the card's full pinout for both chips. A board first built before these pins were the defaults still has the old ones: run `make defaults CHIP=esp32s3` and build again.
+  [`docs/sd-card-wiring.md`](docs/sd-card-wiring.md) has the card's full pinout and the pull-ups it needs. A board first built before these pins were the defaults still has the old ones: run `make defaults` and build again.
 
 - **Pins the board already uses:** GPIO6 and 7 for CAN1; GPIO10–13 (SPI) and GPIO3 (interrupt) for CAN2's MCP2515; GPIO2 for the blue user LED. Don't put anything else on them.
 - **Pins to avoid:** GPIO19 and GPIO20 are the USB port. GPIO0, 3, 45 and 46 are strapping pins. GPIO26–32 drive the flash, and the N8R8's octal PSRAM takes GPIO33–37.
-- **Flash:** the build assumes 4 MB, like the WROOM-32, so it uses the same partition table on a board with more.
-- **Not run on the bike yet.** On the S3 the console, the status report, `can-dump` and Bluetooth advertising have run on the bench. CAN, the card and Wi-Fi haven't run on real hardware.
+- **Flash:** the build assumes the N8R8's 8 MB (`partitions.csv`): two 3.875 MB app slots and the core dump. A board flashed with the old 4 MB table keeps its 1.875 MB slots, even through over-the-air updates, until it's flashed once over USB (`make flash`). Its settings survive that: NVS hasn't moved.
+- **Not run on the bike yet.** The console, the status report, `can-dump` and Bluetooth advertising have run on the bench. CAN, the card and Wi-Fi haven't run on real hardware.
+
+## Build and flash
+
+Needs ESP-IDF v6.1. [`docs/mac-setup.md`](docs/mac-setup.md) has the full setup for a Mac.
+
+```bash
+. ~/esp/esp-idf/export.sh
+idf.py build flash monitor      # or: make flash, then make monitor
+```
+
+It builds into `build/esp32s3/` (the one preset in `CMakePresets.json`).
+
+- **Pins:** for different wiring, change them with `make menuconfig` (or `idf.py menuconfig`) → emcool. Setting a pin to -1 turns that part off.
+- **Build options:** these live in `sdkconfig.defaults`, with `sdkconfig.defaults.esp32s3` on top. The pin defaults are in `main/Kconfig.projbuild`.
+- **A build keeps its options.** Each build writes them to `build/esp32s3/sdkconfig` the first time (the file isn't tracked) and uses that file from then on. A changed default, such as a new default pin, doesn't reach a build that already exists. `make defaults` deletes the file, and the next build starts again from the defaults. That also drops anything set in menuconfig.
+- **Optimised for size:** the firmware is built with `-Os`, not `-Og`. It's 1.81 MB of the 3.875 MB app slot.
+- **Only the ESP32-S3.** emcool used to build for the Copperhill ESP32-WROOM-32 board too. That's gone: the 8 MB partition table doesn't fit its 4 MB flash, and an update refuses an ESP32 build.
 
 ### Updating without the cable
 
-After the first USB flash, new firmware can go on over the air: from the dashboard over Bluetooth, from the microSD card, or over Wi-Fi. All three write the new image into the spare app slot while the bike keeps running, check it, and boot it at the next `restart`.
+After the first USB flash, new firmware can go on over the air: from the dashboard over Bluetooth, from the microSD card, or over Wi-Fi. All of them write the new image into the spare app slot while the bike keeps running, check it, and boot it at the next restart (which the card's `emcool.bin` does on its own).
 
-**From the dashboard:** open **Settings → emcool → Firmware**, choose `build/<chip>/emcool.bin` (on a phone, AirDrop or save it to Files first), tap **Send to bike** twice, then **Restart** once it says *Written and checked*. It takes a few minutes; keep the phone near the bike. See [`docs/ble.md`](docs/ble.md) for how it goes over the link.
+**From the dashboard:** open **Settings → emcool → Firmware**, choose `build/esp32s3/emcool.bin` (on a phone, AirDrop or save it to Files first), tap **Send to bike** twice, then **Restart** once it says *Written and checked*. It takes a few minutes; keep the phone near the bike. See [`docs/ble.md`](docs/ble.md) for how it goes over the link.
 
-**From the card or Wi-Fi:**
+**From the card, on its own:** copy `build/esp32s3/emcool.bin` onto the card's top folder as `emcool.bin` and put the card back in. Within about 10 s of the card being mounted (and once the bike has been up 30 s), emcool installs it, removes it from the card, and restarts into it as soon as the bike is parked with the bus free. The log says each step. A file it won't install (another chip's build, a corrupt copy) stays on the card and is logged; so does the build that was rolled back last time, so a bad build isn't installed again on every boot. If the file is the firmware already running, it's just removed.
+
+**From a console or Wi-Fi:**
 
 ```
-emcool> update /emcool.bin      after copying build/<chip>/emcool.bin onto the card
+emcool> update /emcool.bin      after copying build/esp32s3/emcool.bin onto the card
 emcool> restart
 ```
 
 ```bash
-curl -u :'the admin password' -T build/esp32/emcool.bin http://emcool.local/update
+curl -u :'the admin password' -T build/esp32s3/emcool.bin http://emcool.local/update
 ```
 
 - **On trial:** a new image is kept once it has run 30 s. A crash, a watchdog reset, a power cut or a `restart` before then boots the old one again, and `update status` says so. So let it run 30 s before restarting it.
 - **Parked, with the bus free:** writing flash pauses the CAN bus's interrupt for tens of milliseconds at a time, which drops frames and could cut a service write short. So an update waits for what `restart` waits for: it's refused while a fresh reading says the bike is moving or in drive, and while service mode or the OBD poller's hold has the bus.
-- **Refused, with the slot untouched:** a file that isn't an ESP32 app, the other chip's build, another project's firmware, the bootloader or a merged image. Anything cut short or corrupt is caught by the image's own hash before the boot slot changes.
+- **Refused, with the slot untouched:** a file that isn't an ESP32-S3 app, another chip's build (an old ESP32 one too), another project's firmware, the bootloader or a merged image. Anything cut short or corrupt is caught by the image's own hash before the boot slot changes.
 - **The first time needs the cable.** Trial boots are a bootloader setting (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`), and only `idf.py flash` writes the bootloader. A board flashed before this has no trial boot: an update still works, but nothing undoes a bad one.
 - **USB is always the way back.** `idf.py flash` writes slot 0 and points the boot at it, whatever the update did.
 
-Each slot holds a whole image, so the app has to stay under 1.875 MB. ⚠️ It is close: the ESP32 build leaves about 47 KB, and the S3 about 62 KB.
+Each slot holds a whole image, so the app has to stay under 3.875 MB; the S3 build is 1.81 MB. An update can't change the partition table, so a board still on the old 4 MB table (1.875 MB slots) refuses an image bigger than that until it's flashed over USB.
 
 ## Settings
 
-Per-bike settings live in the ESP32's NVS. They survive reflashing and firmware updates; only `idf.py erase-flash` clears them. Set them from the serial console that `idf.py monitor` opens, or from the dashboard's **Settings → Bike console**, which runs the same commands over Bluetooth. [`docs/setup.md`](docs/setup.md) is the complete reference — every console command and every setting with its type, default, range and dependencies; the summary here covers the common ones.
+Per-bike settings live in the ESP32-S3's NVS. They survive reflashing and firmware updates; only `idf.py erase-flash` clears them. Set them from the serial console that `idf.py monitor` opens, or from the dashboard's **Settings → Bike console**, which runs the same commands over Bluetooth. [`docs/setup.md`](docs/setup.md) is the complete reference — every console command and every setting with its type, default, range and dependencies; the summary here covers the common ones.
 
 ```
 emcool> show
@@ -184,7 +119,6 @@ emcool> restart
 | `BLE_NAME` | `emcool` | The name in the phone's device list. |
 | `CUSTOM_BMS_CONFIG` | `0` | `1` if the BMS runs the custom LiBAL config. |
 | `OBD_ENABLED` | `0` | `1` to poll OBD-II and read trouble codes. This puts the CAN controller on the bus as an active node. See [Transmitting](#transmitting). |
-| `ELOCK_ENABLED` | `0` | `1` to read `keys_paired` from the E-LOCK once at startup. Needs `OBD_ENABLED`. |
 | `SERVICE_MODE_ENABLED` | `0` | `1` to let the dashboard read the VCU's calibration parameters, only while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `SERVICE_WRITE_ENABLED` | `0` | `1` to let the dashboard **write** to the VCU (`/vcu-write`). The one switch that lets a web page change the bike. Needs `OBD_ENABLED` and `SERVICE_MODE_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `CHARGE_AUTO_ENABLED` | `0` | `1` for the automatic charge-current controller. It commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`docs/service-mode.md`](docs/service-mode.md). |
@@ -323,7 +257,7 @@ Most of emcool's logic is checked against a **reference implementation**: an ear
   - stock and custom configs, with the setting right and wrong
   - short, long and late frames
   - echo and clamp faults
-- **The OBD side matches to the millisecond:** the poller, trouble-code reads, the poller's hold and the E-LOCK read, in 72 scenarios over four simulated hours against a scripted ECU. Every millisecond it must send the same frames, record the same signals, log the same lines and serve the same `/stored-dtcs` body. It also checks all 65,536 codes, every NRC and 94,000 ISO-TP frames. Details are in [`docs/obd.md`](docs/obd.md).
+- **The OBD side matches to the millisecond:** the poller, trouble-code reads and the poller's hold, in 72 scenarios over four simulated hours against a scripted ECU. Every millisecond it must send the same frames, record the same signals, log the same lines and serve the same `/stored-dtcs` body. It also checks all 65,536 codes, every NRC and 94,000 ISO-TP frames. Details are in [`docs/obd.md`](docs/obd.md).
 - **Service mode matches to the millisecond.** Its pure parts are checked on random input: codecs, the service gate, rows and diffs. Sweeps and probes, with the OBD poller alongside, run against simulated VCU micros.
 - **The write path matches.** The security key, the reply decoders, the allowlist and gates, and the charge commands are checked on random input. Whole write sessions are compared frame for frame on a scripted bus.
 - **The charge controller matches** bit for bit, and through scripted charges. Details for service mode, writes and the controller are in [`docs/service-mode.md`](docs/service-mode.md).
@@ -356,7 +290,7 @@ Most of emcool's logic is checked against a **reference implementation**: an ear
 | `components/emcool_ride_log` | Ride-log segments, the on-card record format, the file writer, and the download. Plain POSIX calls, so the laptop runs the same code. |
 | `components/emcool_ble_wire` | The phone link's wire protocol and session. Crypto is mbedTLS PSA on the device and OpenSSL on the laptop. |
 | `components/emcool_ble_server` | The phone link's server: live stream, request handling, the endpoints. Transport-free. |
-| `components/emcool_obd` | OBD-II: the PID poller, trouble-code reads over ISO-TP, the poller's hold, the E-LOCK read, the hub's fault list, and Energica's code table (generated). Transport-free. |
+| `components/emcool_obd` | OBD-II: the PID poller, trouble-code reads over ISO-TP, the poller's hold, the hub's fault list, and Energica's code table (generated). Transport-free. |
 | `components/emcool_vcu` | Service mode: the KWP2000 client, sweeps and probes, the service gate, the 29 parameter tables (generated), the snapshots on the card, the write engine and the automatic charge-current controller. Transport-free. |
 | `components/emcool_async` | An event loop with Node's ordering rules, and C++20 coroutines on it. |
 | `components/emcool_text` | Allocation-free text and JSON building, a window at a time for bodies bigger than any buffer. |

@@ -13,8 +13,9 @@ files::CardFacts BikeCard::facts() {
   files::CardFacts facts;
   if (const std::optional<ride_log::LiveExtent> live = writer_.liveExtent()) {
     facts.recordingBoot = live->boot;
-  } else if (counters_.cardMounted.load(std::memory_order_relaxed)) {
-    // Mounted, and the writer hasn't opened its part yet (or it just closed one that failed).
+  } else if (counters_.rideLogOpening.load(std::memory_order_relaxed)) {
+    // The writer is making this boot's folder and first part, so which ride it records isn't
+    // known yet. A ride log that failed to open isn't starting: the card stays open to commands.
     facts.rideLogStarting = true;
   }
   return facts;

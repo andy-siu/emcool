@@ -835,7 +835,7 @@ check(Math.max(...smallPhone.frameSizes) <= 18, `a ${Math.max(...smallPhone.fram
 }
 
 // 8. Firmware over the link (Settings → emcool → Firmware): the dashboard's own firmware-image.js
-// sends a real build's emcool.bin (EMCOOL_UPDATE_IMAGE, else build/esp32/emcool.bin, else one laid
+// sends a real build's emcool.bin (EMCOOL_UPDATE_IMAGE, else build/esp32s3/emcool.bin, else one laid
 // out the same way) a piece per request into the host's in-memory slot, which must end up holding
 // exactly that image and chosen. Anything else is refused, and a phone that goes away, a bike that
 // starts moving, a piece out of place or a corrupt image leaves the slot unchosen.
@@ -856,7 +856,7 @@ check(Math.max(...smallPhone.frameSizes) <= 18, `a ${Math.max(...smallPhone.fram
     put(112, "v6.1");
     return image;
   };
-  const imagePath = process.env.EMCOOL_UPDATE_IMAGE || join(emcoolRoot, "build/esp32/emcool.bin");
+  const imagePath = process.env.EMCOOL_UPDATE_IMAGE || join(emcoolRoot, "build/esp32s3/emcool.bin");
   let realImage: Uint8Array | null = null;
   try {
     realImage = new Uint8Array(await readFile(imagePath));
@@ -916,7 +916,7 @@ check(Math.max(...smallPhone.frameSizes) <= 18, `a ${Math.max(...smallPhone.fram
   check(whileMoving.status === 409 && whileMoving.reply.message.includes("moving"),
     `begin while moving: ${whileMoving.status} ${whileMoving.reply.message}`);
   await firmwareBike.command("B", Uint8Array.of(0));
-  const tooBig = await post(`/firmware/begin?bytes=${0x1e0001}`);
+  const tooBig = await post(`/firmware/begin?bytes=${0x3e0001}`);
   check(tooBig.status === 409 && tooBig.reply.message.includes("won't fit"), `begin too big: ${tooBig.reply.message}`);
 
   // The whole image, as the dashboard sends it.

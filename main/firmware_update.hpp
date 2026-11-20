@@ -3,6 +3,8 @@
 // The bike's side of over-the-air updates (emcool/update/firmware_update.hpp): the spare app slot
 // through esp_ota_*, the trial boot's confirmation, and the two ways an image arrives:
 //
+//   /emcool.bin     on the microSD card's top folder: installed on its own, removed, and restarted
+//                   into (startCardUpdateWatch)
 //   `update FILE`   on any console: an image already on the microSD card, `update /emcool.bin`.
 //   PUT /update     on the Wi-Fi page, behind ADMIN_PASSWORD (main/wifi_link.cpp):
 //                   curl -u :PASSWORD -T build/emcool.bin http://emcool/update
@@ -53,6 +55,36 @@ class BluetoothFirmwareHost final : public ble_server::FirmwareHost {
 // From app_main, first thing: if this boot is a new image on trial, says so, and keeps it once it
 // has run kTrialMs. With rollback off in the bootloader there is no trial, and it says nothing.
 void startFirmwareTrial();
+
+// How an install from the card went.
+enum class CardInstall : std::uint8_t {
+  kInstalled,   // written, checked, and chosen for the next boot
+  kNoFile,      // no such file, or no card mounted
+  kUnreadable,  // there, but a folder or a file that won't open
+  kNotNow,      // the bike is moving, the bus is busy, another update is running, or the card went away
+  kNotStarted,  // the updater refused it before reading: too short, or too big for the slot
+  kFailed,      // refused while it was read (another chip, another project, corrupt): the slot unchanged
+};
+
+// Installs `path` (from the card's top folder, "/emcool.bin") from `card`: read a piece at a time
+// under the card's lock, written outside it, with progress through `flush`. `problem` says why, for
+// anything but kInstalled.
+CardInstall installFromCard(files::Card& card, const std::string& path, const std::function<void(std::string&)>& flush,
+                            std::string& problem);
+
+// The file on the card that installs itself.
+inline constexpr const char* kCardUpdateFile = "/emcool.bin";
+
+// Watches the card for /emcool.bin, every 10 s once startup has settled and the running image is
+// kept (a trial image can't write the spare slot). When one is there it's installed as `update
+// /emcool.bin` would, holding `gate` so no console changes the card meanwhile; then it's removed,
+// and the bike restarts into it as soon as nothing blocks a restart (a parked bike, a free bus).
+// Before installing, its app description's ELF hash is compared: the firmware running now is just
+// removed (a removal that failed, a console's `update` that left it); the one already waiting for
+// the next boot is left for a `restart`; and the one that was rolled back is left alone, so a bad
+// build doesn't install, fail its trial and roll back on every boot. One that's refused (another
+// chip's build, a corrupt copy) stays on the card, logged, until a card is next mounted.
+void startCardUpdateWatch(files::Card& card, files::CardShellGate& gate);
 
 // `update FILE`, `update status`: what the console prints, and 0 when it did what was asked. Reads
 // the file from `card` (null without a card) a piece at a time, printing progress through `flush`.

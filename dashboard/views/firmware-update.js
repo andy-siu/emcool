@@ -168,7 +168,7 @@ export function FirmwareUpdate() {
   }
   return SettingsCard(
     "Firmware",
-    "Install new firmware over Bluetooth: choose the build's emcool.bin (build/esp32/ or build/esp32s3/). The bike checks it, writes it beside the running firmware, and runs it at the next restart, on trial: a crash or a restart in its first 30 s goes back to the firmware running now. Refused while the bike is moving or service mode has the bus. Keep the phone near the bike; it takes a few minutes.",
+    "Install new firmware over Bluetooth: choose the build's emcool.bin (build/esp32s3/). The bike checks it, writes it beside the running firmware, and runs it at the next restart, on trial: a crash or a restart in its first 30 s goes back to the firmware running now. Refused while the bike is moving or service mode has the bus. Keep the phone near the bike; it takes a few minutes.",
     () =>
       div(
         { class: "settings-note action-note output" },

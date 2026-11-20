@@ -102,7 +102,9 @@ std::string StatusReport::describe(std::int64_t nowMs) {
   appendLine(out,
           "ride log: card %s, boot %05u part %u | %.0f readings/s, %.1f KB/s to the card | %llu dropped, %u lost "
           "without a card, %llu write errors, %u old parts deleted for room | clock %s",
-          sources_.rideLogTask.cardMounted.load(std::memory_order_relaxed) ? "mounted" : "ABSENT",
+          !sources_.rideLogTask.cardMounted.load(std::memory_order_relaxed) ? "ABSENT"
+          : sources_.writer.liveExtent()                                     ? "mounted"
+                                                                             : "mounted but not recording",
           static_cast<unsigned>(writer.bootNumber.load(std::memory_order_relaxed)),
           static_cast<unsigned>(writer.currentPart.load(std::memory_order_relaxed)),
           static_cast<double>(now.appended - windowStart_.appended) / seconds,

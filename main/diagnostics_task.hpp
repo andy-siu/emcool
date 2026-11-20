@@ -1,7 +1,7 @@
 #pragma once
 
 // The task that talks to the bike: the OBD poller (with OBD_ENABLED) and service mode's read runner
-// on one event loop. The decode task hands it the diagnostic replies (0x7E0-0x7EF and 0x790); the
+// on one event loop. The decode task hands it the diagnostic replies (0x7E0-0x7EF); the
 // Bluetooth task hands it the dashboard's service requests and takes the answers back when they're
 // ready, so a probe that takes seconds never holds up the live stream; and it writes service mode's
 // snapshots to the card itself, so a slow card never holds up the decoding.

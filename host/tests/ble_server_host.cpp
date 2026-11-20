@@ -144,7 +144,7 @@ class StubConsoleHost final : public emcool::ble_server::ConsoleHost {
 // the chip of whatever image starts arriving, so the check can send either build.
 class MemorySlot final : public emcool::update::Slot {
  public:
-  std::size_t capacity() const override { return 0x1E0000; }
+  std::size_t capacity() const override { return 0x3E0000; }
   emcool::update::ImageInfo running() const override { return {"emcool", "v-test", "v6.1", "Nov 1 2026 10:00:00"}; }
   std::uint16_t chip() const override { return chip_; }
   bool begin(std::size_t, std::string&) override {
@@ -183,7 +183,7 @@ class MemorySlot final : public emcool::update::Slot {
   int abandons = 0;
 
  private:
-  std::uint16_t chip_ = emcool::update::kChipEsp32;
+  std::uint16_t chip_ = emcool::update::kChipEsp32S3;
 };
 
 class StubFirmwareHost final : public emcool::ble_server::FirmwareHost {
