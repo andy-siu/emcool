@@ -1,14 +1,12 @@
-0. download silicon labs cp210x USB driver for windows
+0. No USB driver needed: the ESP32-S3 board's USB-C port is the chip's own.
 1. Download IDF v6.1 from espressif.com
 
 2. theres a powershell installed on desktop.  Thats what we will use.
  IDF_v6.1_Powershell
-3.  cd emcool; 
-    idf.py --preset esp32 build
-    idf.py --preset esp32 flash
-    idf.py --preset esp32 -p COM5 monitor or idf.py --preset esp32 monitor
-
-    For an ESP32-S3 board, use --preset esp32s3 instead.
+3.  cd emcool;
+    idf.py build
+    idf.py flash
+    idf.py -p COM5 monitor or idf.py monitor
 
 4. Or use the make shortcuts instead of step 3. Windows doesn't come with make,
    so install it once, then open a new PowerShell:
@@ -19,16 +17,11 @@
     make flash      (or: make flash PORT=COM5)
     make monitor    (or: make monitor PORT=COM5)
 
-   make builds for the ESP32-S3. Add CHIP=esp32 for the ESP32-WROOM-32 board,
-   e.g. make flash CHIP=esp32.
-
     make menuconfig   change the options, such as the pins (emcool menu)
     make defaults     forget the build's options; the next build uses the defaults
 
    A build keeps the options (pins included) it was first made with, in
-   build\<chip>\sdkconfig. After the defaults change, run make defaults
-   (with CHIP=esp32 for the WROOM-32) and build again.
+   build\esp32s3\sdkconfig. After the defaults change, run make defaults and
+   build again.
 
    Ctrl-] quits the monitor. If make doesn't work in that PowerShell, use step 3.
-
-

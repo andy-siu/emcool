@@ -18,7 +18,7 @@ struct DecodedValue {
 };
 
 // Fixed capacity so decoding never touches the heap: the bus delivers thousands of frames a
-// second and a PSRAM-less WROOM-32 has ~100 KB of heap to share with Bluetooth. The busiest
+// second and the heap is shared with Bluetooth and Wi-Fi. The busiest
 // frame, 0x102, yields 34 values; a push past capacity is dropped and flagged, never silent.
 class DecodedValues {
  public:

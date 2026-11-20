@@ -835,7 +835,7 @@ check(Math.max(...smallPhone.frameSizes) <= 18, `a ${Math.max(...smallPhone.fram
 }
 
 // 8. Firmware over the link (Settings → emcool → Firmware): the dashboard's own firmware-image.js
-// sends a real build's emcool.bin (EMCOOL_UPDATE_IMAGE, else build/esp32/emcool.bin, else one laid
+// sends a real build's emcool.bin (EMCOOL_UPDATE_IMAGE, else build/esp32s3/emcool.bin, else one laid
 // out the same way) a piece per request into the host's in-memory slot, which must end up holding
 // exactly that image and chosen. Anything else is refused, and a phone that goes away, a bike that
 // starts moving, a piece out of place or a corrupt image leaves the slot unchosen.
@@ -856,7 +856,7 @@ check(Math.max(...smallPhone.frameSizes) <= 18, `a ${Math.max(...smallPhone.fram
     put(112, "v6.1");
     return image;
   };
-  const imagePath = process.env.EMCOOL_UPDATE_IMAGE || join(emcoolRoot, "build/esp32/emcool.bin");
+  const imagePath = process.env.EMCOOL_UPDATE_IMAGE || join(emcoolRoot, "build/esp32s3/emcool.bin");
   let realImage: Uint8Array | null = null;
   try {
     realImage = new Uint8Array(await readFile(imagePath));

@@ -1,16 +1,16 @@
 # Setup: the serial console
 
-Every per-bike option emcool has lives in the ESP32's NVS (non-volatile storage) and is set from the serial console. This is the complete reference: the commands, and every setting with its type, default, range and when it takes effect. The prose rationale for the feature flags is in the README's [Settings](../README.md#settings) section; this is the exact list.
+Every per-bike option emcool has lives in the ESP32-S3's NVS (non-volatile storage) and is set from the serial console. This is the complete reference: the commands, and every setting with its type, default, range and when it takes effect. The prose rationale for the feature flags is in the README's [Settings](../README.md#settings) section; this is the exact list.
 
 ## Opening the console
 
 Flashing opens it:
 
 ```
-idf.py --preset esp32 flash monitor
+idf.py flash monitor
 ```
 
-or, on a board that's already flashed, just `idf.py --preset esp32 monitor` (`esp32s3` for an ESP32-S3). On the ESP32 it is a UART REPL at the ESP-IDF default (115200 baud, 8N1) over the board's CP2104 USB-C bridge. On the ESP32-S3 it runs on the chip's own USB Serial/JTAG port. The prompt is:
+or, on a board that's already flashed, just `idf.py monitor`. It runs on the chip's own USB Serial/JTAG port, the board's USB-C. The prompt is:
 
 ```
 emcool>

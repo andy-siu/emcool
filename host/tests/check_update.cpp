@@ -3,11 +3,10 @@
 // a bootloader, a file cut short, one that runs long — is refused with the slot never erased, or
 // abandoned so the running firmware stays chosen.
 //
-//   check_update [build/esp32/emcool.bin]
+//   check_update [build/esp32s3/emcool.bin]
 //
 // With no image (tools/check.sh doesn't build the firmware), it makes one with the same layout: the
-// header, a segment header, the app description, then filler. A real image may be any chip's build;
-// the fake slot runs on that chip.
+// header, a segment header, the app description, then filler. The fake slot runs on the image's chip.
 
 #include <cstdio>
 #include <fstream>
@@ -24,7 +23,7 @@ using emcool::update::Updater;
 namespace {
 
 // The chip the image under test was built for; the fake slot runs on it unless told otherwise.
-std::uint16_t imageChip = emcool::update::kChipEsp32;
+std::uint16_t imageChip = emcool::update::kChipEsp32S3;
 
 class FakeSlot final : public emcool::update::Slot {
  public:
@@ -98,6 +97,7 @@ std::vector<std::uint8_t> madeUpImage() {
   std::fill(image.begin(), image.begin() + 32 + 256, 0);
   image[0] = 0xE9;  // magic
   image[1] = 6;     // segments
+  image[12] = static_cast<std::uint8_t>(emcool::update::kChipEsp32S3);
   image[23] = 1;    // SHA-256 appended
   const std::uint32_t descMagic = 0xABCD5432;
   for (int at = 0; at < 4; at++) image[32 + at] = static_cast<std::uint8_t>(descMagic >> (8 * at));
@@ -116,7 +116,7 @@ std::vector<std::uint8_t> madeUpImage() {
 
 int main(int argumentCount, char** arguments) {
   if (argumentCount > 2) {
-    std::fprintf(stderr, "usage: check_update [build/esp32/emcool.bin]\n");
+    std::fprintf(stderr, "usage: check_update [build/esp32s3/emcool.bin]\n");
     return 2;
   }
   const std::vector<std::uint8_t> image = argumentCount == 2 ? readFile(arguments[1]) : madeUpImage();
@@ -168,15 +168,12 @@ int main(int argumentCount, char** arguments) {
     refused(bytes, "another chip (chip id 5)", "another chip's firmware");
   }
   {
-    // Each of emcool's own chips refuses the other's build.
+    // An old build for the ESP32 (WROOM-32), which emcool built for once.
     std::vector<std::uint8_t> bytes = image;
     bytes[12] = emcool::update::kChipEsp32;
     bytes[13] = 0;
     refused(bytes, "another chip (ESP32), but this is an ESP32-S3", "an ESP32 build on an ESP32-S3",
             emcool::update::kChipEsp32S3);
-    bytes[12] = emcool::update::kChipEsp32S3;
-    refused(bytes, "another chip (ESP32-S3), but this is an ESP32", "an ESP32-S3 build on an ESP32",
-            emcool::update::kChipEsp32);
   }
   {
     std::vector<std::uint8_t> bytes = image;

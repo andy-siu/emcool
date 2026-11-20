@@ -18,7 +18,7 @@ The firmware is built with ESP-IDF v6.1. The `Makefile` and the README expect it
 mkdir -p ~/esp && cd ~/esp
 git clone -b v6.1 --recursive https://github.com/espressif/esp-idf.git
 cd esp-idf
-./install.sh esp32,esp32s3
+./install.sh esp32s3
 ```
 
 Set up the environment in every terminal you build from:
@@ -40,33 +40,26 @@ Don't source `export.sh` in every new shell, because it's slow.
 From the repo, in a terminal where `export.sh` has been sourced:
 
 ```bash
-make              # build (or: idf.py --preset esp32 build)
+make              # build (or: idf.py build)
 make flash        # build if needed, then flash
 make monitor      # serial console; Ctrl-] quits
 make menuconfig   # change the build's options, such as the pins (the emcool menu)
 make defaults     # throw away the build's options; the next build starts from the defaults
 ```
 
-`CHIP` picks the board, and defaults to `esp32s3` (an ESP32-S3 board, such as the ESP32-CAN-X2). For the Copperhill ESP32-WROOM-32 board:
+It builds for the ESP32-S3 (the ESP32-CAN-X2) into `build/esp32s3/`.
 
-```bash
-make flash CHIP=esp32        # or: idf.py --preset esp32 flash
-make monitor CHIP=esp32
-```
-
-Each chip builds into its own directory, `build/esp32/` or `build/esp32s3/`.
-
-- **Driver:** macOS has a built-in driver for the board's CP2104 USB-C bridge, so you don't need the Silicon Labs driver. An ESP32-S3 needs none either: its USB port is the chip's own.
-- **Port:** the Copperhill board shows up as `/dev/cu.usbserial-*` and an ESP32-S3 as `/dev/cu.usbmodem*`. `idf.py` usually finds the port on its own. To pick it yourself, list the ports with `ls /dev/cu.*`, then pass it:
+- **Driver:** none needed: the board's USB port is the chip's own.
+- **Port:** the board shows up as `/dev/cu.usbmodem*`. `idf.py` usually finds the port on its own. To pick it yourself, list the ports with `ls /dev/cu.*`, then pass it:
 
   ```bash
-  make flash PORT=/dev/cu.usbserial-0001
-  make monitor PORT=/dev/cu.usbserial-0001
+  make flash PORT=/dev/cu.usbmodem1101
+  make monitor PORT=/dev/cu.usbmodem1101
   ```
 
 - **No port showing up:** try a different cable. Many USB-C cables only charge and carry no data.
-- **Wrong chip:** `This chip is ESP32-S3, not ESP32` means the build is for the other board. Pass the matching `CHIP=`.
-- **Build options:** a build keeps the options it was first configured with in `build/<chip>/sdkconfig`. After changing `sdkconfig.defaults`, `sdkconfig.defaults.<chip>` or a default pin in `main/Kconfig.projbuild`, run `make defaults CHIP=<chip>` so the next build starts from them. That also drops anything set in menuconfig.
+- **Wrong chip:** `This chip is ESP32, not ESP32-S3` means it's not the S3 board; emcool builds only for the S3.
+- **Build options:** a build keeps the options it was first configured with in `build/esp32s3/sdkconfig`. After changing `sdkconfig.defaults`, `sdkconfig.defaults.esp32s3` or a default pin in `main/Kconfig.projbuild`, run `make defaults` so the next build starts from them. That also drops anything set in menuconfig.
 
 ## 4. Laptop checks
 

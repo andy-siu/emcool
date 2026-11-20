@@ -183,7 +183,7 @@ class MemorySlot final : public emcool::update::Slot {
   int abandons = 0;
 
  private:
-  std::uint16_t chip_ = emcool::update::kChipEsp32;
+  std::uint16_t chip_ = emcool::update::kChipEsp32S3;
 };
 
 class StubFirmwareHost final : public emcool::ble_server::FirmwareHost {

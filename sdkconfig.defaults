@@ -1,5 +1,5 @@
-# Shared by every chip. The chip itself comes from CMakePresets.json (or `idf.py set-target`), and
-# ESP-IDF then layers sdkconfig.defaults.esp32 or sdkconfig.defaults.esp32s3 on top of this file.
+# The build's options. The chip, the ESP32-S3, comes from CMakePresets.json, and ESP-IDF then layers
+# sdkconfig.defaults.esp32s3 on top of this file.
 
 # The ESP32-CAN-X2's module has 8 MB; partitions.csv lays it out.
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
@@ -40,7 +40,7 @@ CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA=n
 CONFIG_ESP_WIFI_RX_IRAM_OPT=n
 
 # RAM. With Bluetooth, OBD and the card all on, the heap ran out at boot. The controller keeps
-# memory for every connection it allows (sdkconfig.defaults.<chip>), and emcool serves one phone.
+# memory for every connection it allows (sdkconfig.defaults.esp32s3), and emcool serves one phone.
 # NimBLE's own buffers are sized for many connections; one phone writing 180-byte frames needs far
 # fewer. Wi-Fi uses ESP-IDF's "memory saving" profile
 # (api-guides/wifi-driver/wifi-performance-and-power-save.rst), which is plenty for the console and

@@ -98,7 +98,7 @@ curl -u x:'the admin password' -OJ 'http://192.168.1.42/dl?boot=12&mb=256'
 ## Firmware updates
 
 ```bash
-curl -u x:'the admin password' -T build/esp32/emcool.bin http://192.168.1.42/update
+curl -u x:'the admin password' -T build/esp32s3/emcool.bin http://192.168.1.42/update
 ```
 
 The bike checks the image as it arrives, writes it into the spare app slot, checks its hash, and answers with what it will run. It runs at the next `restart`, on trial: a crash in its first 30 s goes back to the old firmware. One update at a time, from here, a console's `update` or the dashboard's Firmware panel over Bluetooth. The README has the rest, under *Updating without the cable*.
