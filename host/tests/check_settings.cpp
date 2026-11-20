@@ -270,8 +270,10 @@ int main() {
     EMCOOL_CHECK(!fresh.boot().wifiEnabled(), "Wi-Fi is on by default");
     EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "WIFI_SSID", "garage"}).status == 0, "set WIFI_SSID failed");
     EMCOOL_CHECK(!Settings::load(wifiStorage).wifiEnabled(), "Wi-Fi came on with no admin password");
-    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "ADMIN_PASSWORD", "too short"}).status == 1,
-                 "an 9-character admin password was accepted");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "ADMIN_PASSWORD", "1234567"}).status == 1,
+                 "a 7-character admin password was accepted");
+    EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "ADMIN_PASSWORD", "12345678"}).status == 0,
+                 "an 8-character admin password was refused");
     EMCOOL_CHECK(run(wifiStorage, fresh, {"set", "ADMIN_PASSWORD", "a long admin phrase"}).status == 0,
                  "set ADMIN_PASSWORD failed");
     const Settings withPassword = Settings::load(wifiStorage);

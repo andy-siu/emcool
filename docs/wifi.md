@@ -23,7 +23,7 @@ emcool> restart
 
 - **`WIFI_SSID`:** the network to join, 1–32 characters. A phone hotspot works too.
 - **`WIFI_PASSWORD`:** that network's password, 8–63 characters. Leave it unset for an open network.
-- **`ADMIN_PASSWORD`:** what the console and the page ask for, 12–128 characters. Without it, Wi-Fi stays off.
+- **`ADMIN_PASSWORD`:** what the console and the page ask for, 8–128 characters. Without it, Wi-Fi stays off.
 
 The boot log says where to find it:
 

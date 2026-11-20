@@ -124,7 +124,7 @@ emcool> restart
 | `CHARGE_AUTO_ENABLED` | `0` | `1` for the automatic charge-current controller. It commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `WIFI_SSID` | not set | The Wi-Fi network to join, 2.4 GHz. With `ADMIN_PASSWORD` set too, the bike serves the console on port 23 and the ride log on port 80. See [Wi-Fi](#wi-fi). |
 | `WIFI_PASSWORD` | not set | That network's password, 8–63 characters. Unset for an open network. |
-| `ADMIN_PASSWORD` | not set | What the Wi-Fi console and the ride-log page ask for, 12–128 characters. Unset keeps Wi-Fi off. |
+| `ADMIN_PASSWORD` | not set | What the Wi-Fi console and the ride-log page ask for, 8–128 characters. Unset keeps Wi-Fi off. |
 | `STATUS_REPORT` | `1` | Whether the console prints the periodic status report. Applies at once. |
 | `STATUS_INTERVAL_S` | `10` | Seconds between status reports, 5–3600. Applies at once. |
 

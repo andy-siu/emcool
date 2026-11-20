@@ -47,8 +47,8 @@ constexpr SettingSpec kSpecs[] = {
      "ADMIN_PASSWORD."},
     {"WIFI_PASSWORD", "wifi_password", SettingType::kSecret, "", 0, 63, false,
      "That network's password: 8-63 characters for WPA2/WPA3, or unset for an open network."},
-    {"ADMIN_PASSWORD", "admin_password", SettingType::kSecret, "", 12, 128, false,
-     "The password the console on port 23 and the ride-log page ask for, 12-128 characters. Unset keeps Wi-Fi off. "
+    {"ADMIN_PASSWORD", "admin_password", SettingType::kSecret, "", 8, 128, false,
+     "The password the console on port 23 and the ride-log page ask for, 8-128 characters. Unset keeps Wi-Fi off. "
      "It crosses the network in plain text, so use one used nowhere else."},
     {"STATUS_REPORT", "status_report", SettingType::kFlag, "1", 0, 0, true,
      "Whether the serial console prints the periodic status report. `status on|off` is the shorthand."},
