@@ -355,7 +355,11 @@ void BleServer::advanceResponse(std::int64_t nowMonotonicMs) {
       std::move(requestQueue_.begin() + 1, requestQueue_.begin() + requestCount_, requestQueue_.begin());
       requestCount_--;
       counters_.requests++;
-      logInfo(kTag, "%s %s", request.method.data(), request.path.data());
+      // The dashboard polls with GETs several times a second; only the requests that change
+      // something are worth a line.
+      if (std::strcmp(request.method.data(), "GET") != 0) {
+        logInfo(kTag, "%s %s", request.method.data(), request.path.data());
+      }
       responseId_ = request.id;
       responseOffset_ = 0;
       bodyShortBy_ = 0;
