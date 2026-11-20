@@ -88,6 +88,8 @@ class CanBus final : public obd::CanTransmitter {
   std::uint32_t dumpDropped() const { return dumpDropped_.load(std::memory_order_relaxed); }
 
  private:
+  // start(), on the core it runs on: the controller's interrupt is served there.
+  bool startHere(int txGpio, int rxGpio, bool transmit);
   // At most 8 bytes to the transmit slots, honouring the DLC; the shared slot picking is under
   // txMutex_ so the console and the diagnostics task never claim the same slot.
   std::optional<std::string> enqueue(std::uint32_t id, const std::uint8_t* data, std::size_t length, bool extended);

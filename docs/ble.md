@@ -124,6 +124,38 @@ The key lives in NVS, not in the firmware image or the build directory. The cons
 - **No shedding.** No patch is dropped. A slow link leaves changes marked in the store, and the next patch carries their latest values, so nothing goes stale and nothing is lost.
 - **Compression.** ESP-IDF's ROM compressor needs about 165 KB of state, so outbound messages are compressed by a small encoder of its own (`deflate.cpp`): one fixed-Huffman block with LZ77 over a 4 KB window, or a stored block when that's smaller. Inbound messages, which the phone compresses with CompressionStream, go through the ROM's `tinfl`.
 
+## Keeping the link up
+
+What runs where, on the S3's two cores:
+
+| Core 0 | Core 1 |
+| --- | --- |
+| Bluetooth's controller and its NimBLE host (ESP-IDF's defaults) | The CAN controller's interrupt, at about 2,000 frames a second |
+| Wi-Fi, SSH, telnet and the ride-log page | The decode task, which drains it |
+| The ride-log task (card writes) | The link task (`main/ble_link.cpp`), which builds every notification |
+| | The diagnostics task (OBD, service mode) |
+
+An interrupt is served by the core that allocates it. Until this was fixed, the CAN controller's interrupt was allocated from `app_main`, so it ran on core 0, beside Bluetooth's controller. `CanBus::start()` now creates the node from a short task on core 1.
+
+Once the phone connects, the bike asks for a 15–30 ms interval and a **5 s supervision timeout**: how long the radio can go without hearing the phone before the link is dropped. Phones often start with well under a second; 720 ms is common on iPhones. With the longer timeout, a Wi-Fi scan or join on the shared radio, or a slow card write, can cost a few connection events without losing the link. The phone has the last word. The log shows what it settled on:
+
+```
+I ble: link parameters at connect: interval 30.00 ms, latency 0, supervision timeout 720 ms
+I ble: link parameters now: interval 30.00 ms, latency 0, supervision timeout 5000 ms
+```
+
+When a link ends, the log gives the reason:
+
+```
+W ble: the link ended: reason 0x208, supervision timeout: the radio lost the phone (range, interference, or the radio busy elsewhere)
+```
+
+- **`0x208`, supervision timeout:** the radio stopped hearing the phone. That means range, interference, or the radio busy with Wi-Fi. `set WIFI_ENABLED 0` rules Wi-Fi out.
+- **`0x213`, the phone ended it:** the phone or the browser closed the link. That covers a backgrounded page, the screen locking, or a tap on Disconnect.
+- **`0x216`, emcool ended it:** the bike closed it.
+
+If the dashboard says *Link lost: no authenticated Bluetooth message for 12 s* while the radio stays connected, the bike is still connected but has stopped sending. That points to the link task, not the radio.
+
 ## Memory
 
 The server's buffers come from the heap once, when Bluetooth starts, about 37 KB. Each is sized by the message cap (`kMaxMessageBytes`, 2.5 KB), which was 4.5 KB until Bluetooth, OBD and the card together ran the heap out at boot:
