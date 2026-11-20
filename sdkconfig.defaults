@@ -24,6 +24,9 @@ CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=247
 # The link seals every message itself (AES-GCM keyed from the shared secret), so it needs no
 # BLE pairing, and its characteristics carry no encrypt flags.
 CONFIG_BT_NIMBLE_SECURITY_ENABLE=n
+# At INFO, NimBLE logs two lines for every notification ("GATT procedure initiated: notify"), and
+# the dashboard is notified several times a second. Warnings and errors still show.
+CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
 
 # Wi-Fi as a station only, beside Bluetooth (WIFI_SSID and ADMIN_PASSWORD turn it on; it is linked in
 # either way). Both stacks don't fit at -Og: the fast instruction RAM overflows and the image outgrows

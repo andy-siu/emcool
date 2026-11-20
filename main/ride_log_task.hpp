@@ -34,6 +34,8 @@ struct RideLogTaskCounters {
   std::atomic<std::uint32_t> segmentsLost{0};
   std::atomic<std::uint32_t> readingsLost{0};
   std::atomic<bool> cardMounted{false};
+  // The writer is opening this boot's folder and first part, so what's in RIDES is changing.
+  std::atomic<bool> rideLogOpening{false};
 };
 
 // The card's mount, shared by the ride-log task, which mounts and unmounts it, and the Bluetooth
@@ -47,6 +49,9 @@ class CardAccess final : public ride_log::DownloadCard {
   // card in); the download sees the card only once it is mounted.
   bool mount();
   void unmount();
+  bool mounted() const { return card_.mounted(); }
+  // Whether the mounted card still answers; false once it has been pulled.
+  bool responds();
 
   // ride_log::DownloadCard, from the Bluetooth task.
   const std::string& rootDirectory() const override { return writer_.rootDirectory(); }

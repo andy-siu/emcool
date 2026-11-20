@@ -41,4 +41,4 @@ Wire CS, SCK, MOSI, MISO and GND to the GPIOs and header pins above. Power depen
 - **Keep the wires short**, ideally under 10 cm, since the card runs at 20 MHz.
 - **Format the card FAT32 first.** The firmware never formats a card. See [Preparing a card](ride-log-format.md#preparing-a-card).
 
-To check the wiring, watch the status report on the serial console: its `ride log:` line says `card mounted` once the card works, and `card ABSENT` until then.
+To check the wiring, watch the status report on the serial console: its `ride log:` line says `card mounted` once the card works, and `card ABSENT` until then. `card mounted but not recording` means the card works but the ride log couldn't start on it (the error just before says why, often a full or damaged card). The card commands (`dir`, `cp`, …) still work on it, and the ride log tries again every 30 s.

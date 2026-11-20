@@ -163,6 +163,8 @@ std::optional<std::uint64_t> FatCardSpace::freeBytes() {
   return usage->freeBytes;
 }
 
+bool SdCard::responds() { return card_ != nullptr && sdmmc_get_status(card_) == ESP_OK; }
+
 void SdCard::unmount() {
   if (card_ == nullptr) {
     return;
