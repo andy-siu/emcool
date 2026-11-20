@@ -76,7 +76,7 @@ export function BooleanSetting(key, title, help) {
   );
 }
 
-/** @param {"phoneHotspotSsid" | "rideLogDirectory" | "vcuParameterDirectory"} key @param {string} title @param {string} help */
+/** @param {"rideLogDirectory" | "vcuParameterDirectory"} key @param {string} title @param {string} help */
 export function TextSetting(key, title, help) {
   const draft = settingDraft(key, settings.rawVal?.saved[key] ?? "");
   return SettingsCard(
