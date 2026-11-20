@@ -33,10 +33,11 @@ const { button, div, input, label, option, pre, select, span } = van.tags;
 /** @typedef {{ ok: boolean, output: string, revision: number, restarting: boolean }} ConsoleRun */
 /** @typedef {import("../vendor/van-1.6.1.js").State<string>} TextState */
 
-const list = van.state(/** @type {ConsoleList | null} */ (null));
-const listError = van.state("");
-const busy = van.state("");
-const results = van.state(/** @type {Record<string, string>} */ ({}));
+// Shared with Settings → Network connections (./settings-network.js), which runs its saves through runLine().
+export const list = van.state(/** @type {ConsoleList | null} */ (null));
+export const listError = van.state("");
+export const busy = van.state("");
+export const results = van.state(/** @type {Record<string, string>} */ ({}));
 const statusReport = van.state("");
 const statusError = van.state("");
 const transcript = van.state(/** @type {{ line: string, output: string }[]} */ ([]));
@@ -62,7 +63,7 @@ const WRITES = new Set(["SERVICE_WRITE_ENABLED", "CHARGE_AUTO_ENABLED"]);
 const OUTPUT_STYLE =
   "font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; color: var(--fg);";
 
-const linkReady = () => connection.val === "live" && BLE_MODE;
+export const linkReady = () => connection.val === "live" && BLE_MODE;
 
 async function refreshList() {
   try {
@@ -117,7 +118,7 @@ function maskedLine(line) {
  * @param {string} key @param {string} line @param {Record<string, unknown>} [extra]
  * @returns {Promise<ConsoleRun | null>}
  */
-async function runLine(key, line, extra = {}) {
+export async function runLine(key, line, extra = {}) {
   if (!list.rawVal) {
     results.val = { ...results.rawVal, [key]: "Read the settings first." };
     return null;
@@ -150,11 +151,12 @@ async function runLine(key, line, extra = {}) {
 }
 
 /** Quotes a value as the console splits words: double quotes group, a backslash escapes. @param {string} value */
-function quoted(value) {
+export function quoted(value) {
   return `"${value.replace(/[\\"]/g, character => `\\${character}`)}"`;
 }
 
-export function BikeConsole() {
+/** Reads the settings list now, and again whenever the link comes back. For each page that shows it. */
+export function watchConsoleList() {
   if (!watching) {
     watching = true;
     van.derive(() => {
@@ -163,6 +165,15 @@ export function BikeConsole() {
   } else {
     void refreshList();
   }
+}
+
+/** The Restart card, once the settings list has been read. */
+export function ConsoleRestart() {
+  return () => (list.val ? RestartCard(list.val) : div());
+}
+
+export function BikeConsole() {
+  watchConsoleList();
   return div(
     SettingsCard(
       "The bike's console, over Bluetooth",

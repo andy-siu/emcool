@@ -4,8 +4,6 @@ import { destination, destinationSection, openRidingView, destinationName } from
 import { AccessLink } from "./settings-access.js";
 import { SettingsPage } from "./settings-page.js";
 import { TripStats } from "./trip-stats.js";
-import { WaypointList } from "./waypoints.js";
-import { status, refreshStatus } from "./sheet.js";
 import { LifetimeBlock } from "./all.js";
 import { LifetimeReadButton, refreshLifetimeRead } from "./lifetime-read.js";
 import { loadLifetimeStats } from "../lib/lifetime.js";
@@ -24,8 +22,7 @@ export function DestinationPage() {
     case "settings":
       return SettingsPage();
     case "session":
-      void refreshStatus();
-      return div({ class: "settings-page" }, h2("This session & waypoints"), TripStats(status), WaypointList(status));
+      return div({ class: "settings-page" }, h2("This session"), TripStats());
     case "bike-information":
       void loadLifetimeStats();
       void refreshVcuWrite();

@@ -20,26 +20,7 @@ import { showToast } from "./toast.js";
 // docs/dashboard-decisions.md §"The toast banner".
 
 /**
- * One sentence per WAYPOINT_REFUSAL in src/gps/waypoint.ts, keyed by its code.
- *
- * These used to reach the rider as the reply to the phone's own request. A hold on the
- * bars asks nobody, so emcool records the code and this is where it becomes English.
- * scripts/check-hold-gestures.ts asserts every code has a sentence.
- * @type {Record<number, string>}
- */
-export const WAYPOINT_REFUSAL_TEXT = {
-  1: "No GPS fix yet — waypoint not saved.",
-  2: "GPS position arrived but was never timestamped — waypoint not saved.",
-  3: "GPS fix is too old — waypoint not saved.",
-  4: "Bike's clock has not synced to GPS yet — waypoint not saved.",
-  5: "Bike's clock disagrees with GPS — waypoint not saved.",
-  6: "GPS fix jumped somewhere the bike cannot have ridden — waypoint not saved.",
-  7: "GPS fix is not a real position — waypoint not saved.",
-  8: "GPS fix not confirmed yet — waypoint not saved.",
-};
-
-/**
- * Starts the two watchers.
+ * Starts the watchers.
  *
  * ⚠️ Call at module top level, the way app.js calls connect() — never from inside a view
  * or a binding. A derive created inside a binding is pinned to that render's DOM node and
@@ -48,7 +29,6 @@ export const WAYPOINT_REFUSAL_TEXT = {
  */
 export function installAnnouncements() {
   announceFanState();
-  announceWaypoints();
   announceWifiRejoin();
 }
 
@@ -57,10 +37,10 @@ export function installAnnouncements() {
  *
  * Pure, and exported so scripts/check-hold-gestures.ts can drive it without a DOM.
  *
- * ⚠️ `baselined` is a SEPARATE flag, not "is the remembered value still null".
- * `waypoint_seq` is `onDemand` and absent from the store until emcool saves something, so
- * a remembered null means "never arrived" — and treating the first arrival as the
- * baseline swallowed the banner for the FIRST waypoint of every boot.
+ * ⚠️ `baselined` is a SEPARATE flag, not "is the remembered value still null". An
+ * `onDemand` counter is absent from the store until emcool first moves it, so a remembered
+ * null means "never arrived" — and treating the first arrival as the baseline would
+ * swallow the banner for the first event of every boot.
  *
  * @template {number | string} T
  * @param {{ value: T | null, baselined: boolean }} state
@@ -157,7 +137,7 @@ function announceFanState() {
     // signals must reach the phone duty-first".
     // peek() for the off state, valueOf() for the pair: the key is what this reacts to,
     // and the off state is only read to word a banner already decided on. store.js §peek
-    // has the rule; ./announce.js's waypoint_refusal is the same shape.
+    // has the rule.
     const folded = foldFanAnnouncement(
       memory,
       valueOf("fan_auto_mode"),
@@ -177,7 +157,6 @@ function announceFanState() {
  * ⚠️ Keyed off `wifi_rejoin_seq`, a COUNTER, and not off the outcome code: two identical
  * outcomes in a row move no signal, so a code alone would raise one banner for two
  * recoveries and the second hold at the same charger would look like it had worked.
- * Same shape and same reason as the waypoint refusal below.
  */
 export const WIFI_REJOIN_TEXT = /** @type {Record<number, [text: string, tone: "good" | "bad"]>} */ ({
   1: ["Wi-Fi is up — state dumped, link untouched. Hold again to force a rejoin.", "good"],
@@ -204,38 +183,6 @@ function announceWifiRejoin() {
     const said = WIFI_REJOIN_TEXT[Number(outcome ?? 0)];
     if (said !== undefined) {
       showToast(said[0], said[1]);
-    }
-  });
-}
-
-/**
- * Waypoints saved and waypoints refused, off their two counters.
- *
- * ⚠️ Counters and not values, because `record()` seals a row only when the value MOVES:
- * two identical refusals in a row would otherwise be one banner, and the second hold at
- * the same spot with the same stale fix would look like it had worked.
- */
-function announceWaypoints() {
-  let saved = /** @type {{ value: number | null, baselined: boolean }} */ (blank());
-  let refused = /** @type {{ value: number | null, baselined: boolean }} */ (blank());
-  van.derive(() => {
-    if (connection.val !== "live") {
-      saved = blank();
-      refused = blank();
-      return;
-    }
-    const foldedSave = foldAnnouncement(saved, valueOf("waypoint_seq"));
-    saved = foldedSave.state;
-    if (foldedSave.announce) {
-      showToast(`Waypoint ${Math.round(Number(saved.value))} saved.`, "good");
-    }
-    // peek(), not valueOf(): the counter above is what this reacts to, and the code is
-    // only read to word a banner already decided on. store.js §peek has the rule.
-    const why = peek("waypoint_refusal");
-    const foldedRefusal = foldAnnouncement(refused, valueOf("waypoint_refused_seq"));
-    refused = foldedRefusal.state;
-    if (foldedRefusal.announce) {
-      showToast(WAYPOINT_REFUSAL_TEXT[why ?? 0] ?? "Waypoint not saved.", "bad");
     }
   });
 }

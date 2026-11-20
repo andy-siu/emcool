@@ -26,6 +26,8 @@ emcool> restart
 - **`ADMIN_PASSWORD`:** what the console and the page ask for, 8–128 characters. Without it, Wi-Fi stays off.
 - **`TELNET_CONSOLE`:** `1` (the default) serves the telnet console on port 23; `0` doesn't. See [below](#turning-the-telnet-console-off).
 
+Or from the dashboard: **Menu → Network settings** (also **Settings → Network connections**). It takes the network name, the Wi-Fi password (or *Open network*) and the admin password, and saves them with the same `set` commands over Bluetooth, so the bike checks them the same way. It won't save a network until an admin password is saved or typed beside it, since Wi-Fi stays off without one. It saves the admin password first and the network last, so a save that stops partway never leaves a network without its admin password. **Turn Wi-Fi off** runs `unset WIFI_SSID`. **Read status** shows the `ifconfig` report, and **Restart** applies the change.
+
 The boot log says where to find it:
 
 ```

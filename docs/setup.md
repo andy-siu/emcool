@@ -152,6 +152,8 @@ What differs from this console:
 - **A restart can't lock the phone out.** If a new `BLE_SECRET` is saved but not yet running, **Restart** asks for that key and the bike checks it before restarting. The phone then keeps it for the reconnect. If `BLE_SECRET` is unset, the page refuses to restart, since Bluetooth would come back off; restart from here or over Wi-Fi.
 - **Access:** anyone holding the Bluetooth key can change any setting, including turning on VCU writes, just as anyone with `ADMIN_PASSWORD` can over Wi-Fi. The link is encrypted (AES-256-GCM), unlike the telnet console. Each change is logged with the setting's name (never its value) under the `console` tag.
 
+**Menu → Network settings** (Settings → Network connections) is a form for the three Wi-Fi settings on the same endpoints; it requires an admin password before it saves a network. See [`wifi.md`](wifi.md#turning-it-on).
+
 The endpoints behind it, `GET /console`, `GET /console/status` and `POST /console`, are in [`ble.md`](ble.md).
 
 ## A worked example

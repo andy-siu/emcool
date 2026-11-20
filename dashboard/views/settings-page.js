@@ -20,6 +20,7 @@ import { MotorcycleConnection } from "./settings-hub.js";
 import { FirmwareUpdate } from "./firmware-update.js";
 import { ScreenGeometry } from "./screen-geometry.js";
 import { BikeConsole } from "./bike-console.js";
+import { NetworkConnections } from "./settings-network.js";
 
 const { a, button, div, h2 } = van.tags;
 import { SETTINGS_MAP } from "../lib/settings-map.js";
@@ -28,7 +29,8 @@ export function SettingsPage() {
   return div(
     { class: "settings-page" },
     () =>
-      destinationSection.val === "console"
+      // Both save through the console's commands themselves, so the note doesn't apply to them.
+      destinationSection.val === "console" || destinationSection.val === "network"
         ? div()
         : SettingsCard(
             "Changed with the bike's console",
@@ -76,7 +78,9 @@ export function SettingsPage() {
       settingsInstance.val;
       return SettingsContent(destinationSection.val);
     },
-    () => (destinationSection.val ? SettingsRestart(!["phone", "access", "console"].includes(destinationSection.val)) : div())
+    () => (destinationSection.val ? !["network", "console"].includes(destinationSection.val)
+        ? SettingsRestart(!["phone", "access"].includes(destinationSection.val))
+        : div() : div())
   );
 }
 
@@ -123,6 +127,8 @@ function SettingsContent(section) {
       return div(h2("Who can control my bike?"), AccessExplanation());
     case "console":
       return div(h2("Bike console"), BikeConsole());
+    case "network":
+      return div(h2("Network connections"), NetworkConnections());
     case "charging":
       return div(
         h2("Charging"),
