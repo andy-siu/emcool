@@ -70,7 +70,9 @@ struct Settings {
   bool serviceWriteEnabled = false;
   // The automatic charge-current controller. Needs SERVICE_WRITE_ENABLED, since it commands writes.
   bool chargeAutoEnabled = false;
-  // Wi-Fi joins wifiSsid, and only with a password for something it serves (wifiEnabled()).
+  // Wi-Fi joins wifiSsid, and only with a password for something it serves (wifiSetUp()), while
+  // WIFI_ENABLED is on (wifiEnabled()). The switch alone changes while running: RuntimeSettings::switchWifi().
+  bool wifiSwitchedOn = true;
   std::string wifiSsid;
   std::string wifiPassword;
   // The read-only telnet console and the ride-log page: it crosses the network in plain text.
@@ -82,7 +84,8 @@ struct Settings {
   bool statusReport = true;
   std::uint32_t statusIntervalSeconds = 10;
 
-  bool wifiEnabled() const { return !wifiSsid.empty() && (sshEnabled() || !telnetPassword.empty()); }
+  bool wifiSetUp() const { return !wifiSsid.empty() && (sshEnabled() || !telnetPassword.empty()); }
+  bool wifiEnabled() const { return wifiSwitchedOn && wifiSetUp(); }
   bool sshEnabled() const { return !adminPassword.empty(); }
   // Port 23: asked for, and with a password to ask.
   bool telnetEnabled() const { return telnetConsole && !telnetPassword.empty(); }
@@ -133,6 +136,16 @@ class RuntimeSettings {
   // Starts Bluetooth with `key` unless it is on or there is no starter, and says what happened.
   BluetoothStart startBluetooth(const std::string& key);
 
+  // Wi-Fi turns on and off while running, with WIFI_ENABLED: the firmware gives how (once Wi-Fi's
+  // start at boot has had its go), and `set WIFI_ENABLED` calls it. The network and the passwords
+  // stay the boot's: those still wait for the restart.
+  using WifiSwitch = std::function<bool(bool on)>;
+  enum class WifiSwitchResult { kOn, kOff, kAlready, kNotSetUp, kFailed, kNoSwitch };
+  void setWifiSwitch(WifiSwitch wifiSwitch);
+  // Where the switch is this boot: WIFI_ENABLED in force, whether or not Wi-Fi is set up to run.
+  bool wifiSwitchedOn() const { return wifiSwitchedOn_.load(std::memory_order_relaxed); }
+  WifiSwitchResult switchWifi(bool on);
+
  private:
   Settings boot_;
   std::atomic<bool> statusReport_;
@@ -145,6 +158,9 @@ class RuntimeSettings {
   std::string bluetoothKey_;
   std::atomic<bool> bluetoothOn_{false};
   BluetoothStarter bluetoothStarter_;
+  std::mutex wifiMutex_;
+  std::atomic<bool> wifiSwitchedOn_;
+  WifiSwitch wifiSwitch_;
 };
 
 // The console's commands, writing what to print into `output`:

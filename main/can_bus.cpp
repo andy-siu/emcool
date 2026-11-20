@@ -7,6 +7,7 @@
 #include "esp_attr.h"
 #include "esp_timer.h"
 #include "esp_twai_onchip.h"
+#include "freertos/task.h"
 
 namespace emcool {
 
@@ -34,7 +35,42 @@ const char* describeState(twai_error_state_t state) {
 
 }  // namespace
 
+namespace {
+
+// What startOnCore1() hands its helper task, and what comes back.
+struct StartRequest {
+  CanBus* bus;
+  int txGpio;
+  int rxGpio;
+  bool transmit;
+  bool started;
+  TaskHandle_t caller;
+};
+
+}  // namespace
+
+// An interrupt is served by the core that allocated it, and twai_new_node_onchip() allocates the
+// controller's. Called from app_main, that was core 0: every frame the bike sends (about 2 000 a
+// second) interrupted the core Bluetooth's controller, its host and Wi-Fi run on. So the node is made
+// and enabled from a short task on core 1, where the decode task that drains its queue already lives.
 bool CanBus::start(int txGpio, int rxGpio, bool transmit) {
+  StartRequest request{this, txGpio, rxGpio, transmit, false, xTaskGetCurrentTaskHandle()};
+  if (xTaskCreatePinnedToCore(
+          [](void* argument) {
+            auto& job = *static_cast<StartRequest*>(argument);
+            job.started = job.bus->startHere(job.txGpio, job.rxGpio, job.transmit);
+            xTaskNotifyGive(job.caller);
+            vTaskDelete(nullptr);
+          },
+          "can-start", 4096, &request, uxTaskPriorityGet(nullptr), nullptr, 1) != pdPASS) {
+    logError(kTag, "could not create the task that starts the CAN bus on core 1");
+    return false;
+  }
+  ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+  return request.started;
+}
+
+bool CanBus::startHere(int txGpio, int rxGpio, bool transmit) {
   transmitting_ = transmit;
   queue_ = xQueueCreate(kQueueDepth, sizeof(ReceivedFrame));
   if (queue_ == nullptr) {

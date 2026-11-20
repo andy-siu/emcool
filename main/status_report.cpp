@@ -129,7 +129,7 @@ std::string StatusReport::describe(std::int64_t nowMs) {
             static_cast<unsigned>(link.notifyFailures.load(std::memory_order_relaxed)));
   }
 
-  if (!sources_.wifiOn) {
+  if (!wifiRunning()) {
     appendLine(out, "wifi: off");
   } else {
     const WifiCounters& wifi = sources_.wifi;

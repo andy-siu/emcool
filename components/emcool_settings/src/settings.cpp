@@ -42,6 +42,9 @@ constexpr SettingSpec kSpecs[] = {
     // Wi-Fi: off until WIFI_SSID and a password are set. The bike joins that network and serves the SSH
     // console on port 22 behind ADMIN_PASSWORD, and the read-only telnet console on port 23 (when
     // TELNET_CONSOLE is 1) and the ride-log page on port 80 behind TELNET_PASSWORD.
+    {"WIFI_ENABLED", "wifi_enabled", SettingType::kFlag, "1", 0, 0, true,
+     "0 turns Wi-Fi off and 1 back on, at once and with nothing else changed: the network and the passwords stay "
+     "saved. On by default, so Wi-Fi runs whenever WIFI_SSID and a password are set."},
     {"WIFI_SSID", "wifi_ssid", SettingType::kText, "", 0, 32, false,
      "The Wi-Fi network to join (garage Wi-Fi or a phone hotspot), 1-32 characters; unset keeps Wi-Fi off. The bike "
      "then serves the SSH console on port 22 (`ssh admin@<bike>`, behind ADMIN_PASSWORD), and the ride log on "
@@ -141,6 +144,27 @@ std::string whenItApplies(const SettingSpec& spec) {
   return spec.live ? "in effect now" : "it takes effect after `restart`";
 }
 
+// What turning Wi-Fi on or off did, for the console: the rest of `set WIFI_ENABLED`'s line.
+std::string switchWifi(RuntimeSettings& running, bool on) {
+  switch (running.switchWifi(on)) {
+    case RuntimeSettings::WifiSwitchResult::kOn:
+      return "Wi-Fi is on now, joining \"" + running.boot().wifiSsid + "\"";
+    case RuntimeSettings::WifiSwitchResult::kOff:
+      return "Wi-Fi is off now";
+    case RuntimeSettings::WifiSwitchResult::kAlready:
+      return on ? "Wi-Fi was already on" : "Wi-Fi was already off";
+    case RuntimeSettings::WifiSwitchResult::kNotSetUp:
+      return "Wi-Fi stays off for now: this boot has no WIFI_SSID with ADMIN_PASSWORD or TELNET_PASSWORD. Save "
+             "them, then `restart`";
+    case RuntimeSettings::WifiSwitchResult::kFailed:
+      return on ? "but Wi-Fi did not start (the log above says why); `restart` tries again"
+                : "but Wi-Fi did not stop (the log above says why); it stops at the next `restart`";
+    case RuntimeSettings::WifiSwitchResult::kNoSwitch:
+      break;
+  }
+  return "it takes effect after `restart`";
+}
+
 int show(SettingsStorage& storage, const RuntimeSettings& running, std::string& output) {
   for (const SettingSpec& spec : kSpecs) {
     const std::optional<std::string> stored = storage.read(spec.storageKey);
@@ -196,6 +220,10 @@ int save(SettingsStorage& storage, RuntimeSettings& running, const SettingSpec& 
         break;
     }
   }
+  if (spec.name == "WIFI_ENABLED") {
+    appendLine(output, "WIFI_ENABLED saved; " + switchWifi(running, normalized == "1"));
+    return 0;
+  }
   appendLine(output, std::string(spec.name) + " saved; " + whenItApplies(spec));
   return 0;
 }
@@ -231,8 +259,10 @@ int unset(SettingsStorage& storage, RuntimeSettings& running, int argumentCount,
   }
   running.apply(*spec, spec->defaultValue);
   running.noteChange();
+  const std::string applies =
+      spec->name == "WIFI_ENABLED" ? switchWifi(running, spec->defaultValue == "1") : whenItApplies(*spec);
   appendLine(output, std::string(spec->name) + " is back to its default (" + describe(*spec, spec->defaultValue) +
-                         "); " + whenItApplies(*spec));
+                         "); " + applies);
   return 0;
 }
 
@@ -346,6 +376,7 @@ Settings Settings::load(SettingsStorage& storage) {
   settings.serviceModeEnabled = value("SERVICE_MODE_ENABLED") == "1";
   settings.serviceWriteEnabled = value("SERVICE_WRITE_ENABLED") == "1";
   settings.chargeAutoEnabled = value("CHARGE_AUTO_ENABLED") == "1";
+  settings.wifiSwitchedOn = value("WIFI_ENABLED") == "1";
   settings.wifiSsid = value("WIFI_SSID");
   settings.wifiPassword = value("WIFI_PASSWORD");
   settings.telnetPassword = value("TELNET_PASSWORD");
@@ -360,7 +391,27 @@ RuntimeSettings::RuntimeSettings(Settings boot)
     : boot_(std::move(boot)),
       statusReport_(boot_.statusReport),
       statusIntervalSeconds_(boot_.statusIntervalSeconds),
-      bluetoothKey_(boot_.bleSecret) {}
+      bluetoothKey_(boot_.bleSecret),
+      wifiSwitchedOn_(boot_.wifiSwitchedOn) {}
+
+void RuntimeSettings::setWifiSwitch(WifiSwitch wifiSwitch) {
+  const std::lock_guard<std::mutex> lock(wifiMutex_);
+  wifiSwitch_ = std::move(wifiSwitch);
+}
+
+RuntimeSettings::WifiSwitchResult RuntimeSettings::switchWifi(bool on) {
+  const std::lock_guard<std::mutex> lock(wifiMutex_);
+  if (!wifiSwitch_) return WifiSwitchResult::kNoSwitch;
+  // Without a network and a password this boot, there is nothing to start or stop: the switch just moves.
+  if (!boot_.wifiSetUp()) {
+    wifiSwitchedOn_.store(on, std::memory_order_relaxed);
+    return on ? WifiSwitchResult::kNotSetUp : WifiSwitchResult::kOff;
+  }
+  if (wifiSwitchedOn_.load(std::memory_order_relaxed) == on) return WifiSwitchResult::kAlready;
+  if (!wifiSwitch_(on)) return WifiSwitchResult::kFailed;
+  wifiSwitchedOn_.store(on, std::memory_order_relaxed);
+  return on ? WifiSwitchResult::kOn : WifiSwitchResult::kOff;
+}
 
 void RuntimeSettings::setBluetoothStarter(BluetoothStarter starter, bool alreadyOn) {
   const std::lock_guard<std::mutex> lock(bluetoothMutex_);
@@ -397,6 +448,7 @@ std::string RuntimeSettings::valueOf(const SettingSpec& spec) const {
   if (spec.name == "SERVICE_MODE_ENABLED") return boot_.serviceModeEnabled ? "1" : "0";
   if (spec.name == "SERVICE_WRITE_ENABLED") return boot_.serviceWriteEnabled ? "1" : "0";
   if (spec.name == "CHARGE_AUTO_ENABLED") return boot_.chargeAutoEnabled ? "1" : "0";
+  if (spec.name == "WIFI_ENABLED") return wifiSwitchedOn() ? "1" : "0";
   if (spec.name == "WIFI_SSID") return boot_.wifiSsid;
   if (spec.name == "WIFI_PASSWORD") return boot_.wifiPassword;
   if (spec.name == "TELNET_PASSWORD") return boot_.telnetPassword;

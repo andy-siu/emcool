@@ -29,6 +29,14 @@ constexpr UBaseType_t kTaskPriority = 3;
 constexpr BaseType_t kTaskCore = 1;
 // How often the server's timers run when nothing else wakes the task: under its 100 ms patch window.
 constexpr TickType_t kTickPeriod = pdMS_TO_TICKS(10);
+// Asked of the phone once it connects: a 15-30 ms interval and a 5 s supervision timeout, so a radio
+// shared with Wi-Fi (a scan, a join) or a busy moment on core 0 can miss a few connection events
+// without the link being dropped. Phones often start with 0.7-2 s. Within Apple's accessory rules
+// (timeout 2-6 s, interval max at least min + 15 ms, max x (latency + 1) x 3 under the timeout); a
+// phone that won't keeps its own, which the log shows.
+constexpr std::uint16_t kIntervalMinUnits = 12;          // 1.25 ms units: 15 ms
+constexpr std::uint16_t kIntervalMaxUnits = 24;          // 30 ms
+constexpr std::uint16_t kSupervisionTimeoutUnits = 500;  // 10 ms units: 5 s
 constexpr UBaseType_t kEventQueueDepth = 8;
 
 enum class EventType : std::uint8_t { kConnected, kDisconnected, kNotifications, kMtu, kWrite };
@@ -116,20 +124,75 @@ int accessCharacteristic(std::uint16_t, std::uint16_t, ble_gatt_access_ctxt* con
   return BLE_ATT_ERR_UNLIKELY;
 }
 
+// Why a link ended, in words, for the reasons that come up. NimBLE's codes are its own for the
+// host's, and 0x200 plus the Bluetooth spec's for the controller's.
+const char* disconnectReason(int reason) {
+  switch (reason) {
+    case BLE_HS_HCI_ERR(BLE_ERR_CONN_SPVN_TMO):
+      return "supervision timeout: the radio lost the phone (range, interference, or the radio busy elsewhere)";
+    case BLE_HS_HCI_ERR(BLE_ERR_REM_USER_CONN_TERM):
+      return "the phone ended it";
+    case BLE_HS_HCI_ERR(BLE_ERR_CONN_TERM_LOCAL):
+      return "emcool ended it";
+    case BLE_HS_HCI_ERR(BLE_ERR_CONN_ESTABLISHMENT):
+      return "the connection never got going";
+    case BLE_HS_HCI_ERR(BLE_ERR_LMP_LL_RSP_TMO):
+      return "the phone stopped answering link-layer requests";
+    case BLE_HS_HCI_ERR(BLE_ERR_INSTANT_PASSED):
+      return "a parameter or channel change was missed";
+    case BLE_HS_HCI_ERR(BLE_ERR_CONN_TERM_MIC):
+      return "a packet failed its integrity check";
+    default:
+      return "see NimBLE's error codes";
+  }
+}
+
+// The interval, latency and supervision timeout the link runs with now.
+void logConnectionParameters(std::uint16_t connection, const char* when) {
+  ble_gap_conn_desc description = {};
+  if (ble_gap_conn_find(connection, &description) != 0) return;
+  // In whole hundredths of a millisecond: no %f on NimBLE's host task, whose stack is 4 KB.
+  const unsigned hundredths = static_cast<unsigned>(description.conn_itvl) * 125;
+  logInfo(kTag, "%s: interval %u.%02u ms, latency %u, supervision timeout %u ms", when, hundredths / 100,
+          hundredths % 100, static_cast<unsigned>(description.conn_latency),
+          static_cast<unsigned>(description.supervision_timeout) * 10);
+}
+
+void askForLongerTimeout(std::uint16_t connection) {
+  ble_gap_upd_params parameters = {};
+  parameters.itvl_min = kIntervalMinUnits;
+  parameters.itvl_max = kIntervalMaxUnits;
+  parameters.latency = 0;
+  parameters.supervision_timeout = kSupervisionTimeoutUnits;
+  const int result = ble_gap_update_params(connection, &parameters);
+  if (result != 0) logWarning(kTag, "asking the phone for a 5 s supervision timeout failed (%d)", result);
+}
+
 int gapEvent(ble_gap_event* event, void*) {
   switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
       if (event->connect.status == 0) {
         link.connection.store(event->connect.conn_handle);
         post(EventType::kConnected, 0);
+        logConnectionParameters(event->connect.conn_handle, "link parameters at connect");
+        askForLongerTimeout(event->connect.conn_handle);
       } else {
         advertise();
       }
       return 0;
     case BLE_GAP_EVENT_DISCONNECT:
+      logWarning(kTag, "the link ended: reason 0x%03x, %s", static_cast<unsigned>(event->disconnect.reason),
+                 disconnectReason(event->disconnect.reason));
       link.connection.store(BLE_HS_CONN_HANDLE_NONE);
       post(EventType::kDisconnected, 0);
       advertise();
+      return 0;
+    case BLE_GAP_EVENT_CONN_UPDATE:
+      if (event->conn_update.status == 0) {
+        logConnectionParameters(event->conn_update.conn_handle, "link parameters now");
+      } else {
+        logInfo(kTag, "the phone kept its link parameters (%d)", event->conn_update.status);
+      }
       return 0;
     case BLE_GAP_EVENT_ADV_COMPLETE:
       advertise();

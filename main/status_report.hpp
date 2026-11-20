@@ -64,7 +64,6 @@ struct StatusSources {
   const clock::SystemClockSync& clock;
   const BleLinkCounters& bleLink;
   const WifiCounters& wifi;
-  bool wifiOn;
   settings::RuntimeSettings& settings;
   DiagnosticsTask* diagnostics;
   StatusText& text;

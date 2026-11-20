@@ -33,6 +33,15 @@ export function Header() {
         span({ class: () => `dot ${canDotState()}` }),
         "CAN"
       ),
+      button(
+        {
+          class: "can-status-link",
+          "aria-label": () => `Wi-Fi: ${WIFI_WORDS[wifiDotState()]}. Network info`,
+          onclick: () => openDestination("network"),
+        },
+        span({ class: () => `dot ${wifiDotState()}` }),
+        "Wi-Fi"
+      ),
       span({ class: () => `dot ${connection.val}` }),
       span(() => (connection.val === "live" ? "live" : connection.val === "connecting" ? "connecting" : "offline"))
     )
@@ -55,5 +64,27 @@ function canDotState() {
   const link = signalState("can_link").val?.value;
   if (link === 0) return "down";
   if (link === 1 && !isStaleSampled("can_link", CAN_LINK_FRESH_MS)) return "up";
+  return "unknown";
+}
+
+/**
+ * The bike records `wifi_link_state` once a second beside `can_link`, in the reference's codes: 0 off
+ * (WIFI_ENABLED 0, or no network set), 1 not joined (retrying), 2 joining, 3 joined. Grey when off or
+ * unheard, amber while it is trying, green once it has an address, red when it can't join.
+ */
+const WIFI_STATE_FRESH_MS = 15_000;
+
+/** @type {Record<"up" | "connecting" | "down" | "unknown", string>} */
+const WIFI_WORDS = { up: "joined", connecting: "joining", down: "not joined", unknown: "off" };
+
+/** @returns {"up" | "connecting" | "down" | "unknown"} */
+function wifiDotState() {
+  if (connection.val !== "live") return "unknown";
+  chartTick.val;
+  const value = signalState("wifi_link_state").val?.value;
+  if (value === undefined || isStaleSampled("wifi_link_state", WIFI_STATE_FRESH_MS)) return "unknown";
+  if (value === 3) return "up";
+  if (value === 2) return "connecting";
+  if (value === 1) return "down";
   return "unknown";
 }

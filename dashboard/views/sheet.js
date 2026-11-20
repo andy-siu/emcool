@@ -77,7 +77,7 @@ export function Sheet() {
       h2({ class: "sheet-heading" }, "Units"),
       UnitsToggle(),
       MenuLink("Settings", "settings"),
-      MenuLink("Network settings", "settings", "network"),
+      MenuLink("Network info", "network"),
       FanControl(),
       MenuLink("This session", "session"),
       DownloadButton(),
