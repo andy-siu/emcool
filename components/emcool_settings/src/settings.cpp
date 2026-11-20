@@ -40,16 +40,19 @@ constexpr SettingSpec kSpecs[] = {
      "1 to let the automatic charge-current controller command the bike's charge current on a timer. "
      "Needs SERVICE_WRITE_ENABLED — it commands writes. The most autonomous feature here."},
     // Wi-Fi: off until WIFI_SSID and ADMIN_PASSWORD are both set. The bike joins that network and serves the
-    // console on port 23 and the ride log on port 80, both behind ADMIN_PASSWORD.
+    // console on port 23 (unless TELNET_CONSOLE is 0) and the ride log on port 80, both behind ADMIN_PASSWORD.
     {"WIFI_SSID", "wifi_ssid", SettingType::kText, "", 0, 32, false,
      "The Wi-Fi network to join (garage Wi-Fi or a phone hotspot), 1-32 characters; unset keeps Wi-Fi off. The bike "
      "then serves this console on port 23 (`nc <bike> 23`) and the ride log on http://<bike>/, both behind "
      "ADMIN_PASSWORD."},
     {"WIFI_PASSWORD", "wifi_password", SettingType::kSecret, "", 0, 63, false,
      "That network's password: 8-63 characters for WPA2/WPA3, or unset for an open network."},
-    {"ADMIN_PASSWORD", "admin_password", SettingType::kSecret, "", 12, 128, false,
-     "The password the console on port 23 and the ride-log page ask for, 12-128 characters. Unset keeps Wi-Fi off. "
+    {"ADMIN_PASSWORD", "admin_password", SettingType::kSecret, "", 8, 128, false,
+     "The password the console on port 23 and the ride-log page ask for, 8-128 characters. Unset keeps Wi-Fi off. "
      "It crosses the network in plain text, so use one used nowhere else."},
+    {"TELNET_CONSOLE", "telnet_console", SettingType::kFlag, "1", 0, 0, false,
+     "1 to serve the telnet console on port 23 while Wi-Fi is on; 0 closes the port and leaves the ride-log page "
+     "on port 80. The USB console and the dashboard's Bike console are not affected."},
     {"STATUS_REPORT", "status_report", SettingType::kFlag, "1", 0, 0, true,
      "Whether the serial console prints the periodic status report. `status on|off` is the shorthand."},
     {"STATUS_INTERVAL_S", "status_every_s", SettingType::kInteger, "10", 5, 3600, true,
@@ -328,6 +331,7 @@ Settings Settings::load(SettingsStorage& storage) {
   settings.wifiSsid = value("WIFI_SSID");
   settings.wifiPassword = value("WIFI_PASSWORD");
   settings.adminPassword = value("ADMIN_PASSWORD");
+  settings.telnetConsole = value("TELNET_CONSOLE") == "1";
   settings.statusReport = value("STATUS_REPORT") == "1";
   settings.statusIntervalSeconds = static_cast<std::uint32_t>(*parseInteger(value("STATUS_INTERVAL_S")));
   return settings;
@@ -377,6 +381,7 @@ std::string RuntimeSettings::valueOf(const SettingSpec& spec) const {
   if (spec.name == "WIFI_SSID") return boot_.wifiSsid;
   if (spec.name == "WIFI_PASSWORD") return boot_.wifiPassword;
   if (spec.name == "ADMIN_PASSWORD") return boot_.adminPassword;
+  if (spec.name == "TELNET_CONSOLE") return boot_.telnetConsole ? "1" : "0";
   if (spec.name == "STATUS_REPORT") return statusReport() ? "1" : "0";
   if (spec.name == "STATUS_INTERVAL_S") return std::to_string(statusIntervalSeconds());
   return std::string(spec.defaultValue);

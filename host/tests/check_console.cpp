@@ -221,9 +221,10 @@ int main() {
                    !contains(run.output, kKey) && !contains(run.output, "a long admin phrase"),
                "show:\n%s", run.output.c_str());
   run = console.post("help", std::nullopt);
-  EMCOOL_CHECK(run.ok && contains(run.output, "set NAME VALUE"), "help: %s", run.body.c_str());
-  run = console.post("network", std::nullopt);
-  EMCOOL_CHECK(run.ok && run.output == "wifi: off\n", "network: %s", run.body.c_str());
+  EMCOOL_CHECK(run.ok && contains(run.output, "set NAME VALUE") && contains(run.output, "ipconfig"), "help: %s", run.body.c_str());
+  run = console.post("ipconfig", std::nullopt);
+  EMCOOL_CHECK(run.ok && run.output == "wifi: off\n", "ipconfig: %s", run.body.c_str());
+  EMCOOL_CHECK(console.post("network", std::nullopt).status == 400, "network is gone: an unknown command");
 
   // The live settings, as `status on|off|every`, apply at once.
   run = console.postNow("status every 30");
@@ -288,11 +289,11 @@ int main() {
   run = console.post("restart", std::nullopt, ",\"bluetoothKey\":\"" + kNewKey + "\"");
   EMCOOL_CHECK(run.status == 200 && run.ok && run.restarting && console.host.restarts == 1,
                "restart with the new key: %s", run.body.c_str());
-  // With the key unset, this page could never reconnect: the USB or Wi-Fi console restarts instead.
+  // With the key unset, this page could never reconnect: the USB or telnet console restarts instead.
   run = console.postNow("unset BLE_SECRET");
   EMCOOL_CHECK(run.ok, "unset BLE_SECRET: %s", run.body.c_str());
   run = console.post("restart", std::nullopt, ",\"bluetoothKey\":\"" + kNewKey + "\"");
-  EMCOOL_CHECK(run.status == 409 && console.host.restarts == 1 && contains(run.output, "USB or Wi-Fi console"),
+  EMCOOL_CHECK(run.status == 409 && console.host.restarts == 1 && contains(run.output, "USB or telnet console"),
                "restart into Bluetooth off: %s", run.body.c_str());
   run = console.postNow("set BLE_SECRET " + kKey);
   run = console.post("restart", std::nullopt);

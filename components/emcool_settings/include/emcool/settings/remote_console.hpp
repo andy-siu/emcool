@@ -2,7 +2,7 @@
 
 // The console over Wi-Fi (port 23): one client at a time, behind ADMIN_PASSWORD, then the same
 // commands as the USB console. This is the part with no sockets in it — the bytes in, the bytes out,
-// the login and its lockout — so the host checks run it; main/wifi_console.cpp feeds it a TCP socket.
+// the login and its lockout — so the host checks run it; main/wifi_link.cpp feeds it a TCP socket.
 //
 // Plain TCP, so `nc <bike> 23` works (macOS has no telnet). Telnet clients' option negotiation
 // (IAC …) is stepped over. Lines end at CR or LF; a CR LF pair is one line. Backspace edits the line.

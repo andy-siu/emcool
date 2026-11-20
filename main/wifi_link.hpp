@@ -38,8 +38,9 @@ struct WifiCounters {
 bool startWifi(const settings::Settings& settings, settings::SettingsStorage& storage,
                settings::RuntimeSettings& running, ride_log::DownloadCard* card, WifiCounters& counters);
 
-// The `network` command's report: the network joined, its signal, and the address, netmask,
-// gateway and DNS server the network handed out, or why there are none. One line each.
+// The `ipconfig` command's report: the network joined (its SSID and signal), and the
+// address, network, netmask, gateway and DNS server it handed out, or why there are none, then the
+// hostname and the interface's MAC address. One line each. With Wi-Fi off, says so, and the MAC.
 std::string describeNetwork();
 
 }  // namespace emcool

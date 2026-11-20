@@ -20,6 +20,7 @@
 #include "esp_event.h"
 #include "esp_http_server.h"
 #include "esp_log_write.h"
+#include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
@@ -56,6 +57,8 @@ struct Link {
   ride_log::DownloadCard* card = nullptr;
   std::string adminPassword;
   std::string ssid;
+  // TELNET_CONSOLE: whether port 23 is served this boot.
+  bool console = true;
   esp_netif_t* netif = nullptr;
   esp_timer_handle_t retryTimer = nullptr;
   std::int64_t retryMs = kFirstRetryMs;
@@ -125,7 +128,7 @@ bool drainLog(int client) {
 // ---------------------------------------------------------------------------------- the console
 
 // The console's commands, as the USB console runs them: `help`, `restart`, and the settings'.
-// The card commands' state for the Wi-Fi console: its folder, kept from client to client unless reset.
+// The card commands' state for the telnet console: its folder, kept from client to client unless reset.
 std::unique_ptr<files::CardShell> cardShell;
 
 void runCommand(int argumentCount, char** arguments, std::string& output) {
@@ -139,12 +142,12 @@ void runCommand(int argumentCount, char** arguments, std::string& output) {
       output += kNoCardConfigured;
       return;
     }
-    if (!cardShell) cardShell = std::make_unique<files::CardShell>(*cardFiles().card, cardFiles().gate, "Wi-Fi console", 16 * 1024);
+    if (!cardShell) cardShell = std::make_unique<files::CardShell>(*cardFiles().card, cardFiles().gate, "telnet console", 16 * 1024);
     cardShell->run(argumentCount, arguments, [&](std::string& piece) { output += piece; });
     return;
   }
   if (command == "help") {
-    output += "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | network | restart | exit\n"
+    output += "show | set NAME VALUE | unset NAME | status [on | off | every SECONDS] | ipconfig | restart | exit\n"
               "`show` lists every setting and what it does is in the USB console's `help`.\n"
               "update FILE | update status\n"
               "The card: ";
@@ -152,20 +155,20 @@ void runCommand(int argumentCount, char** arguments, std::string& output) {
     output += "\n";
     return;
   }
-  if (command == "network") {
+  if (command == "ipconfig") {
     output += describeNetwork();
     return;
   }
   if (command == "restart") {
     output += "restarting\n";
-    logWarning(kTag, "restart asked for over the Wi-Fi console");
+    logWarning(kTag, "restart asked for over the telnet console");
     // After the reply has gone.
     restartAfter(500);
     return;
   }
   if (command == "show" || command == "set" || command == "unset" || command == "status") {
     if (command == "set" || command == "unset") {
-      logInfo(kTag, "over the Wi-Fi console: %s %s", arguments[0], argumentCount > 1 ? arguments[1] : "");
+      logInfo(kTag, "over the telnet console: %s %s", arguments[0], argumentCount > 1 ? arguments[1] : "");
     }
     settings::runSettingsCommand(*link.storage, *link.running, argumentCount, arguments, output);
     return;
@@ -466,8 +469,13 @@ void onEvent(void*, esp_event_base_t base, std::int32_t id, void* data) {
     link.counters->address.store(event->ip_info.ip.addr, std::memory_order_relaxed);
     link.counters->connected.store(true, std::memory_order_relaxed);
     link.retryMs = kFirstRetryMs;
-    logInfo(kTag, "connected as " IPSTR ": console `nc " IPSTR " %u`, ride log http://" IPSTR "/",
-            IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.ip), kConsolePort, IP2STR(&event->ip_info.ip));
+    if (link.console) {
+      logInfo(kTag, "connected as " IPSTR ": console `nc " IPSTR " %u`, ride log http://" IPSTR "/",
+              IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.ip), kConsolePort, IP2STR(&event->ip_info.ip));
+    } else {
+      logInfo(kTag, "connected as " IPSTR ": ride log http://" IPSTR "/ (console off: TELNET_CONSOLE 0)",
+              IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.ip));
+    }
   }
 }
 
@@ -480,28 +488,37 @@ std::string address(const esp_ip4_addr_t& ip) {
 }  // namespace
 
 std::string describeNetwork() {
+  // The station's MAC is fixed in eFuse, so it is there with Wi-Fi off too.
+  std::uint8_t mac[6] = {};
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  char macLine[48];
+  std::snprintf(macLine, sizeof macLine, "mac:      %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3],
+                mac[4], mac[5]);
   if (link.netif == nullptr) {
-    return "wifi: off (set WIFI_SSID and ADMIN_PASSWORD, then restart)\n";
+    return std::string("wifi:     off (set WIFI_SSID and ADMIN_PASSWORD, then restart)\n") + macLine;
   }
   std::string out;
-  std::uint8_t mac[6] = {};
-  esp_wifi_get_mac(WIFI_IF_STA, mac);
   char line[160];
   wifi_ap_record_t network = {};
   if (esp_wifi_sta_get_ap_info(&network) == ESP_OK) {
-    std::snprintf(line, sizeof line, "wifi:     joined \"%s\", channel %u, signal %d dBm\n",
-                  reinterpret_cast<const char*>(network.ssid), static_cast<unsigned>(network.primary),
-                  static_cast<int>(network.rssi));
+    std::snprintf(line, sizeof line, "wifi:     joined, channel %u, signal %d dBm\nssid:     %s\n",
+                  static_cast<unsigned>(network.primary), static_cast<int>(network.rssi),
+                  reinterpret_cast<const char*>(network.ssid));
   } else {
-    std::snprintf(line, sizeof line, "wifi:     not joined; trying \"%s\" (%u attempts so far)\n",
-                  link.ssid.c_str(), static_cast<unsigned>(link.counters->reconnects.load(std::memory_order_relaxed)));
+    std::snprintf(line, sizeof line, "wifi:     not joined; trying (%u attempts so far)\nssid:     %s\n",
+                  static_cast<unsigned>(link.counters->reconnects.load(std::memory_order_relaxed)), link.ssid.c_str());
   }
   out += line;
   esp_netif_ip_info_t ip = {};
   if (esp_netif_get_ip_info(link.netif, &ip) != ESP_OK || ip.ip.addr == 0) {
     out += "address:  none yet (waiting for the network's DHCP)\n";
   } else {
+    // The network itself: the address with the host's bits cleared, and the mask's length.
+    esp_ip4_addr_t subnet = {};
+    subnet.addr = ip.ip.addr & ip.netmask.addr;
+    const int prefix = __builtin_popcount(ip.netmask.addr);
     out += "address:  " + address(ip.ip) + "\n";
+    out += "network:  " + address(subnet) + "/" + std::to_string(prefix) + "\n";
     out += "netmask:  " + address(ip.netmask) + "\n";
     out += "gateway:  " + address(ip.gw) + "\n";
     esp_netif_dns_info_t dns = {};
@@ -512,11 +529,11 @@ std::string describeNetwork() {
   }
   const char* hostname = nullptr;
   esp_netif_get_hostname(link.netif, &hostname);
-  std::snprintf(line, sizeof line, "hostname: %s\nmac:      %02x:%02x:%02x:%02x:%02x:%02x\n",
-                hostname != nullptr ? hostname : "-", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-  out += line;
+  out += std::string("hostname: ") + (hostname != nullptr ? hostname : "-") + "\n";
+  out += macLine;
   if (ip.ip.addr != 0) {
-    out += "console:  nc " + address(ip.ip) + " " + std::to_string(kConsolePort) + "\n";
+    out += link.console ? "console:  nc " + address(ip.ip) + " " + std::to_string(kConsolePort) + "\n"
+                        : std::string("console:  off (TELNET_CONSOLE 0)\n");
     out += "ride log: http://" + address(ip.ip) + "/\n";
   }
   return out;
@@ -534,6 +551,7 @@ bool startWifi(const settings::Settings& settings, settings::SettingsStorage& st
   link.card = card;
   link.adminPassword = settings.adminPassword;
   link.ssid = settings.wifiSsid;
+  link.console = settings.telnetConsole;
 
   if (esp_netif_init() != ESP_OK) {
     logError(kTag, "esp_netif_init failed; Wi-Fi stays off");
@@ -580,18 +598,22 @@ bool startWifi(const settings::Settings& settings, settings::SettingsStorage& st
     logError(kTag, "esp_wifi_start failed (%s); Wi-Fi stays off", esp_err_to_name(result));
     return false;
   }
-  logInfo(kTag, "joining \"%s\"%s; the console and the ride-log page follow once it connects",
-          settings.wifiSsid.c_str(), settings.wifiPassword.empty() ? " (an open network)" : "");
+  logInfo(kTag, "joining \"%s\"%s; %s once it connects", settings.wifiSsid.c_str(),
+          settings.wifiPassword.empty() ? " (an open network)" : "",
+          link.console ? "the console and the ride-log page follow" : "the ride-log page follows (TELNET_CONSOLE 0)");
 
-  link.logBuffer = xStreamBufferCreate(kLogBufferBytes, 1);
-  if (link.logBuffer == nullptr) {
-    logError(kTag, "no memory for the console's log buffer");
-  } else {
-    link.serialPrint = esp_log_set_vprintf(teeLog);
-  }
-  if (xTaskCreatePinnedToCore(consoleTask, "wifi-console", kConsoleStackBytes, nullptr, kConsolePriority, nullptr,
-                              kCore) != pdPASS) {
-    logError(kTag, "could not create the console task");
+  // With the console off, nothing listens on port 23, and the log isn't teed.
+  if (link.console) {
+    link.logBuffer = xStreamBufferCreate(kLogBufferBytes, 1);
+    if (link.logBuffer == nullptr) {
+      logError(kTag, "no memory for the console's log buffer");
+    } else {
+      link.serialPrint = esp_log_set_vprintf(teeLog);
+    }
+    if (xTaskCreatePinnedToCore(consoleTask, "wifi-console", kConsoleStackBytes, nullptr, kConsolePriority, nullptr,
+                                kCore) != pdPASS) {
+      logError(kTag, "could not create the console task");
+    }
   }
   startWebServer();
   return true;

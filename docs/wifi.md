@@ -23,7 +23,8 @@ emcool> restart
 
 - **`WIFI_SSID`:** the network to join, 1–32 characters. A phone hotspot works too.
 - **`WIFI_PASSWORD`:** that network's password, 8–63 characters. Leave it unset for an open network.
-- **`ADMIN_PASSWORD`:** what the console and the page ask for, 12–128 characters. Without it, Wi-Fi stays off.
+- **`ADMIN_PASSWORD`:** what the console and the page ask for, 8–128 characters. Without it, Wi-Fi stays off.
+- **`TELNET_CONSOLE`:** `1` (the default) serves the telnet console on port 23; `0` doesn't. See [below](#turning-the-telnet-console-off).
 
 The boot log says where to find it:
 
@@ -31,12 +32,14 @@ The boot log says where to find it:
 I wifi: connected as 192.168.1.42: console `nc 192.168.1.42 23`, ride log http://192.168.1.42/
 ```
 
-The 10 s status line repeats the address, and `network`, on either console, shows the rest:
+The 10 s status line repeats the address, and `ipconfig`, on any console, shows the rest:
 
 ```
-emcool> network
-wifi:     joined "garage wifi", channel 6, signal -58 dBm
+emcool> ipconfig
+wifi:     joined, channel 6, signal -58 dBm
+ssid:     garage wifi
 address:  192.168.1.42
+network:  192.168.1.0/24
 netmask:  255.255.255.0
 gateway:  192.168.1.1
 dns:      192.168.1.1
@@ -46,11 +49,11 @@ console:  nc 192.168.1.42 23
 ride log: http://192.168.1.42/
 ```
 
-Before it has joined, it says what it is trying and how many attempts it has made. A router can reserve the bike an address by that MAC address. The bike asks the router for the hostname `emcool`, so `emcool.local` or `emcool` may work too, depending on the router.
+Before it has joined, it gives the SSID it is trying and how many attempts it has made. With Wi-Fi off, it says so and gives the MAC address. A router can reserve the bike an address by that MAC address. The bike asks the router for the hostname `emcool`, so `emcool.local` or `emcool` may work too, depending on the router.
 
 The bike rejoins by itself if the network drops or the router restarts, retrying from 1 s up to once a minute. `unset WIFI_SSID` then `restart` turns Wi-Fi off.
 
-## The console
+## The telnet console
 
 ```bash
 nc 192.168.1.42 23
@@ -59,7 +62,7 @@ nc 192.168.1.42 23
 macOS has no `telnet` any more; `nc` is built in, and a telnet client works too.
 
 1. Type the admin password. A telnet client hides it; `nc` shows it as you type.
-2. Then use the same commands as the USB console: `show`, `set`, `unset`, `status`, `network`, `restart`, plus `help` and `exit`.
+2. Then use the same commands as the USB console: `show`, `set`, `unset`, `status`, `ipconfig`, `restart`, plus `help` and `exit`.
 3. The log follows the console as it does on the serial port, status reports included. If the network can't keep up, lines are dropped and a note says how many bytes.
 
 **Limits:**
@@ -67,6 +70,17 @@ macOS has no `telnet` any more; `nc` is built in, and a telnet client works too.
 - One client at a time. A second waits until the first leaves.
 - Three wrong passwords end the connection. After three wrong in a row, every attempt fails for 5 s, whoever makes it.
 - A client that types nothing for 30 minutes (1 minute before logging in) is disconnected.
+
+### Turning the telnet console off
+
+To keep the ride-log page but close port 23, from the USB console or the dashboard's **Bike console** (it's the `TELNET_CONSOLE` row there):
+
+```
+emcool> set TELNET_CONSOLE 0
+emcool> restart
+```
+
+After the restart nothing listens on port 23. The boot log says `console off: TELNET_CONSOLE 0`, `ipconfig` says `console:  off (TELNET_CONSOLE 0)`, and the status line's `wifi:` says `console off`. `set TELNET_CONSOLE 1` (or `unset TELNET_CONSOLE`) and a restart bring it back. Turn it off from the telnet console itself and the session you're in carries on until you leave or restart.
 
 ## The ride-log page
 
