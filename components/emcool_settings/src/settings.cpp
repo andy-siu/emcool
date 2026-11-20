@@ -24,13 +24,10 @@ constexpr SettingSpec kSpecs[] = {
      "The name the phone's device list shows. The dashboard finds the bike by its service UUID, not this."},
     {"CUSTOM_BMS_CONFIG", "custom_bms", SettingType::kFlag, "0", 0, 0, false,
      "1 only if the BMS runs the custom LiBAL config. The frames still win."},
-    // Everything that puts frames on the bike's bus is off until asked for, OBD_ENABLED and
-    // ELOCK_ENABLED included.
+    // Everything that puts frames on the bike's bus is off until asked for, OBD_ENABLED included.
     {"OBD_ENABLED", "obd_enabled", SettingType::kFlag, "0", 0, 0, false,
      "1 to poll OBD-II (speed, rpm, temperatures, 12 V, trouble codes). Off, "
      "emcool only listens: the CAN controller doesn't even acknowledge frames."},
-    {"ELOCK_ENABLED", "elock_enabled", SettingType::kFlag, "0", 0, 0, false,
-     "1 to read keys_paired from the E-LOCK once at startup. Needs OBD_ENABLED."},
     {"SERVICE_MODE_ENABLED", "service_mode", SettingType::kFlag, "0", 0, 0, false,
      "1 to let the dashboard read the VCU's calibration parameters (Menu → Service mode), "
      "only while the bike is parked and out of drive. Needs OBD_ENABLED."},
@@ -325,7 +322,6 @@ Settings Settings::load(SettingsStorage& storage) {
   settings.bleName = value("BLE_NAME");
   settings.customBmsConfig = value("CUSTOM_BMS_CONFIG") == "1";
   settings.obdEnabled = value("OBD_ENABLED") == "1";
-  settings.elockEnabled = value("ELOCK_ENABLED") == "1";
   settings.serviceModeEnabled = value("SERVICE_MODE_ENABLED") == "1";
   settings.serviceWriteEnabled = value("SERVICE_WRITE_ENABLED") == "1";
   settings.chargeAutoEnabled = value("CHARGE_AUTO_ENABLED") == "1";
@@ -375,7 +371,6 @@ std::string RuntimeSettings::valueOf(const SettingSpec& spec) const {
   if (spec.name == "BLE_NAME") return boot_.bleName;
   if (spec.name == "CUSTOM_BMS_CONFIG") return boot_.customBmsConfig ? "1" : "0";
   if (spec.name == "OBD_ENABLED") return boot_.obdEnabled ? "1" : "0";
-  if (spec.name == "ELOCK_ENABLED") return boot_.elockEnabled ? "1" : "0";
   if (spec.name == "SERVICE_MODE_ENABLED") return boot_.serviceModeEnabled ? "1" : "0";
   if (spec.name == "SERVICE_WRITE_ENABLED") return boot_.serviceWriteEnabled ? "1" : "0";
   if (spec.name == "CHARGE_AUTO_ENABLED") return boot_.chargeAutoEnabled ? "1" : "0";

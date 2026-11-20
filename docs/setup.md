@@ -88,7 +88,6 @@ Types: **flag** is `0`/`1`; **integer** is a whole number in a range; **text**/*
 | `BLE_NAME` | text | `emcool` | 1–29 chars | restart | The name the phone's device list shows. The dashboard finds the bike by its service UUID, not this. |
 | `CUSTOM_BMS_CONFIG` | flag | `0` | — | restart | `1` only if the BMS runs the custom LiBAL config, for working out which frame carries the true pack temperature. The frames still win. |
 | `OBD_ENABLED` | flag | `0` | — | restart | `1` to poll OBD-II and read trouble codes. This puts the CAN controller on the bus as an active node; off, emcool is listen-only and doesn't even acknowledge frames. |
-| `ELOCK_ENABLED` | flag | `0` | — | restart | `1` to read `keys_paired` from the E-LOCK once at startup. Needs `OBD_ENABLED`. |
 | `SERVICE_MODE_ENABLED` | flag | `0` | — | restart | `1` to let the dashboard **read** the VCU's calibration parameters, lifetime stats and freeze frames, while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`service-mode.md`](service-mode.md). |
 | `SERVICE_WRITE_ENABLED` | flag | `0` | — | restart | `1` to let the dashboard **write** to the VCU (`/vcu-write`: allowlisted parameters, service point, clock sync, clear DTCs, charge current/stop, SOC limit, reset). The only switch that lets a web page change the bike. Needs `OBD_ENABLED` and `SERVICE_MODE_ENABLED`. See [`service-mode.md`](service-mode.md). |
 | `CHARGE_AUTO_ENABLED` | flag | `0` | — | restart | `1` for the automatic charge-current controller — it commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`service-mode.md`](service-mode.md). |
@@ -108,8 +107,6 @@ OBD_ENABLED=1                 the CAN controller becomes an active node; polls O
       └ SERVICE_WRITE_ENABLED=1    the dashboard may CHANGE the bike (/vcu-write)  ⚠️ off on purpose
           └ CHARGE_AUTO_ENABLED=1  the controller commands the charge current on its own
 ```
-
-`ELOCK_ENABLED=1` hangs off `OBD_ENABLED` on its own (a one-shot read at startup).
 
 ⚠️ `SERVICE_WRITE_ENABLED` is the one that lets a web page change a calibration EEPROM, stamp the service record, clear the fault memory or actuate charging. It is off by default and would be even if the others weren't, and the boot journal says so loudly when it's on.
 

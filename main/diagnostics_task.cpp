@@ -70,7 +70,7 @@ DiagnosticsTask::DiagnosticsTask(CanBus& bus, signals::SignalStore& store, std::
       store_(snapshotDirectory_, names_),
       readings_(snapshotDirectory_) {
   if (settings.obdEnabled) {
-    obd_ = std::make_unique<obd::ObdStack>(bus, *recorder_, settings.elockEnabled, order_);
+    obd_ = std::make_unique<obd::ObdStack>(bus, *recorder_, order_);
   }
   context_.send = [this](std::uint32_t id, const std::array<std::uint8_t, 8>& frame) { return bus_.transmit(id, frame); };
   context_.readSignal = [this](std::string_view key) {
@@ -291,8 +291,6 @@ void DiagnosticsTask::route(const ReceivedFrame& frame) {
     // PIDs and Mode 04 in 0x7E0-0x7EF. Only one runner is busy at a time (the bus lease).
     if (writeRunner_->handleCanFrame(frame.id, data)) return;
     if (obd_) obd_->handleFrame(frame.id, data, now());
-  } else if (obd::ElockReader::isResponse(frame.id) && obd_) {
-    obd_->handleFrame(frame.id, data, now());
   }
 }
 

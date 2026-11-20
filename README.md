@@ -184,7 +184,6 @@ emcool> restart
 | `BLE_NAME` | `emcool` | The name in the phone's device list. |
 | `CUSTOM_BMS_CONFIG` | `0` | `1` if the BMS runs the custom LiBAL config. |
 | `OBD_ENABLED` | `0` | `1` to poll OBD-II and read trouble codes. This puts the CAN controller on the bus as an active node. See [Transmitting](#transmitting). |
-| `ELOCK_ENABLED` | `0` | `1` to read `keys_paired` from the E-LOCK once at startup. Needs `OBD_ENABLED`. |
 | `SERVICE_MODE_ENABLED` | `0` | `1` to let the dashboard read the VCU's calibration parameters, only while the bike is parked and out of drive. Needs `OBD_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `SERVICE_WRITE_ENABLED` | `0` | `1` to let the dashboard **write** to the VCU (`/vcu-write`). The one switch that lets a web page change the bike. Needs `OBD_ENABLED` and `SERVICE_MODE_ENABLED`. See [`docs/service-mode.md`](docs/service-mode.md). |
 | `CHARGE_AUTO_ENABLED` | `0` | `1` for the automatic charge-current controller. It commands the DC charge current on a 60 s timer to hold the pack near 54 °C. Needs `SERVICE_WRITE_ENABLED` to actuate. See [`docs/service-mode.md`](docs/service-mode.md). |
@@ -323,7 +322,7 @@ Most of emcool's logic is checked against a **reference implementation**: an ear
   - stock and custom configs, with the setting right and wrong
   - short, long and late frames
   - echo and clamp faults
-- **The OBD side matches to the millisecond:** the poller, trouble-code reads, the poller's hold and the E-LOCK read, in 72 scenarios over four simulated hours against a scripted ECU. Every millisecond it must send the same frames, record the same signals, log the same lines and serve the same `/stored-dtcs` body. It also checks all 65,536 codes, every NRC and 94,000 ISO-TP frames. Details are in [`docs/obd.md`](docs/obd.md).
+- **The OBD side matches to the millisecond:** the poller, trouble-code reads and the poller's hold, in 72 scenarios over four simulated hours against a scripted ECU. Every millisecond it must send the same frames, record the same signals, log the same lines and serve the same `/stored-dtcs` body. It also checks all 65,536 codes, every NRC and 94,000 ISO-TP frames. Details are in [`docs/obd.md`](docs/obd.md).
 - **Service mode matches to the millisecond.** Its pure parts are checked on random input: codecs, the service gate, rows and diffs. Sweeps and probes, with the OBD poller alongside, run against simulated VCU micros.
 - **The write path matches.** The security key, the reply decoders, the allowlist and gates, and the charge commands are checked on random input. Whole write sessions are compared frame for frame on a scripted bus.
 - **The charge controller matches** bit for bit, and through scripted charges. Details for service mode, writes and the controller are in [`docs/service-mode.md`](docs/service-mode.md).
@@ -356,7 +355,7 @@ Most of emcool's logic is checked against a **reference implementation**: an ear
 | `components/emcool_ride_log` | Ride-log segments, the on-card record format, the file writer, and the download. Plain POSIX calls, so the laptop runs the same code. |
 | `components/emcool_ble_wire` | The phone link's wire protocol and session. Crypto is mbedTLS PSA on the device and OpenSSL on the laptop. |
 | `components/emcool_ble_server` | The phone link's server: live stream, request handling, the endpoints. Transport-free. |
-| `components/emcool_obd` | OBD-II: the PID poller, trouble-code reads over ISO-TP, the poller's hold, the E-LOCK read, the hub's fault list, and Energica's code table (generated). Transport-free. |
+| `components/emcool_obd` | OBD-II: the PID poller, trouble-code reads over ISO-TP, the poller's hold, the hub's fault list, and Energica's code table (generated). Transport-free. |
 | `components/emcool_vcu` | Service mode: the KWP2000 client, sweeps and probes, the service gate, the 29 parameter tables (generated), the snapshots on the card, the write engine and the automatic charge-current controller. Transport-free. |
 | `components/emcool_async` | An event loop with Node's ordering rules, and C++20 coroutines on it. |
 | `components/emcool_text` | Allocation-free text and JSON building, a window at a time for bodies bigger than any buffer. |

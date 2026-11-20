@@ -2,17 +2,16 @@
 
 // Everything emcool says over OBD, in one place for the decode task to drive: the poller, the
 // trouble-code reader it uses, the stored-codes state behind /stored-dtcs, the poller's hold,
-// and the one-shot E-LOCK read. It exists only with OBD_ENABLED.
+// and the poller's hold. It exists only with OBD_ENABLED.
 //
-// Routing: 0x7E0-0x7EF and 0x790 are the diagnostic replies and are never passed to the
-// broadcast decoders, whether or not OBD is on.
+// Routing: 0x7E0-0x7EF are the diagnostic replies and are never passed to the broadcast
+// decoders, whether or not OBD is on.
 
 #include <cstdint>
 #include <optional>
 #include <span>
 
 #include "emcool/obd/bus.hpp"
-#include "emcool/obd/elock.hpp"
 #include "emcool/obd/obd_hold.hpp"
 #include "emcool/obd/obd_poller.hpp"
 #include "emcool/obd/stored_codes.hpp"
@@ -22,21 +21,18 @@
 namespace emcool::obd {
 
 // A diagnostic reply: for the OBD side, not the decoders.
-inline bool isDiagnosticReply(std::uint32_t id) { return ObdPoller::isResponse(id) || ElockReader::isResponse(id); }
+inline bool isDiagnosticReply(std::uint32_t id) { return ObdPoller::isResponse(id); }
 
 class ObdStack {
  public:
-  ObdStack(CanTransmitter& bus, SignalRecorder& recorder, bool elockEnabled)
-      : ObdStack(bus, recorder, elockEnabled, ownOrder_) {}
+  ObdStack(CanTransmitter& bus, SignalRecorder& recorder) : ObdStack(bus, recorder, ownOrder_) {}
   // Sharing `order` with an event loop, so ties between its timers and these keep the order set.
-  ObdStack(CanTransmitter& bus, SignalRecorder& recorder, bool elockEnabled, DeadlineOrder& order)
+  ObdStack(CanTransmitter& bus, SignalRecorder& recorder, DeadlineOrder& order)
       : hold_(order),
         reader_(bus, order, transmitLogs_.troubleCodes),
-        poller_(bus, recorder, reader_, stored_, hold_, order, transmitLogs_.obd),
-        elock_(bus, recorder, order),
-        elockEnabled_(elockEnabled) {}
+        poller_(bus, recorder, reader_, stored_, hold_, order, transmitLogs_.obd) {}
 
-  // Starts polling, and the E-LOCK read if it's on, in that order.
+  // Starts polling.
   void start(Now now);
   // Stopping and restarting just the PID poller, for the USB console's `poller` command. A stopped
   // poller sends nothing; restarting begins a fresh round now.
@@ -69,8 +65,6 @@ class ObdStack {
   TroubleCodeReader reader_;
   StoredCodes stored_;
   ObdPoller poller_;
-  ElockReader elock_;
-  const bool elockEnabled_;
 };
 
 }  // namespace emcool::obd

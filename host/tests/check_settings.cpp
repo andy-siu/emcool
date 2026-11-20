@@ -213,11 +213,10 @@ int main() {
   {
     MemoryStorage fresh;
     RuntimeSettings running(Settings::load(fresh));
-    EMCOOL_CHECK(!running.boot().obdEnabled && !running.boot().elockEnabled && !running.boot().serviceModeEnabled,
+    EMCOOL_CHECK(!running.boot().obdEnabled && !running.boot().serviceModeEnabled,
                  "a transmitting feature is on by default");
     Result shown = run(fresh, running, {"show"});
     EMCOOL_CHECK(contains(shown.output, "OBD_ENABLED        0 (default)") &&
-                     contains(shown.output, "ELOCK_ENABLED      0 (default)") &&
                      contains(shown.output, "SERVICE_MODE_ENABLED 0 (default)"),
                  "show on a fresh store:\n%s", shown.output.c_str());
     shown = run(fresh, running, {"set", "obd_enabled", "on"});
@@ -227,9 +226,8 @@ int main() {
     shown = run(fresh, running, {"show"});
     EMCOOL_CHECK(contains(shown.output, "OBD_ENABLED        1   <- takes effect after `restart` (running: 0)"),
                  "show with OBD waiting for a restart:\n%s", shown.output.c_str());
-    run(fresh, running, {"set", "ELOCK_ENABLED", "yes"});
     const Settings restarted = Settings::load(fresh);
-    EMCOOL_CHECK(restarted.obdEnabled && restarted.elockEnabled, "OBD_ENABLED and ELOCK_ENABLED did not load");
+    EMCOOL_CHECK(restarted.obdEnabled, "OBD_ENABLED did not load");
   }
 
   // The status report: live settings, applied at once and saved; `status` asks for a report now.

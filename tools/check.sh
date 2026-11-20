@@ -7,7 +7,7 @@
 #   - the clock gate matches the reference verdict for verdict
 #   - the pack-temperature routing matches the reference value for value, and warns as often
 #   - the diagnostic tables are current with the reference; the OBD side — the PID poller, trouble-code
-#     reads over ISO-TP, the poller's hold, the E-LOCK read — driven against a scripted ECU on a
+#     reads over ISO-TP, the poller's hold — driven against a scripted ECU on a
 #     fake clock, sends, records, logs and serves /stored-dtcs exactly as the reference does, to the
 #     millisecond
 #   - numbers are written exactly as JavaScript writes them; the event loop keeps Node's order
@@ -98,7 +98,7 @@ node "${node_flags[@]}" "$root/tools/generate-golden-pack-temperature.mts" "$ref
 
 node "${node_flags[@]}" "$root/tools/generate-golden-obd.mts" "$reference" "$build/golden-obd.txt"
 "$build/check_obd" "$build/golden-obd.txt" 2>"$build/check_obd.stderr" || {
-  grep -vE '^[IWE] (obd|obd-dtc|elock): ' "$build/check_obd.stderr" >&2
+  grep -vE '^[IWE] (obd|obd-dtc): ' "$build/check_obd.stderr" >&2
   exit 1
 }
 

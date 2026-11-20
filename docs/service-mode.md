@@ -88,7 +88,7 @@ node tools/generate-vcu-tables.mts "${COOL_EVA_DIR:-../cool-eva}"
 
 ## How it runs
 
-Everything that transmits runs in the diagnostics task: the OBD poller and service mode share one event loop. The decode task forwards it the diagnostic replies, 0x7E0–0x7EF and 0x790.
+Everything that transmits runs in the diagnostics task: the OBD poller and service mode share one event loop. The decode task forwards it the diagnostic replies, 0x7E0–0x7EF.
 
 The Bluetooth task hands it the dashboard's requests and collects each answer when it's ready. So a probe that takes seconds never holds up the live stream, and a slow card never holds up decoding.
 
