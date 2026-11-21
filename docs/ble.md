@@ -158,7 +158,9 @@ If the dashboard says *Link lost: no authenticated Bluetooth message for 12 s* w
 
 ## Memory
 
-The server's buffers come from the heap once, when Bluetooth starts, about 37 KB. Each is sized by the message cap (`kMaxMessageBytes`, 2.5 KB), which was 4.5 KB until Bluetooth, OBD and the card together ran the heap out at boot:
+The server's buffers come from the heap once, when Bluetooth starts, about 37 KB. On the S3 the server (33 KB) sits in PSRAM, as does the live-value store it streams from (21 KB): `allocateInPsram` in `main/main.cpp`. Neither is touched by an interrupt, by DMA from the card, or by code that runs with the flash cache off. The link's AES-GCM does DMA to and from PSRAM, through the cache or bounced through internal RAM, so before Bluetooth starts the bike seals and opens a full-size message in PSRAM and compares it with the same work in internal RAM. If they differ, Bluetooth stays off and the log says why. With both in internal RAM, Bluetooth and Wi-Fi left about 13 KB free, and a request that couldn't get a block aborted the bike. A board without PSRAM puts them in internal RAM as before.
+
+Each buffer is sized by the message cap (`kMaxMessageBytes`, 2.5 KB), which was 4.5 KB until Bluetooth, OBD and the card together ran the heap out at boot:
 
 | Buffer | Size |
 | --- | --- |
@@ -166,7 +168,7 @@ The server's buffers come from the heap once, when Bluetooth starts, about 37 KB
 | Session, including the deflate tables | ~18 KB |
 | Frame assembler | ~2.5 KB |
 | Header buffer | ~2.5 KB |
-| The endpoints' body buffer | 4 KB |
+| The endpoints' body buffer (internal RAM: `/dl` reads the card into it) | 4 KB |
 
 Response bodies go in 2 KB pieces. The phone joins them, so a smaller piece only means more messages.
 

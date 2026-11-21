@@ -6,12 +6,18 @@
 //
 //   check_write <golden file>
 
+#include <algorithm>
+#include <cctype>
 #include <cinttypes>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <new>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "check.hpp"
@@ -26,6 +32,33 @@
 
 using namespace emcool;
 using namespace emcool::vcu;
+
+// The largest block asked of the heap, and the most held at once, while `trackingAllocations` is on:
+// the bike's internal heap has had under 13 KB free and a 5 KB largest block with Bluetooth and Wi-Fi up.
+bool trackingAllocations = false;
+std::size_t largestAllocation = 0;
+std::size_t heldNow = 0;
+std::size_t mostHeld = 0;
+
+// Each block carries its size in front, so the peak can be counted on any platform.
+void* operator new(std::size_t size) {
+  auto* block = static_cast<std::size_t*>(std::malloc(size + sizeof(std::max_align_t)));
+  if (block == nullptr) throw std::bad_alloc();
+  *block = size;
+  if (trackingAllocations) {
+    largestAllocation = std::max(largestAllocation, size);
+    heldNow += size;
+    mostHeld = std::max(mostHeld, heldNow);
+  }
+  return reinterpret_cast<char*>(block) + sizeof(std::max_align_t);
+}
+void operator delete(void* pointer) noexcept {
+  if (pointer == nullptr) return;
+  auto* block = reinterpret_cast<std::size_t*>(static_cast<char*>(pointer) - sizeof(std::max_align_t));
+  if (trackingAllocations) heldNow -= std::min(heldNow, *block);
+  std::free(block);
+}
+void operator delete(void* pointer, std::size_t) noexcept { operator delete(pointer); }
 
 namespace {
 
@@ -449,7 +482,88 @@ std::string rtcDecodeJson(const std::optional<RtcFields>& fields) {
 
 }  // namespace
 
+// The write list and its lookups on the bike: the same names, in the same order, and the same targets
+// as writeTargets() whole, without ever building it.
+void checkWriteTargetsWithoutTheList() {
+  const std::vector<WriteTarget> whole = writeTargets(gNames);
+  std::vector<std::pair<std::string, int>> walked;
+  forEachWriteTargetName(gNames, [&](const WriteTargetName& target) { walked.emplace_back(target.name, target.index); });
+  bool sameList = walked.size() == whole.size();
+  for (std::size_t at = 0; sameList && at < whole.size(); at++) {
+    sameList = walked[at].first == whole[at].name && walked[at].second == whole[at].index;
+  }
+  if (!sameList || whole.size() < 200) {
+    std::fprintf(stderr, "FAIL the walked write list (%zu) is not writeTargets() (%zu) in order\n", walked.size(),
+                 whole.size());
+    failures++;
+  }
+  const std::vector<WriteTarget> curated = curatedWriteTargets();
+  for (std::size_t at = 0; at < curated.size(); at++) {
+    if (at >= whole.size() || whole[at].name != curated[at].name || whole[at].index != curated[at].index) {
+      std::fprintf(stderr, "FAIL a curated target's builder does not match its name and index in write_targets.cpp\n");
+      failures++;
+      break;
+    }
+  }
+  // Every target by name, in any case, is the one in the list, notes and all; unknown and duplicated names aren't.
+  const auto sameTarget = [](const WriteTarget& left, const WriteTarget& right) {
+    return left.name == right.name && left.index == right.index && left.purpose == right.purpose &&
+           left.warnings == right.warnings && left.verify == right.verify && left.unitKind == right.unitKind &&
+           left.control.kind == right.control.kind && left.control.min == right.control.min &&
+           left.control.max == right.control.max && left.control.bits.size() == right.control.bits.size();
+  };
+  for (const WriteTarget& target : whole) {
+    std::string lower = target.name;
+    for (char& character : lower) character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    for (const std::string& asked : {target.name, lower}) {
+      const std::optional<WriteTarget> found = writeTargetNamed(gNames, asked);
+      if (!found || !sameTarget(*found, target)) {
+        std::fprintf(stderr, "FAIL writeTargetNamed(%s) is not the list's %s\n", asked.c_str(), target.name.c_str());
+        failures++;
+      }
+    }
+  }
+  std::vector<std::string> duplicated;
+  for (const VcuParameter& parameter : gNames.active().parameters) {
+    int count = 0;
+    for (const VcuParameter& other : gNames.active().parameters) count += other.name() == parameter.name() ? 1 : 0;
+    if (count > 1) duplicated.emplace_back(parameter.name());
+  }
+  for (const std::string& name : duplicated) {
+    if (writeTargetNamed(gNames, name)) {
+      std::fprintf(stderr, "FAIL the duplicated name %s was found\n", name.c_str());
+      failures++;
+    }
+  }
+  if (writeTargetNamed(gNames, "NOPE") || writeTargetNamed(gNames, "")) {
+    std::fprintf(stderr, "FAIL an unknown name was found\n");
+    failures++;
+  }
+
+  // What GET /vcu-write's list and a POST's lookup ask of the heap: the old whole list held about 300 KB.
+  constexpr std::size_t kMostBytes = 4096;
+  const auto measure = [&](const char* what, const auto& run) {
+    largestAllocation = heldNow = mostHeld = 0;
+    trackingAllocations = true;
+    run();
+    trackingAllocations = false;
+    if (mostHeld > kMostBytes) {
+      std::fprintf(stderr, "FAIL %s held %zu bytes at once (largest block %zu); at most %zu\n", what, mostHeld,
+                   largestAllocation, kMostBytes);
+      failures++;
+    }
+    std::fprintf(stderr, "check_write: %s held at most %zu bytes at once, largest block %zu\n", what, mostHeld,
+                 largestAllocation);
+  };
+  std::size_t listed = 0;
+  measure("the write list", [&] { forEachWriteTargetName(gNames, [&](const WriteTargetName&) { listed++; }); });
+  measure("a curated lookup", [&] { (void)writeTargetNamed(gNames, "MAX_DC_CHG_CURRENT"); });
+  measure("a generated lookup", [&] { (void)writeTargetNamed(gNames, whole.back().name); });
+  measure("a write plan", [&] { (void)planWrite(gNames, "MAX_DC_CHG_CURRENT", 75, 75); });
+}
+
 int main(int argc, char** argv) {
+  checkWriteTargetsWithoutTheList();
   if (argc < 2) {
     std::fprintf(stderr, "usage: check_write <golden file>\n");
     return 2;

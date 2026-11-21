@@ -1038,14 +1038,11 @@ std::optional<VcuWriteRunner::SweptValue> VcuWriteRunner::sweptValueFor(const Wr
 void VcuWriteRunner::writeStatusJson(text::TextBuffer& out, const WriteStatusRequest& request) {
   const std::optional<TableTypeReport> report = context_.latestReport();
   // One snapshot open for the detail's swept value.
+  // Exactly as named: the list's names are what the page sends back.
   std::optional<WriteTarget> named;
   if (request.detailFor) {
-    for (const WriteTarget& target : writeTargets(names())) {
-      if (target.name == *request.detailFor) {
-        named = target;
-        break;
-      }
-    }
+    named = writeTargetNamed(names(), *request.detailFor);
+    if (named && named->name != *request.detailFor) named.reset();
   }
   out.append(context_.enabled ? "{\"enabled\":true" : "{\"enabled\":false");
   out.append(",\"chargeAck\":");
@@ -1072,7 +1069,7 @@ void VcuWriteRunner::writeStatusJson(text::TextBuffer& out, const WriteStatusReq
   if (request.includeList) {
     out.append("[");
     bool first = true;
-    for (const WriteTarget& target : writeTargets(names())) {
+    forEachWriteTargetName(names(), [&](const WriteTargetName& target) {
       if (!first) out.append(",");
       first = false;
       const VcuParameter* parameter = names().atIndex(target.index);
@@ -1083,7 +1080,7 @@ void VcuWriteRunner::writeStatusJson(text::TextBuffer& out, const WriteStatusReq
       out.append(",\"micro\":");
       out.appendJsonString(parameter != nullptr ? microName(parameter->micro) : "?");
       out.append("}");
-    }
+    });
     out.append("]");
   } else {
     out.append("null");

@@ -206,6 +206,7 @@ The decision is a pure function (`decideChargeCurrent`); the controller around i
   - 10,000 security/write/routine/clear-DTC replies decoded
   - 3,000 service stamps, 3,000 clock verdicts, 3,000 RTC-sync frames both directions
   - the allowlist and 5,500 plan/bit-plan outcomes over 269 targets, in and out of range
+  - that `GET /vcu-write`'s list and every lookup by name give exactly the targets `writeTargets()` builds, without building it. Whole, with every target's notes, the list held about 300 KB at once, more than the bike's free internal RAM. The list now asks the heap for nothing, and a lookup builds only the target named (under 2 KB); `check_write` fails above 4 KB, and fails with 329 KB on the old lookup
   - 2,000 table-gate verdicts (confirmed, split, mismatched, unread)
   - 3,000 `/vcu-write` request parses and the UTC-minute window
   - 2,000 charge-current command frames and the charge-stop frame

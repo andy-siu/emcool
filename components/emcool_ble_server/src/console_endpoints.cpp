@@ -2,12 +2,15 @@
 
 #include <array>
 #include <cmath>
+#include <span>
+#include <vector>
 
 #include "emcool/ble/json_reader.hpp"
 #include "emcool/log.hpp"
 #include "emcool/settings/dashboard_reply.hpp"
 #include "emcool/settings/remote_console.hpp"
 #include "emcool/text/help.hpp"
+#include "emcool/text/text_buffer.hpp"
 
 namespace emcool::ble_server {
 
@@ -46,6 +49,87 @@ ConsoleAnswer reply(int status, bool ok, const std::string& output, std::uint32_
                      "}";
   return {status, kJson, std::move(body)};
 }
+
+// A part at exactly its length: measured, then written, so it costs one allocation of its own size
+// rather than a string doubling as it grows.
+template <typename Write>
+std::string exactly(Write write) {
+  char none = 0;
+  text::TextBuffer measure = text::TextBuffer::window(&none, 0, 0);
+  write(measure);
+  std::string part(measure.total(), '\0');
+  text::TextBuffer out(part.data(), part.size());
+  write(out);
+  return part;
+}
+
+// What GET /console says of one setting that can change: read once, when the request arrives.
+struct ListedValues {
+  std::string saved;  // as JSON, and as `show` prints it: never a secret's characters
+  std::string active;
+  bool stored;
+  bool pending;
+  bool set;
+};
+
+// GET /console's body, a setting per part. Whole it is 5-6 KB, mostly help, and the internal heap's
+// largest free block can be smaller. Every pass gives the same bytes, since the length is measured on
+// one pass and the pieces sent from another: what changes was read at the start, and the names and
+// help are in flash.
+class SettingsListBody final : public vcu::PartsBody {
+ public:
+  SettingsListBody(std::uint32_t revision, std::vector<ListedValues> values)
+      : revision_(revision), values_(std::move(values)) {}
+
+  std::optional<std::string> next() override {
+    const std::span<const settings::SettingSpec> specs = settings::settingSpecs();
+    if (next_ > values_.size() + 1) return std::nullopt;
+    const std::size_t at = next_++;
+    if (at == 0) {
+      return exactly([&](text::TextBuffer& out) {
+        out.append("{\"revision\":");
+        out.appendUnsigned(revision_);
+        out.append(",\"settings\":[");
+      });
+    }
+    if (at > values_.size()) return std::string("]}");
+    const settings::SettingSpec& spec = specs[at - 1];
+    const ListedValues& values = values_[at - 1];
+    const std::string defaultValue = shownValue(spec, std::string(spec.defaultValue));
+    // Names and help hold no control characters, so these escape them as jsonString does, without a copy.
+    return exactly([&](text::TextBuffer& out) {
+      if (at > 1) out.append(",");
+      out.append("{\"name\":");
+      out.appendJsonString(spec.name);
+      out.append(",\"type\":\"");
+      out.append(typeName(spec.type));
+      out.append("\",\"saved\":");
+      out.append(values.saved);
+      out.append(",\"active\":");
+      out.append(values.active);
+      out.append(values.stored ? ",\"isDefault\":false" : ",\"isDefault\":true");
+      out.append(values.pending ? ",\"pending\":true" : ",\"pending\":false");
+      out.append(spec.live ? ",\"live\":true" : ",\"live\":false");
+      out.append(values.set ? ",\"set\":true" : ",\"set\":false");
+      out.append(",\"defaultValue\":");
+      out.append(defaultValue);
+      out.append(",\"minimum\":");
+      out.appendInteger(spec.minimum);
+      out.append(",\"maximum\":");
+      out.appendInteger(spec.maximum);
+      out.append(",\"help\":");
+      out.appendJsonString(spec.help);
+      out.append("}");
+    });
+  }
+
+  void rewind() override { next_ = 0; }
+
+ private:
+  std::uint32_t revision_;
+  std::vector<ListedValues> values_;  // one per settings::settingSpecs(), in order
+  std::size_t next_ = 0;
+};
 
 std::string helpText() {
   static constexpr text::HelpLine kHelp[] = {
@@ -123,26 +207,17 @@ std::optional<ConsoleAnswer> ConsoleEndpoints::poll() {
 }
 
 ConsoleAnswer ConsoleEndpoints::settingsList() {
-  std::string out = "{\"revision\":" + std::to_string(running_.revision()) + ",\"settings\":[";
-  bool firstSetting = true;
-  for (const settings::SettingSpec& spec : settings::settingSpecs()) {
+  const std::uint32_t revision = running_.revision();
+  const std::span<const settings::SettingSpec> specs = settings::settingSpecs();
+  std::vector<ListedValues> values;
+  values.reserve(specs.size());
+  for (const settings::SettingSpec& spec : specs) {
     bool stored = false;
     const std::string saved = settings::savedValue(storage_, spec, stored);
     const std::string now = running_.valueOf(spec);
-    if (!firstSetting) out += ",";
-    firstSetting = false;
-    out += "{\"name\":" + jsonString(spec.name) + ",\"type\":\"" + typeName(spec.type) + "\"";
-    out += ",\"saved\":" + shownValue(spec, saved) + ",\"active\":" + shownValue(spec, now);
-    out += std::string(",\"isDefault\":") + (stored ? "false" : "true");
-    out += std::string(",\"pending\":") + (saved != now ? "true" : "false");
-    out += std::string(",\"live\":") + (spec.live ? "true" : "false");
-    out += std::string(",\"set\":") + (saved.empty() ? "false" : "true");
-    out += ",\"defaultValue\":" + shownValue(spec, std::string(spec.defaultValue));
-    out += ",\"minimum\":" + std::to_string(spec.minimum) + ",\"maximum\":" + std::to_string(spec.maximum);
-    out += ",\"help\":" + jsonString(spec.help) + "}";
+    values.push_back({shownValue(spec, saved), shownValue(spec, now), stored, saved != now, !saved.empty()});
   }
-  out += "]}";
-  return {200, kJson, std::move(out)};
+  return {200, kJson, {}, std::make_unique<SettingsListBody>(revision, std::move(values))};
 }
 
 std::optional<std::string> ConsoleEndpoints::restartRefusal(const ble::JsonObjectReader& request) {

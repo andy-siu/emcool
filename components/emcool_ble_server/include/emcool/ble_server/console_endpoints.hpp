@@ -5,7 +5,8 @@
 // change made at `emcool>`, and `show` there says so.
 //
 //   GET  /console          every setting with its saved value, the value in force, whether it is
-//                          waiting for a restart, and its help, plus the revision. JSON.
+//                          waiting for a restart, and its help, plus the revision. JSON, built a
+//                          setting at a time: whole, it can outgrow the heap's largest free block.
 //   GET  /console/status   the status report the serial port prints, plus the `ifconfig` report.
 //                          Text, as the console would print it.
 //   POST /console          one command line, as typed at `emcool>`, in a JSON body:
@@ -32,6 +33,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -40,6 +42,7 @@
 #include "emcool/ble/json_reader.hpp"
 #include "emcool/files/card_shell.hpp"
 #include "emcool/settings/settings.hpp"
+#include "emcool/vcu/bodies.hpp"
 
 namespace emcool::ble_server {
 
@@ -47,6 +50,8 @@ struct ConsoleAnswer {
   int status;
   const char* contentType;
   std::string body;
+  // In place of `body`, for one too big to hold whole: read a part at a time, the same bytes on every pass.
+  std::unique_ptr<vcu::PartsBody> parts = nullptr;
 };
 
 // What the firmware supplies: the reports, what stops a restart, and the restart.

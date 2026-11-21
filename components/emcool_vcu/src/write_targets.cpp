@@ -3,8 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <map>
-#include <set>
+#include <functional>
 
 #include "emcool/text/js.hpp"
 #include "emcool/vcu/codec.hpp"
@@ -207,9 +206,11 @@ std::string WriteTarget::unit(double raw) const {
   return text::jsNumber(raw);
 }
 
-std::vector<WriteTarget> curatedWriteTargets() {
-  std::vector<WriteTarget> targets;
+namespace {
 
+// One builder per curated target, so a lookup builds only the one it was asked for: all five with
+// their notes are about 8 KB.
+WriteTarget maxDcChargeCurrent() {
   WriteTarget dc;
   dc.name = "MAX_DC_CHG_CURRENT";
   dc.index = 258;
@@ -231,8 +232,10 @@ std::vector<WriteTarget> curatedWriteTargets() {
       "Free check, no charger needed: 0x625 b2 is the configured max DC current and is broadcast on a merely-awake "
       "bike. It should now read the value you wrote (0x50 for 80 A, 0x4B for 75). If it does not, the write did not "
       "take.";
-  targets.push_back(std::move(dc));
+  return dc;
+}
 
+WriteTarget fastChargeCurrentGain() {
   WriteTarget gain;
   gain.name = "FCHG_CURRENT_GAIN";
   gain.index = 259;
@@ -260,8 +263,10 @@ std::vector<WriteTarget> curatedWriteTargets() {
       "No broadcast field carries this one, so the read-back above is the only confirmation the cell took it. What it "
       "DOES is a question for the next DC session — logged, at a station you have used before, with nothing else "
       "changed.";
-  targets.push_back(std::move(gain));
+  return gain;
+}
 
+WriteTarget torqueLimit() {
   WriteTarget torque;
   torque.name = "TORQUE_LIMIT";
   torque.index = 48;
@@ -279,8 +284,10 @@ std::vector<WriteTarget> curatedWriteTargets() {
       "Nothing broadcasts this, so the read-back above is the only confirmation the cell took it — a parameter sweep "
       "re-reads it later if you want it in the record. Whether it changed anything is felt at full throttle, and "
       "ACTIVE_CURRENT_LIMIT may cap it first.";
-  targets.push_back(std::move(torque));
+  return torque;
+}
 
+WriteTarget regenTorqueLimit() {
   WriteTarget regen;
   regen.name = "REGEN_TORQUE_LIMIT";
   regen.index = 49;
@@ -300,8 +307,10 @@ std::vector<WriteTarget> curatedWriteTargets() {
       "Nothing broadcasts this either — the read-back above is the confirmation that the cell took it. Whether it does "
       "anything shows up as regen current on the next ride: if that still tops out around 120 A, REGEN_CURRENT_LIMIT "
       "was the cap all along.";
-  targets.push_back(std::move(regen));
+  return regen;
+}
 
+WriteTarget vsmConfig1() {
   WriteTarget vsm;
   vsm.name = "VSM_CONFIG_1";
   vsm.index = 16;
@@ -325,37 +334,86 @@ std::vector<WriteTarget> curatedWriteTargets() {
       "⚠️ Config words are only read at BOOT: key-cycle the bike before judging it. The read-back above proves the "
       "word in the VCU's EEPROM changed; it says nothing about whether the dashboard offers the grips, which is a "
       "separate firmware's decision.";
-  targets.push_back(std::move(vsm));
+  return vsm;
+}
 
+// The curated five's names and indices, without their notes: what the list and the lookups need, at
+// no cost, and the builder of each. check_write asserts each builder's name and index match.
+struct CuratedName {
+  std::string_view name;
+  int index;
+  WriteTarget (*build)();
+};
+constexpr CuratedName kCuratedNames[] = {
+    {"MAX_DC_CHG_CURRENT", 258, maxDcChargeCurrent}, {"FCHG_CURRENT_GAIN", 259, fastChargeCurrentGain},
+    {"TORQUE_LIMIT", 48, torqueLimit},               {"REGEN_TORQUE_LIMIT", 49, regenTorqueLimit},
+    {"VSM_CONFIG_1", 16, vsmConfig1},
+};
+
+bool equalsIgnoringCase(std::string_view left, std::string_view right) {
+  return left.size() == right.size() && std::equal(left.begin(), left.end(), right.begin(), [](char a, char b) {
+           return std::toupper(static_cast<unsigned char>(a)) == std::toupper(static_cast<unsigned char>(b));
+         });
+}
+
+bool isCuratedName(std::string_view name) {
+  for (const CuratedName& curated : kCuratedNames) {
+    if (equalsIgnoringCase(curated.name, name)) return true;
+  }
+  return false;
+}
+
+// How many parameters in the table carry this name, ignoring case: one more than one makes it unaddressable.
+int countNamed(const ParameterNames& names, std::string_view name) {
+  int count = 0;
+  for (const VcuParameter& parameter : names.active().parameters) {
+    if (equalsIgnoringCase(parameter.name(), name)) count++;
+  }
+  return count;
+}
+
+}  // namespace
+
+std::vector<WriteTarget> curatedWriteTargets() {
+  std::vector<WriteTarget> targets;
+  for (const CuratedName& curated : kCuratedNames) targets.push_back(curated.build());
   return targets;
 }
 
-std::vector<WriteTarget> writeTargets(const ParameterNames& names) {
-  const std::vector<WriteTarget> curated = curatedWriteTargets();
-  std::set<std::string> curatedNames;
-  for (const WriteTarget& target : curated) curatedNames.insert(upper(target.name));
-  std::map<std::string, int> seen;
-  for (const VcuParameter& parameter : names.active().parameters) seen[upper(parameter.name())]++;
-  std::vector<WriteTarget> targets = curated;
+// Each target's notes are several hundred bytes, and the table has some 270 parameters: built whole,
+// the list held about 300 KB at once, more than the bike's free internal RAM. So the list is walked
+// without building anything, and only the one target asked for is built.
+void forEachWriteTargetName(const ParameterNames& names, const std::function<void(const WriteTargetName&)>& visit) {
+  for (const CuratedName& curated : kCuratedNames) visit({curated.name, curated.index});
   for (const VcuParameter& parameter : names.active().parameters) {
-    const std::string key = upper(parameter.name());
-    if (curatedNames.count(key) != 0) continue;
-    if (seen[key] > 1) continue;  // duplicated names are unaddressable
-    targets.push_back(generatedTarget(parameter));
+    if (isCuratedName(parameter.name())) continue;
+    if (countNamed(names, parameter.name()) > 1) continue;  // duplicated names are unaddressable
+    visit({parameter.name(), parameter.index});
   }
+}
+
+std::vector<WriteTarget> writeTargets(const ParameterNames& names) {
+  std::vector<WriteTarget> targets = curatedWriteTargets();
+  forEachWriteTargetName(names, [&](const WriteTargetName& target) {
+    if (isCuratedName(target.name)) return;
+    if (const VcuParameter* parameter = names.atIndex(target.index)) targets.push_back(generatedTarget(*parameter));
+  });
   return targets;
 }
 
 std::vector<std::string> writeTargetNames(const ParameterNames& names) {
   std::vector<std::string> out;
-  for (const WriteTarget& target : writeTargets(names)) out.push_back(target.name);
+  forEachWriteTargetName(names, [&](const WriteTargetName& target) { out.emplace_back(target.name); });
   return out;
 }
 
 std::optional<WriteTarget> writeTargetNamed(const ParameterNames& names, std::string_view name) {
-  const std::string wanted = upper(name);
-  for (const WriteTarget& target : writeTargets(names)) {
-    if (upper(target.name) == wanted) return target;
+  for (const CuratedName& curated : kCuratedNames) {
+    if (equalsIgnoringCase(curated.name, name)) return curated.build();
+  }
+  if (countNamed(names, name) != 1) return std::nullopt;
+  for (const VcuParameter& parameter : names.active().parameters) {
+    if (equalsIgnoringCase(parameter.name(), name)) return generatedTarget(parameter);
   }
   return std::nullopt;
 }
