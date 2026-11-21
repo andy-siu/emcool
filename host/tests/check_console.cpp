@@ -5,10 +5,12 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -18,13 +20,32 @@
 #include "emcool/ble/json_reader.hpp"
 #include "emcool/ble_server/console_endpoints.hpp"
 #include "emcool/ble_server/endpoints.hpp"
+#include "emcool/ble_server/server.hpp"
 #include "emcool/files/card_shell.hpp"
+#include "emcool/settings/dashboard_reply.hpp"
 #include "emcool/settings/settings.hpp"
 #include "emcool/signals/signal_store.hpp"
 
 using namespace emcool;
 using ble_server::ConsoleAnswer;
 using ble_server::ConsoleEndpoints;
+
+namespace {
+
+// The largest block asked of the heap while `trackingAllocations` is on. The bike's internal heap is
+// fragmented, so a request may only ask it for small ones.
+bool trackingAllocations = false;
+std::size_t largestAllocation = 0;
+
+}  // namespace
+
+void* operator new(std::size_t size) {
+  if (trackingAllocations) largestAllocation = std::max(largestAllocation, size);
+  if (void* block = std::malloc(size == 0 ? 1 : size)) return block;
+  throw std::bad_alloc();
+}
+void operator delete(void* block) noexcept { std::free(block); }
+void operator delete(void* block, std::size_t) noexcept { std::free(block); }
 
 namespace {
 
@@ -101,10 +122,78 @@ std::string jsonText(std::string_view text) {
   return out + "\"";
 }
 
+// GET /console's body as it was built whole, before it went out a part at a time. The parts must
+// add up to exactly this, for any state.
+std::string referenceList(settings::SettingsStorage& storage, const settings::RuntimeSettings& running) {
+  const auto typeName = [](settings::SettingType type) {
+    switch (type) {
+      case settings::SettingType::kSecret:
+        return "secret";
+      case settings::SettingType::kText:
+        return "text";
+      case settings::SettingType::kFlag:
+        return "flag";
+      case settings::SettingType::kInteger:
+        return "integer";
+    }
+    return "text";
+  };
+  const auto shownValue = [](const settings::SettingSpec& spec, const std::string& value) {
+    if (spec.type == settings::SettingType::kSecret) {
+      return settings::jsonString(settings::describeValue(spec, value));
+    }
+    return settings::jsonString(value);
+  };
+  using settings::jsonString;
+  std::string out = "{\"revision\":" + std::to_string(running.revision()) + ",\"settings\":[";
+  bool firstSetting = true;
+  for (const settings::SettingSpec& spec : settings::settingSpecs()) {
+    bool stored = false;
+    const std::string saved = settings::savedValue(storage, spec, stored);
+    const std::string now = running.valueOf(spec);
+    if (!firstSetting) out += ",";
+    firstSetting = false;
+    out += "{\"name\":" + jsonString(spec.name) + ",\"type\":\"" + typeName(spec.type) + "\"";
+    out += ",\"saved\":" + shownValue(spec, saved) + ",\"active\":" + shownValue(spec, now);
+    out += std::string(",\"isDefault\":") + (stored ? "false" : "true");
+    out += std::string(",\"pending\":") + (saved != now ? "true" : "false");
+    out += std::string(",\"live\":") + (spec.live ? "true" : "false");
+    out += std::string(",\"set\":") + (saved.empty() ? "false" : "true");
+    out += ",\"defaultValue\":" + shownValue(spec, std::string(spec.defaultValue));
+    out += ",\"minimum\":" + std::to_string(spec.minimum) + ",\"maximum\":" + std::to_string(spec.maximum);
+    out += ",\"help\":" + jsonString(spec.help) + "}";
+  }
+  out += "]}";
+  return out;
+}
+
+// The most GET /console may ask of the heap at once, and so the largest part it may come in: well
+// under the largest free block the bike's internal heap has been seen with (5376 bytes).
+constexpr std::size_t kMostPartBytes = 1024;
+
+// A parts body read through twice, as DashboardEndpoints reads one (measured, then sent): both passes
+// must give the same bytes, and no part may be big.
+std::string assembled(vcu::PartsBody& parts, std::size_t& count, std::size_t& largest) {
+  std::string passes[2];
+  for (std::string& pass : passes) {
+    parts.rewind();
+    count = 0;
+    largest = 0;
+    while (const std::optional<std::string> part = parts.next()) {
+      pass += *part;
+      count++;
+      largest = std::max(largest, part->size());
+    }
+  }
+  EMCOOL_CHECK(passes[0] == passes[1], "a second pass over the parts gave other bytes:\n%s\n%s", passes[0].c_str(),
+               passes[1].c_str());
+  return passes[0];
+}
+
 class Console {
  public:
   Console(MemoryStorage& storage, settings::RuntimeSettings& running)
-      : running_(running), endpoints_(storage, running, host) {}
+      : storage_(storage), running_(running), endpoints_(storage, running, host) {}
 
   Run post(std::string_view line, std::optional<std::uint32_t> revision, std::string_view extra = "",
            std::string_view header = ConsoleEndpoints::kHeaderValue) {
@@ -122,12 +211,30 @@ class Console {
     for (int poll = 0; !got && poll < 10; poll++) got = endpoints_.poll();
     EMCOOL_CHECK(got.has_value(), "%.*s %.*s never answered", static_cast<int>(method.size()), method.data(),
                  static_cast<int>(route.size()), route.data());
-    return got.value_or(ConsoleAnswer{0, "", ""});
+    if (!got) return ConsoleAnswer{0, "", ""};
+    const bool list = method == "GET" && route == "/console";
+    EMCOOL_CHECK(list == (got->parts != nullptr), "%.*s %.*s: parts %s", static_cast<int>(method.size()),
+                 method.data(), static_cast<int>(route.size()), route.data(), got->parts ? "yes" : "no");
+    if (got->parts) {
+      std::size_t count = 0;
+      std::size_t largest = 0;
+      got->body = assembled(*got->parts, count, largest);
+      EMCOOL_CHECK(count == settings::settingSpecs().size() + 2 && largest <= kMostPartBytes,
+                   "GET /console: %zu parts, the largest %zu bytes", count, largest);
+      // Byte for byte what the list was when it was built whole, whatever has been saved since.
+      const std::string expected = referenceList(storage_, running_);
+      EMCOOL_CHECK(got->body == expected, "GET /console differs from the whole-built list:\n%s\n%s",
+                   got->body.c_str(), expected.c_str());
+      lists++;
+    }
+    return std::move(*got);
   }
 
   FakeHost host;
+  int lists = 0;
 
  private:
+  MemoryStorage& storage_;
   settings::RuntimeSettings& running_;
   ConsoleEndpoints endpoints_;
 };
@@ -161,6 +268,39 @@ int main() {
     static char scratch[16384];
     EMCOOL_CHECK(reader.read(list.body, scratch) && reader.find("settings") != nullptr,
                  "GET /console is not a JSON object with settings");
+    // Every setting, in order, with each of the fields the dashboard's ConsoleSetting reads.
+    const ble::JsonMember* listed = reader.find("settings");
+    std::vector<std::string_view> elements;
+    EMCOOL_CHECK(listed != nullptr && listed->type == ble::JsonType::kArray &&
+                     ble::jsonArrayElements(listed->text, elements) &&
+                     elements.size() == settings::settingSpecs().size(),
+                 "GET /console lists %zu settings", elements.size());
+    for (std::size_t at = 0; at < elements.size() && at < settings::settingSpecs().size(); at++) {
+      const settings::SettingSpec& spec = settings::settingSpecs()[at];
+      ble::JsonObjectReader setting;
+      static char settingScratch[2048];
+      const bool read = setting.read(elements[at], settingScratch);
+      const ble::JsonMember* name = read ? setting.find("name") : nullptr;
+      const ble::JsonMember* help = read ? setting.find("help") : nullptr;
+      EMCOOL_CHECK(read && setting.members().size() == 12 && name != nullptr && name->text == spec.name &&
+                       help != nullptr && help->text == spec.help,
+                   "GET /console's setting %zu: %.*s", at, static_cast<int>(elements[at].size()), elements[at].data());
+      for (const char* field : {"type", "saved", "active", "defaultValue"}) {
+        const ble::JsonMember* member = read ? setting.find(field) : nullptr;
+        EMCOOL_CHECK(member != nullptr && member->type == ble::JsonType::kString, "%.*s has no %s",
+                     static_cast<int>(spec.name.size()), spec.name.data(), field);
+      }
+      for (const char* field : {"isDefault", "pending", "live", "set"}) {
+        const ble::JsonMember* member = read ? setting.find(field) : nullptr;
+        EMCOOL_CHECK(member != nullptr && member->type == ble::JsonType::kBool, "%.*s has no %s",
+                     static_cast<int>(spec.name.size()), spec.name.data(), field);
+      }
+      for (const char* field : {"minimum", "maximum"}) {
+        const ble::JsonMember* member = read ? setting.find(field) : nullptr;
+        EMCOOL_CHECK(member != nullptr && member->type == ble::JsonType::kNumber, "%.*s has no %s",
+                     static_cast<int>(spec.name.size()), spec.name.data(), field);
+      }
+    }
   }
 
   // A command that saves: applied, saved in NVS, and the revision moves on.
@@ -251,6 +391,23 @@ int main() {
                "status every 30: %s", run.body.c_str());
   run = console.postNow("status off");
   EMCOOL_CHECK(run.ok && !running.statusReport(), "status off: %s", run.body.c_str());
+  // The list after all that, with escapes to write in a value and the live settings changed: answer()
+  // checks it against the list built whole, and here that no secret reached it.
+  run = console.postNow("set BLE_NAME \"back\\\\slash \\\"quoted\\\"\"");
+  EMCOOL_CHECK(run.ok && storage.values["ble_name"] == "back\\slash \"quoted\"", "a name with escapes: %s",
+               run.body.c_str());
+  {
+    const int listsBefore = console.lists;
+    const ConsoleAnswer list = console.answer("GET", "/console", "", "");
+    EMCOOL_CHECK(console.lists == listsBefore + 1 &&
+                     contains(list.body, "\"saved\":\"back\\\\slash \\\"quoted\\\"\"") &&
+                     contains(list.body, "{\"name\":\"STATUS_INTERVAL_S\",\"type\":\"integer\",\"saved\":\"30\","
+                                         "\"active\":\"30\",\"isDefault\":false,\"pending\":false,\"live\":true"),
+                 "GET /console after the saves:\n%s", list.body.c_str());
+    EMCOOL_CHECK(!contains(list.body, kKey) && !contains(list.body, "a long admin phrase") &&
+                     !contains(list.body, "pass \"word\" 42") && !contains(list.body, "pass \\\"word"),
+                 "GET /console sent a secret back:\n%s", list.body.c_str());
+  }
   // A typed `status` is the report itself, sent back rather than printed on the serial port.
   const int askedBefore = console.host.asked;
   run = console.post("status", std::nullopt);
@@ -380,6 +537,59 @@ int main() {
     response = endpoints.begin({"GET", "/console", "", ""}, 0);
     EMCOOL_CHECK(response && response->status == 200 && contains(body(response->bodyLength), "\"settings\":["),
                  "GET /console after an abandoned status");
+
+    // GET /console as the server sends it: the length in the head, then the body a message's worth at a
+    // time, from parts. Never one big block from the heap, and the same bytes as the list built whole.
+    {
+      const std::string expected = referenceList(storage, running);
+      // Only the endpoints' own calls are measured, not the check's copy of what they send.
+      const auto pieces = [&](std::size_t length) {
+        std::string text;
+        while (text.size() < length) {
+          trackingAllocations = true;
+          const std::span<const char> piece =
+              endpoints.body(text.size(), std::min(ble_server::BleServer::kResponseChunkBytes, length - text.size()));
+          trackingAllocations = false;
+          if (piece.empty()) break;
+          text.append(piece.data(), piece.size());
+        }
+        return text;
+      };
+      largestAllocation = 0;
+      trackingAllocations = true;
+      response = endpoints.begin({"GET", "/console", "", ""}, 0);
+      trackingAllocations = false;
+      const std::string sent = response ? pieces(response->bodyLength) : std::string();
+      EMCOOL_CHECK(response && response->status == 200 && response->bodyLength == expected.size() && sent == expected,
+                   "GET /console through the endpoints, %zu bytes of %zu:\n%s", sent.size(),
+                   response ? response->bodyLength : 0, sent.c_str());
+      EMCOOL_CHECK(expected.size() > ble_server::BleServer::kResponseChunkBytes * 2,
+                   "GET /console is %zu bytes: too short to cross the messages it is sent in", expected.size());
+      EMCOOL_CHECK(largestAllocation > 0 && largestAllocation <= kMostPartBytes,
+                   "GET /console asked the heap for %zu bytes at once", largestAllocation);
+      for (const std::string_view secret : {std::string_view(kKey), std::string_view("a long admin phrase"),
+                                            std::string_view("pass \"word\" 42"), std::string_view("pass \\\"word")}) {
+        EMCOOL_CHECK(!contains(sent, secret), "GET /console through the endpoints sent a secret back");
+      }
+      // A save while the body is going out changes nothing already promised: the parts were read at the start.
+      response = endpoints.begin({"GET", "/console", "", ""}, 0);
+      {
+        std::string output;
+        const char* words[] = {"set", "BLE_NAME", "mid-send"};
+        settings::runSettingsCommand(storage, running, 3, words, output);
+      }
+      std::string first;
+      if (response) {
+        const std::span<const char> piece = endpoints.body(0, ble_server::BleServer::kResponseChunkBytes);
+        first.assign(piece.data(), piece.size());
+      }
+      // And a piece asked for again from the start comes out as it did the first time.
+      EMCOOL_CHECK(response && response->bodyLength == expected.size() && pieces(response->bodyLength) == expected &&
+                       first == expected.substr(0, first.size()) && !first.empty(),
+                   "GET /console changed while it was being sent");
+      EMCOOL_CHECK(referenceList(storage, running) != expected && contains(referenceList(storage, running), "mid-send"),
+                   "the save mid-send did not save");
+    }
     // With no console, /console is a 404 like any endpoint emcool doesn't have.
     ble_server::DashboardEndpoints without(store, storeMutex, noStorage, noCodes, nullptr, nullptr, "{}");
     response = without.begin({"GET", "/console", "", ""}, 0);
@@ -457,6 +667,7 @@ int main() {
     fs::remove_all(root);
   }
 
+  EMCOOL_CHECK(console.lists >= 3, "GET /console was compared with the list built whole %d times", console.lists);
   std::printf("check_console: %d failures\n", emcool::test::failures());
   return emcool::test::failures() == 0 ? 0 : 1;
 }

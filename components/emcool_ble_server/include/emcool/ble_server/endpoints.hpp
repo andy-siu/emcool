@@ -23,7 +23,7 @@
 // A body is read a piece at a time (the server sends 4 KB per message), so one far bigger
 // than any buffer here — /dtc-table is 25 KB — comes straight out of flash, and /stored-dtcs
 // is written out again for each piece from a copy taken when the request arrived, so its
-// pieces always agree.
+// pieces always agree. GET /console's list is likewise built a setting at a time.
 
 #include <array>
 #include <cstddef>
@@ -166,6 +166,7 @@ class DashboardEndpoints final : public RequestHandler {
   HttpResponse fromText(int status, const char* contentType, std::string_view text);
   std::optional<HttpResponse> service(const HttpRequest& request, std::string_view route, std::string_view query);
   HttpResponse fromParts(int status, const char* contentType, std::unique_ptr<vcu::PartsBody> parts);
+  HttpResponse fromConsole(ConsoleAnswer& answer);
   std::optional<HttpResponse> beginDownload(std::string_view query);
   std::optional<HttpResponse> pollDownload();
   void endDownload();

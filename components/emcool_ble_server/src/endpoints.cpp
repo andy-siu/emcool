@@ -82,7 +82,7 @@ std::optional<HttpResponse> DashboardEndpoints::begin(const HttpRequest& request
       waiting_ = Waiting::kConsole;
       return std::nullopt;
     }
-    return fromText(answer->status, answer->contentType, answer->body);
+    return fromConsole(*answer);
   }
   if (firmware_ != nullptr && FirmwareEndpoints::handles(route)) {
     const FirmwareAnswer answer = firmware_->answer(method, route, query, request.emcoolHeader, request.body);
@@ -344,7 +344,7 @@ std::optional<HttpResponse> DashboardEndpoints::poll(std::int64_t) {
     std::optional<ConsoleAnswer> answer = console_->poll();
     if (!answer) return std::nullopt;
     waiting_ = Waiting::kNothing;
-    return fromText(answer->status, answer->contentType, answer->body);
+    return fromConsole(*answer);
   }
   if (waiting_ != Waiting::kService) return timedOut();
   std::optional<ServiceAnswer> answer = service_->take();
@@ -376,6 +376,12 @@ HttpResponse DashboardEndpoints::fromText(int status, const char* contentType, s
   text_.assign(text);
   length_ = text_.size();
   return {status, contentType, length_};
+}
+
+// The settings list comes in parts, never as one string: copying it whole is the allocation it avoids.
+HttpResponse DashboardEndpoints::fromConsole(ConsoleAnswer& answer) {
+  if (answer.parts) return fromParts(answer.status, answer.contentType, std::move(answer.parts));
+  return fromText(answer.status, answer.contentType, answer.body);
 }
 
 HttpResponse DashboardEndpoints::fromParts(int status, const char* contentType, std::unique_ptr<vcu::PartsBody> parts) {

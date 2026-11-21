@@ -514,10 +514,25 @@ for (const [path, method] of [["/settings", "PATCH"], ["/settings/apply", "POST"
 }
 // Settings → Bike console: the console's commands over the link, the body carried in the REQUEST.
 {
-  const listed = await request(phone, 5, "/console");
+  const listing = await exchange(phone, 5, "/console");
+  const listed = { status: listing.status, body: listing.bytes.toString("utf-8") };
   const list = JSON.parse(listed.body);
   check(listed.status === 200 && Array.isArray(list.settings) && list.revision === 0, `GET /console: ${listed.status}`);
   check(!listed.body.includes(SECRET), "GET /console sent the Bluetooth key back");
+  // Built a setting at a time: the head's length must still be the whole body's, across several messages.
+  check(
+    listing.ended && listing.error === undefined && listing.parts.length > 1 &&
+      Number(listing.headers["content-length"]) === listing.bytes.length,
+    `GET /console: ${listing.parts.length} messages, ${listing.bytes.length} of ${listing.headers["content-length"]} bytes`
+  );
+  check(
+    list.settings.length >= 15 &&
+      list.settings.every(
+        (setting: Record<string, unknown>) =>
+          typeof setting.name === "string" && typeof setting.help === "string" && typeof setting.pending === "boolean"
+      ),
+    `GET /console settings: ${listed.body.slice(0, 200)}`
+  );
   const consoleHeaders = { "X-Emcool": "console", "Content-Type": "application/json" };
   const saved = await exchange(phone, 6, "/console", {
     method: "POST",
