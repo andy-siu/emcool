@@ -361,7 +361,7 @@ class Scenario final : public obd::CanTransmitter, public obd::SignalRecorder {
       }
       [](Scenario* scenario, ServiceRequest asked, std::string label) -> async::Task<> {
         const ServiceAnswer answered = co_await scenario->api_->answer(std::move(asked));
-        scenario->answer(label, std::to_string(answered.status) + " " + answered.body);
+        scenario->answer(label, std::to_string(answered.status) + " " + std::string(answered.body.view()));
       }(this, request, what)
           .detach();
     } else if (action.rfind("expire ", 0) == 0) {

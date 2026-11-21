@@ -17,6 +17,7 @@
 #include <string>
 
 #include "emcool/async/task.hpp"
+#include "emcool/text/big_text.hpp"
 #include "emcool/vcu/reading_stores.hpp"
 #include "emcool/vcu/runner.hpp"
 #include "emcool/vcu/store.hpp"
@@ -51,7 +52,8 @@ struct ServiceRequest {
 
 struct ServiceAnswer {
   int status;
-  std::string body;  // JSON
+  // JSON, in PSRAM: GET /vcu-write's is 20 KB with its list. failed() if there was no memory for it.
+  text::BigText body;
 };
 
 class ServiceApi {
@@ -68,7 +70,7 @@ class ServiceApi {
   async::Task<ServiceAnswer> answer(ServiceRequest request);
 
  private:
-  std::string readBody(const std::optional<std::string>& message);
+  text::BigText readBody(const std::optional<std::string>& message);
 
   VcuReadRunner& runner_;
   VcuStore& store_;

@@ -104,5 +104,8 @@ target_link_libraries(check_write PRIVATE emcool_vcu)
 add_executable(check_write_session tests/check_write_session.cpp)
 target_link_libraries(check_write_session PRIVATE emcool_vcu)
 
+add_executable(check_service_memory tests/check_service_memory.cpp)
+target_link_libraries(check_service_memory PRIVATE emcool_ble_server emcool_vcu)
+
 add_executable(check_charge_auto tests/check_charge_auto.cpp)
 target_link_libraries(check_charge_auto PRIVATE emcool_vcu)

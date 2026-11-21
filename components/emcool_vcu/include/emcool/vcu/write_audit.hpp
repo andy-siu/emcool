@@ -5,6 +5,7 @@
 // is handled too.
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -60,7 +61,9 @@ void writeAuditRecordJson(text::TextBuffer& out, const AuditRecord& record);
 
 // Appends one record, stamping `runningVersion`. Loud on failure; the action already happened.
 void appendAuditRecord(const std::string& directory, AuditRecord record, const std::string& runningVersion);
-// The last `limit` records, newest first. Tolerates power-cut holes.
-std::vector<AuditRecord> recentAuditRecords(const std::string& directory, std::size_t limit);
+// The last `limit` records, newest first, handed to `visit` one at a time: the journal is read a line
+// at a time and only one record is held, so its length costs no memory. Tolerates power-cut holes.
+void forEachRecentAuditRecord(const std::string& directory, std::size_t limit,
+                              const std::function<void(const AuditRecord&)>& visit);
 
 }  // namespace emcool::vcu

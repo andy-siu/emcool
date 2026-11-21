@@ -22,6 +22,9 @@
 #     random input; and the write session on the wire — the reference's own writeParameter/
 #     readServiceStamp/resetVcu/clearStoredDtcs and the charge-current/stop runner, driven against a
 #     scripted bus — transmits the same frames and resolves to the same outcome in the C++ port
+#   - service mode's answers (the write status, the lifetime statistics, the freeze frames…), against
+#     a long, power-cut-damaged write journal and a full freeze-frame reading, ask the bike's internal
+#     RAM for no big block, answering or sending, and the journal's newest records still come back
 #   - the automatic charge controller's decision and its support match the reference bit-for-bit, and
 #     the reference's own controller driven through scripted charges commands and reports the same
 #   - the settings and the serial console's commands behave, and the dashboard's Bike console runs
@@ -130,6 +133,10 @@ node "${node_flags[@]}" "$root/tools/generate-golden-write.mts" "$reference" "$b
 node "${node_flags[@]}" "$root/tools/generate-golden-write-session.mts" "$reference" "$build/golden-write-session.txt"
 "$build/check_write_session" "$build/golden-write-session.txt" 2>"$build/check_write_session.stderr" || {
   cat "$build/check_write_session.stderr" >&2
+  exit 1
+}
+"$build/check_service_memory" 2>"$build/check_service_memory.stderr" || {
+  grep -vE '^[IW] (vcu-write|vcu-snapshot|lifetime|freeze-frame): ' "$build/check_service_memory.stderr" >&2
   exit 1
 }
 node "${node_flags[@]}" "$root/tools/generate-golden-charge-auto.mts" "$reference" "$build/golden-charge-auto.txt"
