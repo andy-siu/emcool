@@ -13,6 +13,7 @@
 // so there is no global write-path state.
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -75,7 +76,18 @@ struct WritePlanOutcome {
 
 // The five researched targets, by name, in order. Constant; no active table needed.
 std::vector<WriteTarget> curatedWriteTargets();
-// The researched five, then the rest of the bike's own (active) table (minus duplicated names).
+
+// A writable parameter's name and index, without its notes: what the list needs.
+struct WriteTargetName {
+  std::string_view name;  // in flash: the table's, or the curated list's
+  int index = 0;
+};
+// The researched five, then the rest of the bike's own (active) table (minus duplicated names), in
+// writeTargets()'s order, building nothing. The list on the bike: writeTargets() whole is far bigger
+// than its free RAM.
+void forEachWriteTargetName(const ParameterNames& names, const std::function<void(const WriteTargetName&)>& visit);
+// The researched five, then the rest of the bike's own (active) table (minus duplicated names). Every
+// target with its notes, some 300 KB: for the laptop's checks, never the bike.
 std::vector<WriteTarget> writeTargets(const ParameterNames& names);
 std::vector<std::string> writeTargetNames(const ParameterNames& names);
 // The target with this name, or nullopt. Case-insensitive.
