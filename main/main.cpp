@@ -15,6 +15,7 @@
 #include <bitset>
 #include <cinttypes>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #include <new>
 #include <optional>
@@ -33,6 +34,7 @@
 #include "dashboard_console.hpp"
 #include "emcool/ble/crypto.hpp"
 #include "emcool/ble/session.hpp"
+#include "emcool/ble/wire.hpp"
 #include "emcool/ble_server/endpoints.hpp"
 #include "emcool/ble_server/server.hpp"
 #include "emcool/can/frame_decoder.hpp"
@@ -49,6 +51,7 @@
 #include "emcool/settings/settings.hpp"
 #include "emcool/signals/signal_store.hpp"
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
 #include "esp_mac.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -118,6 +121,8 @@ emcool::ride_log::SessionId newSessionId();
 bool initNvs();
 template <typename Type, typename... Arguments>
 Type* allocate(const char* what, Arguments&&... arguments);
+template <typename Type, typename... Arguments>
+Type* allocateInPsram(const char* what, Arguments&&... arguments);
 // What Bluetooth needs to start, kept for a start after boot: `set BLE_SECRET` on a console.
 struct BluetoothParts {
   const emcool::settings::Settings& settings;
@@ -133,6 +138,7 @@ struct BluetoothParts {
   bool afterBoot = false;
 };
 bool startBluetooth(const BluetoothParts& parts, const std::string& key);
+bool gcmWorksInPsram();
 std::string dashboardInstanceId();
 std::string bluetoothCodeId(const std::string& key);
 void logSettings(const emcool::settings::Settings& settings);
@@ -207,7 +213,7 @@ extern "C" void app_main() {
   if (download != nullptr) emcool::setCardFiles(&bikeCard);
   emcool::noteHeap("the ride log");
 
-  auto* storeAllocation = allocate<emcool::signals::SignalStore>("live state", rideLog);
+  auto* storeAllocation = allocateInPsram<emcool::signals::SignalStore>("live state", rideLog);
   if (storeAllocation == nullptr) return startConsole();
   emcool::signals::SignalStore& store = *storeAllocation;
   static std::mutex storeMutex;
@@ -400,6 +406,10 @@ bool startBluetooth(const BluetoothParts& parts, const std::string& key) {
     emcool::logError(kTag, "Bluetooth is off: the crypto failed its self-test");
     return false;
   }
+  if (!gcmWorksInPsram()) {
+    emcool::logError(kTag, "Bluetooth is off: AES-GCM gave a wrong answer on buffers in PSRAM, where the link keeps its own");
+    return false;
+  }
   const std::string instanceId = dashboardInstanceId();
   const std::string codeId = bluetoothCodeId(key);
   std::string settingsReply = emcool::settings::dashboardSettingsReply(
@@ -409,7 +419,7 @@ bool startBluetooth(const BluetoothParts& parts, const std::string& key) {
       "the dashboard endpoints", parts.store, parts.storeMutex, parts.storage, parts.diagnostics, &parts.diagnostics,
       parts.download, std::move(settingsReply), &parts.console, &parts.firmware);
   auto* server = endpoints == nullptr ? nullptr
-                                      : allocate<emcool::ble_server::BleServer>("the Bluetooth server", key,
+                                      : allocateInPsram<emcool::ble_server::BleServer>("the Bluetooth server", key,
                                                                                  parts.store, parts.storeMutex,
                                                                                  *endpoints);
   const bool started =
@@ -471,6 +481,47 @@ std::string bluetoothCodeId(const std::string& key) {
   return id;
 }
 
+// The Bluetooth server lives in PSRAM (allocateInPsram), so the link seals and opens its messages
+// there, and the AES engine's DMA reads and writes PSRAM: through the cache, or bounced through
+// internal RAM when a buffer isn't aligned to a cache line. The boot self-test runs on the stack, so
+// it never takes that path. This seals and opens a message the link's size from PSRAM, at an odd
+// offset too, and compares with the same work done in internal RAM. No PSRAM: nothing to check.
+bool gcmWorksInPsram() {
+  constexpr std::size_t kLength = emcool::ble::kMaxMessageBytes;
+  constexpr std::size_t kSealed = kLength + emcool::ble::kGcmTagBytes;
+  auto* psram = static_cast<std::uint8_t*>(heap_caps_malloc(2 * (kSealed + 1), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (psram == nullptr) return true;
+  auto* internal = static_cast<std::uint8_t*>(heap_caps_malloc(2 * kSealed, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  if (internal == nullptr) {
+    heap_caps_free(psram);
+    emcool::logWarning(kTag, "no internal RAM to check AES-GCM against PSRAM; trusting it");
+    return true;
+  }
+  emcool::ble::AesKey key = {};
+  emcool::ble::GcmIv iv = {};
+  for (std::size_t at = 0; at < key.size(); at++) key[at] = static_cast<std::uint8_t>(at * 7 + 1);
+  for (std::size_t at = 0; at < iv.size(); at++) iv[at] = static_cast<std::uint8_t>(at * 13 + 5);
+  const std::uint8_t aad[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+  bool ok = true;
+  for (const std::size_t offset : {std::size_t{0}, std::size_t{1}}) {
+    std::uint8_t* plain = psram + offset;
+    std::uint8_t* sealed = psram + kSealed + 1 + offset;
+    for (std::size_t at = 0; at < kLength; at++) plain[at] = static_cast<std::uint8_t>(at * 31 + offset);
+    std::uint8_t* reference = internal;
+    std::memcpy(internal + kSealed, plain, kLength);
+    ok = ok && emcool::ble::aesGcmSeal(key, iv, aad, {internal + kSealed, kLength}, {reference, kSealed}) &&
+         emcool::ble::aesGcmSeal(key, iv, aad, {plain, kLength}, {sealed, kSealed}) &&
+         std::memcmp(sealed, reference, kSealed) == 0;
+    // Opened back into PSRAM, over what was sealed from.
+    std::memset(plain, 0, kLength);
+    ok = ok && emcool::ble::aesGcmOpen(key, iv, aad, {sealed, kSealed}, {plain, kLength}) &&
+         std::memcmp(plain, internal + kSealed, kLength) == 0;
+  }
+  heap_caps_free(internal);
+  heap_caps_free(psram);
+  return ok;
+}
+
 // For the objects that live as long as the firmware and are too big for static data.
 template <typename Type, typename... Arguments>
 Type* allocate(const char* what, Arguments&&... arguments) {
@@ -479,6 +530,23 @@ Type* allocate(const char* what, Arguments&&... arguments) {
     emcool::logError(kTag, "no memory for %s (%zu bytes)", what, sizeof(Type));
   }
   return object;
+}
+
+// The same, in PSRAM first, for the big objects that only tasks touch: no interrupt, no DMA and no
+// code that runs with the flash cache off. With Bluetooth and Wi-Fi up, internal RAM is down to about
+// 13 KB, and a request that can't get a block there aborts the bike. Internal RAM if there's no PSRAM.
+template <typename Type, typename... Arguments>
+Type* allocateInPsram(const char* what, Arguments&&... arguments) {
+  void* memory = heap_caps_aligned_alloc(alignof(Type), sizeof(Type), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  const bool inPsram = memory != nullptr;
+  if (!inPsram) memory = heap_caps_aligned_alloc(alignof(Type), sizeof(Type), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (memory == nullptr) {
+    emcool::logError(kTag, "no memory for %s (%zu bytes)", what, sizeof(Type));
+    return nullptr;
+  }
+  emcool::logInfo(kTag, "%s: %zu bytes in %s", what, sizeof(Type), inPsram ? "PSRAM" : "internal RAM (no PSRAM)");
+  // Never freed: these live as long as the firmware.
+  return new (memory) Type(std::forward<Arguments>(arguments)...);
 }
 
 // Before the radio is up, esp_random has no RF noise to draw on; the bootloader's entropy
