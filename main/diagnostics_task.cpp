@@ -320,7 +320,7 @@ void DiagnosticsTask::selectStartupTable() {
   names_.select(static_cast<int>(*report->tableType));
 }
 
-void DiagnosticsTask::answer(std::uint32_t serial, int status, std::string body) {
+void DiagnosticsTask::answer(std::uint32_t serial, int status, text::BigText body) {
   const std::lock_guard<std::mutex> desk(deskMutex_);
   // An answer nobody is waiting for any more: its phone went, and abandon() already freed the desk.
   if (serial == abandonedSerial_ || serial != requestSerial_) return;
@@ -332,17 +332,9 @@ void DiagnosticsTask::handle(const ble_server::ServiceRequest& request, std::uin
   // The automatic-charge controller is the task's own, not the VCU read/write runners'; answer its
   // two endpoints here, synchronously on this loop, rather than through the ServiceApi.
   if (request.kind == Kind::kChargeAutoStatus || request.kind == Kind::kChargeAutoSet) {
-    const auto build = [](const std::function<void(text::TextBuffer&)>& write) {
-      text::TextBuffer measure = text::TextBuffer::window(nullptr, 0, 0);
-      write(measure);
-      std::string text(measure.total(), '\0');
-      text::TextBuffer out(text.data(), text.size());
-      write(out);
-      text.resize(out.length());
-      return text;
-    };
+    const auto build = [](const std::function<void(text::TextBuffer&)>& write) { return text::BigText::build(write); };
     if (chargeAuto_ == nullptr) {
-      answer(serial, 503, "{}");
+      answer(serial, 503, text::BigText("{}"));
       return;
     }
     std::optional<std::string> message;

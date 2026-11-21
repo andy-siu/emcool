@@ -1133,11 +1133,12 @@ void VcuWriteRunner::writeStatusJson(text::TextBuffer& out, const WriteStatusReq
     out.append("}");
   }
   out.append(",\"recent\":[");
-  const std::vector<AuditRecord> recent = recentAuditRecords(context_.directory, kRecentAuditLines);
-  for (std::size_t at = 0; at < recent.size(); at++) {
-    if (at > 0) out.append(",");
-    writeAuditRecordJson(out, recent[at]);
-  }
+  bool firstRecord = true;
+  forEachRecentAuditRecord(context_.directory, kRecentAuditLines, [&](const AuditRecord& record) {
+    if (!firstRecord) out.append(",");
+    firstRecord = false;
+    writeAuditRecordJson(out, record);
+  });
   out.append("],\"busHeldBy\":");
   if (const std::string* held = lease_.heldBy()) {
     out.appendJsonString(*held);

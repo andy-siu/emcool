@@ -11,8 +11,10 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "emcool/text/big_text.hpp"
 #include "emcool/text/text_buffer.hpp"
 #include "emcool/vcu/readings.hpp"
 
@@ -64,9 +66,9 @@ class ReadingStore {
   Written writeLifetimeRead(const StoredLifetimeRead& read);
   Written writeFreezeFrameRead(const StoredFreezeFrameRead& read);
 
-  // /lifetime-stats and /freeze-frames.
-  std::string lifetimeStatsBody();
-  std::string freezeFramesBody();
+  // /lifetime-stats and /freeze-frames, in PSRAM: failed() if there was no memory for one.
+  text::BigText lifetimeStatsBody();
+  text::BigText freezeFramesBody();
 
   ExpectedFaults loadExpectedFaults();
   ExpectedFaults setExpectedFault(ExpectedFault fault, bool expected, double wallClockMs);
@@ -76,7 +78,7 @@ class ReadingStore {
   bool makeDirectory();
   std::optional<StoredLifetimeRead> loadLifetimeRead();
   std::optional<StoredFreezeFrameRead> loadFreezeFrameRead();
-  bool writeFile(const std::string& path, const std::string& text);
+  bool writeFile(const std::string& path, std::string_view text);
 
   std::string directory_;
 };

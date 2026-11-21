@@ -76,8 +76,9 @@ class StubServiceDesk final : public emcool::ble_server::ServiceDesk {
       return value ? "\"" + *value + "\"" : std::string("null");
     };
     emcool::ble_server::ServiceAnswer answer{
-        202, "{\"kind\":" + std::to_string(static_cast<int>(pending_->kind)) + ",\"target\":" + quoted(pending_->target) +
-                 ",\"bank\":" + quoted(pending_->bank) + ",\"index\":" + quoted(pending_->index) + "}"};
+        202, emcool::text::BigText("{\"kind\":" + std::to_string(static_cast<int>(pending_->kind)) +
+                                   ",\"target\":" + quoted(pending_->target) + ",\"bank\":" + quoted(pending_->bank) +
+                                   ",\"index\":" + quoted(pending_->index) + "}")};
     pending_.reset();
     return answer;
   }

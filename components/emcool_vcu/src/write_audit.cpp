@@ -5,10 +5,14 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <set>
+#include <span>
+#include <utility>
 
 #include "emcool/ble/json_reader.hpp"
 #include "emcool/log.hpp"
+#include "emcool/text/big_text.hpp"
 
 namespace emcool::vcu {
 
@@ -60,8 +64,9 @@ std::optional<AuditAction> actionNamed(std::string_view name) {
 
 std::optional<AuditRecord> parseAuditLine(std::string_view line) {
   ble::JsonObjectReader reader;
-  std::vector<char> scratch(line.size() + 16);
-  if (!reader.read(line, scratch)) return std::nullopt;
+  // In PSRAM: a line is as long as whatever a power cut left in it.
+  text::BigText scratch = text::BigText::uninitialised(line.size() + 16);
+  if (scratch.failed() || !reader.read(line, std::span<char>(scratch.data(), scratch.size()))) return std::nullopt;
   const ble::JsonMember* at = reader.find("at");
   const ble::JsonMember* action = reader.find("action");
   const ble::JsonMember* status = reader.find("status");
@@ -227,67 +232,160 @@ void appendAuditRecord(const std::string& directory, AuditRecord record, const s
   }
 }
 
-std::vector<AuditRecord> recentAuditRecords(const std::string& directory, std::size_t limit) {
+namespace {
+
+// The journal a line at a time, each line in PSRAM: the file grows with every write, a charge's
+// automatic commands included, and a power cut can leave a cluster's worth of NUL bytes in one line.
+class JournalLines {
+ public:
+  explicit JournalLines(std::FILE* file) : file_(file) {
+    const long at = std::ftell(file);
+    chunkStart_ = at < 0 ? 0 : at;
+  }
+
+  // The next line without its newline, where in the file it starts, and whether it is the file's
+  // last; false at the end, or if there's no memory for the line.
+  bool next(std::string_view& line, long& start, bool& last) {
+    if (finished_) return false;
+    start = chunkStart_ + static_cast<long>(at_);
+    length_ = 0;
+    bool any = false;
+    while (true) {
+      if (at_ == filled_ && !refill()) {
+        // The end, with or without a line before it: an unterminated line is the last one.
+        finished_ = true;
+        if (!any) return false;
+        last = true;
+        line = std::string_view(line_.data(), length_);
+        return true;
+      }
+      any = true;
+      const char* from = chunk_ + at_;
+      const void* newline = std::memchr(from, '\n', filled_ - at_);
+      const std::size_t take =
+          newline == nullptr ? filled_ - at_ : static_cast<std::size_t>(static_cast<const char*>(newline) - from);
+      if (!append(from, take)) {
+        finished_ = true;
+        return false;
+      }
+      at_ += take;
+      if (newline != nullptr) {
+        at_++;
+        // A newline ends the file's last line when nothing comes after it.
+        last = at_ == filled_ && !refill();
+        if (last) finished_ = true;
+        line = std::string_view(line_.data(), length_);
+        return true;
+      }
+    }
+  }
+
+ private:
+  bool refill() {
+    chunkStart_ += static_cast<long>(filled_);
+    at_ = 0;
+    filled_ = std::fread(chunk_, 1, sizeof chunk_, file_);
+    return filled_ > 0;
+  }
+
+  bool append(const char* bytes, std::size_t count) {
+    if (length_ + count > line_.size()) {
+      text::BigText bigger = text::BigText::uninitialised(std::max<std::size_t>(line_.size() * 2, length_ + count + 256));
+      if (bigger.failed()) return false;
+      if (length_ > 0) std::memcpy(bigger.data(), line_.data(), length_);
+      line_ = std::move(bigger);
+    }
+    if (count > 0) std::memcpy(line_.data() + length_, bytes, count);
+    length_ += count;
+    return true;
+  }
+
+  std::FILE* file_;
+  char chunk_[512];
+  long chunkStart_ = 0;
+  std::size_t at_ = 0;
+  std::size_t filled_ = 0;
+  bool finished_ = false;
+  text::BigText line_;
+  std::size_t length_ = 0;
+};
+
+}  // namespace
+
+void forEachRecentAuditRecord(const std::string& directory, std::size_t limit,
+                              const std::function<void(const AuditRecord&)>& visit) {
+  if (limit == 0) return;
   const std::string path = directory + "/" + kAuditFile;
   std::FILE* file = std::fopen(path.c_str(), "rb");
-  if (file == nullptr) return {};
-  std::string content;
-  char chunk[4096];
-  std::size_t read = 0;
-  while ((read = std::fread(chunk, 1, sizeof chunk, file)) > 0) content.append(chunk, read);
-  std::fclose(file);
+  if (file == nullptr) return;
 
-  std::vector<std::string> lines;
-  std::size_t start = 0;
-  for (std::size_t at = 0; at <= content.size(); at++) {
-    if (at == content.size() || content[at] == '\n') {
-      lines.push_back(content.substr(start, at - start));
-      start = at + 1;
-    }
-  }
-  if (!content.empty() && content.back() == '\n') lines.pop_back();
-
-  std::vector<AuditRecord> records;
-  for (std::size_t position = 0; position < lines.size(); position++) {
-    const std::string& line = lines[position];
-    const std::size_t lineNumber = position + 1;
-    if (isBlankOrNul(line)) {
-      if (!line.empty() && line.find_first_not_of('\0') == std::string::npos) {
-        warnOnce(directory, lineNumber, line.size(), "hole",
-                 std::string(kAuditFile) + " line " + std::to_string(lineNumber) + " is " +
-                     std::to_string(line.size()) + " NUL bytes — a record lost to a power cut, not a parse error");
+  // First where the newest `limit` records start, however long the journal is, then each one read
+  // again from there, newest first: only one record is ever held.
+  struct Found {
+    long start;
+    std::size_t hole;  // the NUL bytes a power cut left in front of it
+  };
+  std::vector<Found> newest(limit);
+  std::size_t found = 0;
+  {
+    JournalLines lines(file);
+    std::string_view line;
+    long start = 0;
+    bool last = false;
+    std::size_t lineNumber = 0;
+    const auto keep = [&](std::size_t hole) { newest[found++ % limit] = {start, hole}; };
+    while (lines.next(line, start, last)) {
+      lineNumber++;
+      if (isBlankOrNul(line)) {
+        if (!line.empty() && line.find_first_not_of('\0') == std::string_view::npos) {
+          warnOnce(directory, lineNumber, line.size(), "hole",
+                   std::string(kAuditFile) + " line " + std::to_string(lineNumber) + " is " +
+                       std::to_string(line.size()) + " NUL bytes — a record lost to a power cut, not a parse error");
+        }
+        continue;
       }
-      continue;
-    }
-    const std::size_t hole = leadingNulBytes(line);
-    if (hole > 0) {
-      const std::string tail = line.substr(hole);
-      if (const std::optional<AuditRecord> recovered = parseAuditLine(tail)) {
-        warnOnce(directory, lineNumber, line.size(), "hole-recovered",
-                 std::string(kAuditFile) + " line " + std::to_string(lineNumber) + " lost " + std::to_string(hole) +
-                     " bytes to a power cut — the " + std::to_string(tail.size()) +
-                     " bytes after the hole are a whole record and are kept");
-        records.push_back(*recovered);
+      const std::size_t hole = leadingNulBytes(line);
+      if (hole > 0) {
+        const std::string_view tail = line.substr(hole);
+        if (parseAuditLine(tail)) {
+          warnOnce(directory, lineNumber, line.size(), "hole-recovered",
+                   std::string(kAuditFile) + " line " + std::to_string(lineNumber) + " lost " + std::to_string(hole) +
+                       " bytes to a power cut — the " + std::to_string(tail.size()) +
+                       " bytes after the hole are a whole record and are kept");
+          keep(hole);
+        } else {
+          warnOnce(directory, lineNumber, line.size(), "hole-torn",
+                   std::string(kAuditFile) + " line " + std::to_string(lineNumber) + " is " + std::to_string(hole) +
+                       " NUL bytes then " + std::to_string(tail.size()) +
+                       " bytes that are not a record — a power cut tore this one, not a parse error");
+        }
+        continue;
+      }
+      if (parseAuditLine(line)) {
+        keep(0);
+      } else if (last) {
+        logInfo(kTag, "%s ends mid-record — something was killed while writing it", kAuditFile);
       } else {
-        warnOnce(directory, lineNumber, line.size(), "hole-torn",
-                 std::string(kAuditFile) + " line " + std::to_string(lineNumber) + " is " + std::to_string(hole) +
-                     " NUL bytes then " + std::to_string(tail.size()) +
-                     " bytes that are not a record — a power cut tore this one, not a parse error");
+        warnOnce(directory, lineNumber, line.size(), "damaged",
+                 std::string(kAuditFile) + " line " + std::to_string(lineNumber) + " is not valid JSON");
       }
-      continue;
-    }
-    if (const std::optional<AuditRecord> record = parseAuditLine(line)) {
-      records.push_back(*record);
-    } else if (lineNumber == lines.size()) {
-      logInfo(kTag, "%s ends mid-record — something was killed while writing it", kAuditFile);
-    } else {
-      warnOnce(directory, lineNumber, line.size(), "damaged",
-               std::string(kAuditFile) + " line " + std::to_string(lineNumber) + " is not valid JSON");
     }
   }
-  std::reverse(records.begin(), records.end());
-  if (records.size() > limit) records.resize(limit);
-  return records;
+  const std::size_t kept = std::min(found, limit);
+  for (std::size_t back = 1; back <= kept; back++) {
+    const Found& at = newest[(found - back) % limit];
+    if (std::fseek(file, at.start, SEEK_SET) != 0) break;
+    JournalLines lines(file);
+    std::string_view line;
+    long start = 0;
+    bool last = false;
+    if (!lines.next(line, start, last)) break;
+    // Parsed the first time; only a journal changed in between would fail now.
+    if (const std::optional<AuditRecord> record = parseAuditLine(line.substr(std::min(at.hole, line.size())))) {
+      visit(*record);
+    }
+  }
+  std::fclose(file);
 }
 
 }  // namespace emcool::vcu

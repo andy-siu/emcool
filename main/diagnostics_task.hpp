@@ -18,6 +18,7 @@
 #include "emcool/obd/obd_stack.hpp"
 #include "emcool/settings/settings.hpp"
 #include "emcool/signals/signal_store.hpp"
+#include "emcool/text/big_text.hpp"
 #include "emcool/vcu/reading_stores.hpp"
 #include "emcool/vcu/charge_auto.hpp"
 #include "emcool/vcu/runner.hpp"
@@ -85,7 +86,7 @@ class DiagnosticsTask final : public ble_server::ServiceDesk, public ble_server:
   void route(const ReceivedFrame& frame);
   void fireDue();
   void handle(const ble_server::ServiceRequest& request, std::uint32_t serial);
-  void answer(std::uint32_t serial, int status, std::string body);
+  void answer(std::uint32_t serial, int status, text::BigText body);
   void selectStartupTable();
   obd::Now now() const;
 

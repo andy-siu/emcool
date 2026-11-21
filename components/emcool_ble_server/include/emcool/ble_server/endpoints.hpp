@@ -40,6 +40,7 @@
 #include "emcool/obd/stored_codes.hpp"
 #include "emcool/ride_log/download.hpp"
 #include "emcool/signals/signal_store.hpp"
+#include "emcool/text/big_text.hpp"
 #include "emcool/vcu/bodies.hpp"
 #include "emcool/vcu/service_api.hpp"
 #include "emcool/vcu/store.hpp"
@@ -164,6 +165,7 @@ class DashboardEndpoints final : public RequestHandler {
   HttpResponse status(std::int64_t nowMonotonicMs);
   HttpResponse fromBuffer(int status, const char* contentType, std::size_t length);
   HttpResponse fromText(int status, const char* contentType, std::string_view text);
+  HttpResponse fromBig(int status, const char* contentType, text::BigText text);
   std::optional<HttpResponse> service(const HttpRequest& request, std::string_view route, std::string_view query);
   HttpResponse fromParts(int status, const char* contentType, std::unique_ptr<vcu::PartsBody> parts);
   HttpResponse fromConsole(ConsoleAnswer& answer);
@@ -186,7 +188,9 @@ class DashboardEndpoints final : public RequestHandler {
   std::unique_ptr<vcu::PartsBody> parts_;
   std::string part_;
   std::size_t partOffset_ = 0;
-  std::string text_;
+  // A body held whole, in PSRAM: a service answer, or a copy of a short one. Never a std::string,
+  // which would take internal RAM and keep the biggest body's block for good.
+  text::BigText text_;
 
   Source source_ = Source::kBuffer;
   std::size_t length_ = 0;

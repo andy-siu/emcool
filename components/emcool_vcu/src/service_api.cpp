@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <utility>
 
 #include "emcool/vcu/bodies.hpp"
 
@@ -21,6 +22,12 @@ std::string build(Write write) {
   write(out);
   text.resize(out.length());
   return text;
+}
+
+// A reply body: in PSRAM, never in internal RAM, which a 20 KB block would abort the bike over.
+template <typename Write>
+text::BigText body(Write&& write) {
+  return text::BigText::build(std::forward<Write>(write));
 }
 
 void writeOptionalString(text::TextBuffer& out, const std::optional<std::string>& value) {
@@ -103,18 +110,18 @@ std::optional<double> numberFromQuery(const std::optional<std::string>& raw) {
 
 }  // namespace
 
-std::string ServiceApi::readBody(const std::optional<std::string>& message) {
-  return build([&](text::TextBuffer& out) { writeReadResponseJson(out, runner_, store_, enabled_, message); });
+text::BigText ServiceApi::readBody(const std::optional<std::string>& message) {
+  return body([&](text::TextBuffer& out) { writeReadResponseJson(out, runner_, store_, enabled_, message); });
 }
 
 async::Task<ServiceAnswer> ServiceApi::answer(ServiceRequest request) {
   using Kind = ServiceRequest::Kind;
   const auto probeBody = [&](const VcuProbeReading* reading, const std::optional<std::string>& message) {
-    return build([&](text::TextBuffer& out) { writeProbeResponseJson(out, reading, message, runner_.gate()); });
+    return body([&](text::TextBuffer& out) { writeProbeResponseJson(out, reading, message, runner_.gate()); });
   };
   const auto lifetimeBody = [&](std::optional<std::string> measurement, std::optional<int> answered,
                                 std::optional<std::string> message) {
-    return build([&](text::TextBuffer& out) {
+    return body([&](text::TextBuffer& out) {
       out.append("{\"measurement\":");
       writeOptionalString(out, measurement);
       out.append(",\"answered\":");
@@ -131,7 +138,7 @@ async::Task<ServiceAnswer> ServiceApi::answer(ServiceRequest request) {
     });
   };
   const auto freezeBody = [&](std::optional<std::string> summary, std::optional<std::string> message) {
-    return build([&](text::TextBuffer& out) {
+    return body([&](text::TextBuffer& out) {
       out.append("{\"summary\":");
       writeOptionalString(out, summary);
       out.append(",\"message\":");
@@ -142,7 +149,7 @@ async::Task<ServiceAnswer> ServiceApi::answer(ServiceRequest request) {
     });
   };
   const auto expectedBody = [&](const ExpectedFaults& expected, std::optional<std::string> message) {
-    return build([&](text::TextBuffer& out) {
+    return body([&](text::TextBuffer& out) {
       out.append("{\"expected\":");
       writeExpectedFaultsJson(out, expected);
       out.append(",\"message\":");
@@ -226,19 +233,19 @@ async::Task<ServiceAnswer> ServiceApi::answer(ServiceRequest request) {
       };
       const auto getAll = [&query](std::string_view key) { return queryValues(query, key); };
       const WriteStatusRequest statusReq = parseStatusRequest(get);
-      const auto body = [&](const ServiceWriteResult* result, const std::optional<std::string>& message,
-                            ChargeCurrentAttempt attempt = ChargeCurrentAttempt::kNone) {
-        return build(
+      const auto writeBody = [&](const ServiceWriteResult* result, const std::optional<std::string>& message,
+                                 ChargeCurrentAttempt attempt = ChargeCurrentAttempt::kNone) {
+        return body(
             [&](text::TextBuffer& out) { writeRunner_->writeResponseJson(out, statusReq, result, message, attempt); });
       };
       if (request.kind == Kind::kWriteStatus) {
-        co_return ServiceAnswer{200, body(nullptr, std::nullopt)};
+        co_return ServiceAnswer{200, writeBody(nullptr, std::nullopt)};
       }
       const WriteRequestParse parsed = parseWriteRequest(get, getAll, wallClockMs_());
       if (!parsed.ok) {
-        co_return ServiceAnswer{400, body(nullptr, parsed.reason,
-                                          get("action") == "charge-current" ? ChargeCurrentAttempt::kNotSent
-                                                                            : ChargeCurrentAttempt::kNone)};
+        co_return ServiceAnswer{400, writeBody(nullptr, parsed.reason,
+                                               get("action") == "charge-current" ? ChargeCurrentAttempt::kNotSent
+                                                                                 : ChargeCurrentAttempt::kNone)};
       }
       const ServiceWriteAnswer answer = co_await writeRunner_->perform(parsed.request);
       if (!answer.ok) {
@@ -246,16 +253,16 @@ async::Task<ServiceAnswer> ServiceApi::answer(ServiceRequest request) {
             parsed.request.kind != ServiceWriteRequest::Kind::kChargeCurrent ? ChargeCurrentAttempt::kNone
             : answer.mayHaveSent                                            ? ChargeCurrentAttempt::kUnknown
                                                                             : ChargeCurrentAttempt::kNotSent;
-        co_return ServiceAnswer{409, body(nullptr, answer.reason, attempt)};
+        co_return ServiceAnswer{409, writeBody(nullptr, answer.reason, attempt)};
       }
-      co_return ServiceAnswer{200, body(&answer.result, std::nullopt)};
+      co_return ServiceAnswer{200, writeBody(&answer.result, std::nullopt)};
     }
     case Kind::kChargeAutoStatus:
     case Kind::kChargeAutoSet:
       // Handled by the diagnostics task directly (the controller is its own, not a runner here).
-      co_return ServiceAnswer{500, "{}"};
+      co_return ServiceAnswer{500, text::BigText("{}")};
   }
-  co_return ServiceAnswer{500, "{}"};
+  co_return ServiceAnswer{500, text::BigText("{}")};
 }
 
 }  // namespace emcool::vcu

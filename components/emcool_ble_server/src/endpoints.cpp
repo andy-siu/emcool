@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <utility>
 
 #include "emcool/obd/static_bodies.hpp"
 #include "emcool/text/text_buffer.hpp"
@@ -350,7 +351,8 @@ std::optional<HttpResponse> DashboardEndpoints::poll(std::int64_t) {
   std::optional<ServiceAnswer> answer = service_->take();
   if (!answer) return std::nullopt;
   waiting_ = Waiting::kNothing;
-  return fromText(answer->status, kJson, answer->body);
+  if (answer->body.failed()) return fromText(503, kText, "emcool: no memory for the answer; try again\n");
+  return fromBig(answer->status, kJson, std::move(answer->body));
 }
 
 HttpResponse DashboardEndpoints::timedOut() {
@@ -372,8 +374,19 @@ void DashboardEndpoints::sessionEnded() {
 }
 
 HttpResponse DashboardEndpoints::fromText(int status, const char* contentType, std::string_view text) {
+  text::BigText copy(text);
+  if (copy.failed()) {
+    // Not even a short answer fits: say so from the fixed buffer.
+    TextBuffer out(buffer_.data(), buffer_.size());
+    out.append("emcool: no memory for the answer\n");
+    return fromBuffer(503, kText, out.length());
+  }
+  return fromBig(status, contentType, std::move(copy));
+}
+
+HttpResponse DashboardEndpoints::fromBig(int status, const char* contentType, text::BigText text) {
   source_ = Source::kText;
-  text_.assign(text);
+  text_ = std::move(text);
   length_ = text_.size();
   return {status, contentType, length_};
 }
